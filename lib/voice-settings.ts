@@ -1,0 +1,105 @@
+// lib/voice-settings.ts
+
+export interface LanguageOption {
+  code: string;
+  label: string;
+}
+
+export const languageOptions: LanguageOption[] = [
+  { code: 'en-US', label: 'English (United States)' },
+  { code: 'bn-BD', label: 'Bangla (Bangladesh)' },
+  { code: 'bn-IN', label: 'Bangla (India)' },
+  { code: 'es-ES', label: 'Spanish (Spain)' },
+  { code: 'es-US', label: 'Spanish (USA)' },
+  { code: 'fr-FR', label: 'French (France)' },
+  { code: 'de-DE', label: 'German (Germany)' },
+  { code: 'zh-CN', label: 'Chinese (Mandarin, Simplified)' },
+  { code: 'ja-JP', label: 'Japanese (Japan)' },
+  { code: 'ar-SA', label: 'Arabic (Saudi Arabia)' },
+  { code: 'hi-IN', label: 'Hindi (India)' },
+  { code: 'pt-BR', label: 'Portuguese (Brazil)' },
+  { code: 'ru-RU', label: 'Russian (Russia)' },
+  { code: 'it-IT', label: 'Italian (Italy)' },
+  { code: 'ko-KR', label: 'Korean (Korea)' },
+  { code: 'tr-TR', label: 'Turkish (Turkey)' },
+  { code: 'nl-NL', label: 'Dutch (Netherlands)' },
+  { code: 'pl-PL', label: 'Polish (Poland)' },
+  { code: 'sv-SE', label: 'Swedish (Sweden)' },
+  { code: 'id-ID', label: 'Indonesian (Indonesia)' },
+  { code: 'vi-VN', label: 'Vietnamese (Vietnam)' },
+  { code: 'th-TH', label: 'Thai (Thailand)' },
+  { code: 'ur-PK', label: 'Urdu (Pakistan)' },
+  { code: 'fa-IR', label: 'Persian (Iran)' },
+  { code: 'uk-UA', label: 'Ukrainian (Ukraine)' },
+  { code: 'ro-RO', label: 'Romanian (Romania)' },
+  { code: 'el-GR', label: 'Greek (Greece)' },
+  { code: 'cs-CZ', label: 'Czech (Czechia)' },
+  { code: 'da-DK', label: 'Danish (Denmark)' },
+  { code: 'fi-FI', label: 'Finnish (Finland)' },
+  { code: 'he-IL', label: 'Hebrew (Israel)' },
+  { code: 'hu-HU', label: 'Hungarian (Hungary)' },
+  { code: 'ms-MY', label: 'Malay (Malaysia)' },
+  { code: 'no-NO', label: 'Norwegian (Norway)' },
+  { code: 'sk-SK', label: 'Slovak (Slovakia)' },
+  { code: 'ta-IN', label: 'Tamil (India)' },
+  { code: 'te-IN', label: 'Telugu (India)' },
+  { code: 'mr-IN', label: 'Marathi (India)' },
+  { code: 'gu-IN', label: 'Gujarati (India)' },
+  { code: 'kn-IN', label: 'Kannada (India)' },
+  { code: 'ml-IN', label: 'Malayalam (India)' },
+  { code: 'pa-IN', label: 'Punjabi (India)' },
+  { code: 'fil-PH', label: 'Filipino (Philippines)' },
+  { code: 'sw-KE', label: 'Swahili (Kenya)' },
+  { code: 'af-ZA', label: 'Afrikaans (South Africa)' },
+  { code: 'am-ET', label: 'Amharic (Ethiopia)' },
+  { code: 'az-AZ', label: 'Azerbaijani (Azerbaijan)' },
+  { code: 'bg-BG', label: 'Bulgarian (Bulgaria)' },
+  { code: 'bs-BA', label: 'Bosnian (Bosnia)' },
+  { code: 'ca-ES', label: 'Catalan (Spain)' },
+  { code: 'hr-HR', label: 'Croatian (Croatia)' },
+  { code: 'et-EE', label: 'Estonian (Estonia)' },
+  { code: 'gl-ES', label: 'Galician (Spain)' },
+  { code: 'ka-GE', label: 'Georgian (Georgia)' },
+  { code: 'is-IS', label: 'Icelandic (Iceland)' },
+  { code: 'kk-KZ', label: 'Kazakh (Kazakhstan)' },
+  { code: 'km-KH', label: 'Khmer (Cambodia)' },
+  { code: 'lo-LA', label: 'Lao (Laos)' },
+  { code: 'lv-LV', label: 'Latvian (Latvia)' },
+  { code: 'lt-LT', label: 'Lithuanian (Lithuania)' },
+  { code: 'mk-MK', label: 'Macedonian (North Macedonia)' },
+  { code: 'mn-MN', label: 'Mongolian (Mongolia)' },
+  { code: 'my-MM', label: 'Burmese (Myanmar)' },
+  { code: 'ne-NP', label: 'Nepali (Nepal)' },
+  { code: 'si-LK', label: 'Sinhala (Sri Lanka)' },
+  { code: 'sl-SI', label: 'Slovenian (Slovenia)' },
+  { code: 'so-SO', label: 'Somali (Somalia)' },
+  { code: 'sq-AL', label: 'Albanian (Albania)' },
+  { code: 'sr-RS', label: 'Serbian (Serbia)' },
+  { code: 'uz-UZ', label: 'Uzbek (Uzbekistan)' },
+  { code: 'zu-ZA', label: 'Zulu (South Africa)' }
+];
+
+export const voiceMapping: Record<string, { male: string; female: string }> = {
+  'en-US': { male: 'en-US-AndrewNeural', female: 'en-US-AvaNeural' },
+  'bn-BD': { male: 'bn-BD-PradeepNeural', female: 'bn-BD-NabanitaNeural' },
+  'bn-IN': { male: 'bn-IN-BashkarNeural', female: 'bn-IN-TanishaaNeural' },
+  'es-ES': { male: 'es-ES-AlvaroNeural', female: 'es-ES-ElviraNeural' },
+  'es-US': { male: 'es-US-AlonsoNeural', female: 'es-US-PalomaNeural' },
+  'fr-FR': { male: 'fr-FR-HenriNeural', female: 'fr-FR-DeniseNeural' },
+  'de-DE': { male: 'de-DE-ConradNeural', female: 'de-DE-KatjaNeural' },
+  'zh-CN': { male: 'zh-CN-YunxiNeural', female: 'zh-CN-XiaoxiaoNeural' },
+  'ja-JP': { male: 'ja-JP-KeitaNeural', female: 'ja-JP-NanamiNeural' },
+  'ar-SA': { male: 'ar-SA-HamedNeural', female: 'ar-SA-ZariyahNeural' },
+  'hi-IN': { male: 'hi-IN-MadhurNeural', female: 'hi-IN-SwaraNeural' },
+  'pt-BR': { male: 'pt-BR-AntonioNeural', female: 'pt-BR-FranciscaNeural' },
+  'ru-RU': { male: 'ru-RU-DmitryNeural', female: 'ru-RU-SvetlanaNeural' },
+  'it-IT': { male: 'it-IT-DiegoNeural', female: 'it-IT-ElsaNeural' },
+  'ko-KR': { male: 'ko-KR-InJoonNeural', female: 'ko-KR-SunHiNeural' },
+  'tr-TR': { male: 'tr-TR-AhmetNeural', female: 'tr-TR-EmelNeural' }
+};
+
+export function getVoiceName(langCode: string, gender: 'male' | 'female' = 'female'): string {
+  const match = voiceMapping[langCode];
+  if (match) return gender === 'male' ? match.male : match.female;
+  return gender === 'male' ? 'en-US-AndrewNeural' : 'en-US-AvaNeural';
+}
