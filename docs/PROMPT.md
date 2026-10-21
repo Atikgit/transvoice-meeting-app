@@ -365,8 +365,10 @@ tests/unit, tests/e2e
 
 Answers given after Phase 0. These override earlier sections where they conflict.
 
-- **Plans are prepaid subscriptions.** The three Lemon Squeezy plans (Bronze Starter 120, Diamond Pro 300, Business Standard 600 min) are monthly subscriptions. On every `subscription_payment_success`, credit the plan's minutes to `prepaid_minutes_remaining` (idempotent via `payment_events`). The postpaid usage-based plan is a separate variant added in Phase 5.
-- **Auth UI** shows email, Google and LinkedIn (OIDC). Each provider button is hidden when its env flag is off.
+- **Plans are prepaid subscriptions.** The three Lemon Squeezy plans are subscriptions, mapped by numeric `variant_id` in `lib/billing/plans.ts`: Bronze Starter **2229952** → 120 min, Diamond Pro **2229957** → 300 min, Business Standard **2229969** → 600 min. Each paid period credits the plan's minutes (idempotent via `payment_events`): the first period on `subscription_created`, renewals on `subscription_payment_success` with `billing_reason` ≠ `initial`. The postpaid usage-based plan is a separate variant added in Phase 5.
+- **No rollover.** Unused subscription minutes are reset at each renewal: the prepaid bucket is *set* to the plan's minutes, and the forfeited remainder is logged as a `usage_ledger` row with `kind='expire'`. The **15 free signup minutes never expire**: they live in a separate `trial_minutes_remaining` bucket. Debits use subscription minutes first, then trial minutes.
+- **Free trial anti-abuse:** the trial is granted when the email is verified (OAuth signups arrive verified), once per normalized email hash (lowercase, `+tag` stripped, Gmail dots ignored). The hash is kept after account deletion.
+- **Auth UI** shows email, Google and LinkedIn (OIDC). Each provider button is hidden unless `AUTH_GOOGLE_ENABLED` / `AUTH_LINKEDIN_ENABLED` is true (server-side flags, default off, so they change without an image rebuild).
 - **Languages:** the API supports 140+, but the UI lists the 73 tested languages and its copy says "70+ languages" until the full list is added.
 - **Hosting:** see §9.1.
 
