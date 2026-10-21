@@ -12,7 +12,8 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['tests/unit/**/*.test.{ts,tsx}'],
+    include: ['tests/unit/**/*.test.{ts,tsx}', 'tests/db/**/*.test.ts'],
+    testTimeout: 20_000,
     environment: 'node',
     setupFiles: ['tests/setup.ts'],
   },
