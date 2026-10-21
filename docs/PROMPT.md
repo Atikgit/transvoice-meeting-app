@@ -101,7 +101,7 @@ Existing Lemon Squeezy plans: Bronze Starter $4.44/mo → 120 min, Diamond Pro $
 - **Lemon Squeezy** for all payments (prepaid packs + postpaid usage-based subscription)
 - Validation **zod**; server state **TanStack Query**; rate limiting **Upstash Redis** (`@upstash/ratelimit`); i18n **next-intl** (English, Bangla)
 - Testing: **Vitest** (unit), **Playwright** (e2e with `--use-fake-device-for-media-stream`), **msw** to mock the TransVoice API
-- pnpm; deploy on Vercel
+- pnpm; Docker image on a Hetzner server for production, Vercel for branch previews (see §9.1)
 
 ---
 
@@ -213,7 +213,7 @@ RLS: users read/update their own profile; read their own billing account (never 
 
 ### 6.2 Minute meter pipeline
 1. **LiveKit webhooks** (`participant_joined`, `participant_left`) + client heartbeat every 20 s maintain `participant_segments`. A segment with no heartbeat for 45 s is closed at the last heartbeat (covers crashed tabs).
-2. **pg_cron every minute** (or Vercel Cron → `/api/internal/meter-tick`, protected by `CRON_SECRET`) runs `apply_minute_tick` for the last closed minute. For each billable participant: lock the payer's `billing_accounts` row, then
+2. **pg_cron every minute** (no Vercel Cron, see §9.1; `/api/internal/meter-tick`, protected by `CRON_SECRET`, remains for manual re-runs) runs `apply_minute_tick` for the last closed minute. For each billable participant: lock the payer's `billing_accounts` row, then
    - **free / prepaid** → decrement `prepaid_minutes_remaining` (`kind='debit'`);
    - **postpaid** → add to `postpaid_minutes_accrued` (`kind='accrual'`).
    Idempotent via the ledger unique key; safe to re-run.
@@ -293,6 +293,17 @@ POST   /api/lemonsqueezy/webhook             HMAC verify (keep timingSafeEqual),
 - Anti-abuse for free trials: one trial per verified email; email verification required before inviting; rate-limit signups per IP.
 - Accessible, mobile-first (meetings must work in phone browsers). No `any`. ESLint + Prettier. Conventional commits.
 
+### 9.1 Deployment & hosting (host-agnostic)
+
+Production moves from Vercel to a self-managed **Hetzner** server. Vercel is used only for per-branch preview deployments. The app must run identically on both:
+
+- `next.config` uses `output: 'standalone'`. Ship as a Docker image (`Dockerfile`, multi-stage, non-root, `node server.js`) run by `docker-compose.yml`: **app + Caddy** reverse proxy (automatic HTTPS). `NEXT_PUBLIC_*` values are build args; server secrets are runtime env, validated on start by `lib/env.ts`.
+- **Scheduled jobs use only `pg_cron`** (with `pg_net` when a job must call an app endpoint, e.g. `/api/internal/postpaid-sync`, authenticated with `CRON_SECRET`). No Vercel Cron, and no in-process timers that assume a single long-lived instance.
+- **No Vercel-only APIs** (`@vercel/kv`, `@vercel/blob`, Edge Config, Vercel Cron, `waitUntil` from `@vercel/functions`, etc.). `@vercel/analytics` is allowed only because it is a no-op off Vercel. Rate limiting uses Upstash Redis over HTTP.
+- **No local-disk file storage.** Chat files and anything else persistent go to Supabase Storage. The container filesystem is disposable.
+- Health: `GET /api/health` is the container healthcheck (liveness; Phase 3 adds the Triton check).
+- Node `>=22.12`, pinned via `engines`; pnpm pinned via `packageManager`.
+
 ---
 
 ## 10. Folder structure
@@ -346,5 +357,17 @@ tests/unit, tests/e2e
 4. After each phase: summary, commands to run, env vars needed, manual test steps, open questions.
 5. If anything here conflicts with security or correctness best practice, follow best practice and tell me why.
 6. Keep my Lemon Squeezy checkout URLs and the brand styling.
+7. One branch per phase (`phase-1`, `phase-2`, …). Commit there; I merge to `main` after checking the Vercel preview.
+
+---
+
+## 13. Decisions log
+
+Answers given after Phase 0. These override earlier sections where they conflict.
+
+- **Plans are prepaid subscriptions.** The three Lemon Squeezy plans (Bronze Starter 120, Diamond Pro 300, Business Standard 600 min) are monthly subscriptions. On every `subscription_payment_success`, credit the plan's minutes to `prepaid_minutes_remaining` (idempotent via `payment_events`). The postpaid usage-based plan is a separate variant added in Phase 5.
+- **Auth UI** shows email, Google and LinkedIn (OIDC). Each provider button is hidden when its env flag is off.
+- **Languages:** the API supports 140+, but the UI lists the 73 tested languages and its copy says "70+ languages" until the full list is added.
+- **Hosting:** see §9.1.
 
 **Begin with Phase 0 now.**
