@@ -1,38 +1,35 @@
-import { AccessToken } from "livekit-server-sdk";
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { AccessToken } from 'livekit-server-sdk'
+import { NextRequest, NextResponse } from 'next/server'
+import { serverEnv } from '@/lib/env'
+import { createAdminClient } from '@/lib/supabase/admin'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
+/**
+ * LEGACY (Phase 0: behaviour preserved). Phase 2 replaces this with session-authenticated,
+ * room-authorized tokens (§2.1 #4): identity = user UUID, name in metadata.
+ */
 export async function GET(req: NextRequest) {
-  const room = req.nextUrl.searchParams.get("room") || "quick-sync";
-  const username = req.nextUrl.searchParams.get("username") || "Guest";
-  const userId = req.nextUrl.searchParams.get("userId");
+  const room = req.nextUrl.searchParams.get('room') || 'quick-sync'
+  const username = req.nextUrl.searchParams.get('username') || 'Guest'
+  const userId = req.nextUrl.searchParams.get('userId')
 
-  // হোস্টের ক্ষেত্রে মিনিট ব্যালেন্স চেক করা
   if (userId) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("minutes_balance")
-      .eq("id", userId)
-      .single();
+    const { data: profile } = await createAdminClient()
+      .from('profiles')
+      .select('minutes_balance')
+      .eq('id', userId)
+      .single()
 
     if (!profile || profile.minutes_balance <= 0) {
       return NextResponse.json(
-        { error: "Insufficient balance. Please upgrade your plan." },
-        { status: 402 }
-      );
+        { error: 'Insufficient balance. Please upgrade your plan.' },
+        { status: 402 },
+      )
     }
   }
 
-  const apiKey = process.env.LIVEKIT_API_KEY!;
-  const apiSecret = process.env.LIVEKIT_API_SECRET!;
+  const env = serverEnv()
+  const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, { identity: username })
+  at.addGrant({ room, roomJoin: true, canPublish: true, canSubscribe: true })
 
-  const at = new AccessToken(apiKey, apiSecret, { identity: username });
-  at.addGrant({ room, roomJoin: true, canPublish: true, canSubscribe: true });
-
-  return NextResponse.json({ token: await at.toJwt() });
+  return NextResponse.json({ token: await at.toJwt() })
 }

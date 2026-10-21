@@ -1,8 +1,7 @@
-// lib/voice-settings.ts
-
 export interface LanguageOption {
-  code: string;
-  label: string;
+  /** BCP-47 locale, also used to pick the Azure neural voice (e.g. "bn-BD"). */
+  code: string
+  label: string
 }
 
 export const languageOptions: LanguageOption[] = [
@@ -76,30 +75,16 @@ export const languageOptions: LanguageOption[] = [
   { code: 'sq-AL', label: 'Albanian (Albania)' },
   { code: 'sr-RS', label: 'Serbian (Serbia)' },
   { code: 'uz-UZ', label: 'Uzbek (Uzbekistan)' },
-  { code: 'zu-ZA', label: 'Zulu (South Africa)' }
-];
+  { code: 'zu-ZA', label: 'Zulu (South Africa)' },
+]
 
-export const voiceMapping: Record<string, { male: string; female: string }> = {
-  'en-US': { male: 'en-US-AndrewNeural', female: 'en-US-AvaNeural' },
-  'bn-BD': { male: 'bn-BD-PradeepNeural', female: 'bn-BD-NabanitaNeural' },
-  'bn-IN': { male: 'bn-IN-BashkarNeural', female: 'bn-IN-TanishaaNeural' },
-  'es-ES': { male: 'es-ES-AlvaroNeural', female: 'es-ES-ElviraNeural' },
-  'es-US': { male: 'es-US-AlonsoNeural', female: 'es-US-PalomaNeural' },
-  'fr-FR': { male: 'fr-FR-HenriNeural', female: 'fr-FR-DeniseNeural' },
-  'de-DE': { male: 'de-DE-ConradNeural', female: 'de-DE-KatjaNeural' },
-  'zh-CN': { male: 'zh-CN-YunxiNeural', female: 'zh-CN-XiaoxiaoNeural' },
-  'ja-JP': { male: 'ja-JP-KeitaNeural', female: 'ja-JP-NanamiNeural' },
-  'ar-SA': { male: 'ar-SA-HamedNeural', female: 'ar-SA-ZariyahNeural' },
-  'hi-IN': { male: 'hi-IN-MadhurNeural', female: 'hi-IN-SwaraNeural' },
-  'pt-BR': { male: 'pt-BR-AntonioNeural', female: 'pt-BR-FranciscaNeural' },
-  'ru-RU': { male: 'ru-RU-DmitryNeural', female: 'ru-RU-SvetlanaNeural' },
-  'it-IT': { male: 'it-IT-DiegoNeural', female: 'it-IT-ElsaNeural' },
-  'ko-KR': { male: 'ko-KR-InJoonNeural', female: 'ko-KR-SunHiNeural' },
-  'tr-TR': { male: 'tr-TR-AhmetNeural', female: 'tr-TR-EmelNeural' }
-};
+const languageCodes = new Set(languageOptions.map((l) => l.code))
 
-export function getVoiceName(langCode: string, gender: 'male' | 'female' = 'female'): string {
-  const match = voiceMapping[langCode];
-  if (match) return gender === 'male' ? match.male : match.female;
-  return gender === 'male' ? 'en-US-AndrewNeural' : 'en-US-AvaNeural';
+export function isSupportedLanguage(code: string): boolean {
+  return languageCodes.has(code)
+}
+
+/** Converts a locale ("bn-BD") to the language code the TransVoice API expects ("bn"). */
+export function toApiLang(locale: string): string {
+  return locale.split('-')[0] ?? locale
 }

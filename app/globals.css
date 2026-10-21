@@ -50,6 +50,13 @@
   --radius: 0.75rem;
 }
 
-* { @apply border-border outline-ring/50; }
-html, body { min-height: 100%; }
-body { @apply bg-background text-foreground; }
+* {
+  @apply border-border outline-ring/50;
+}
+html,
+body {
+  min-height: 100%;
+}
+body {
+  @apply bg-background text-foreground;
+}
