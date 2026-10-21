@@ -36,7 +36,8 @@ export function InviteModal({ roomId, onClose }: { roomId: string; onClose: () =
         </Button>
       </div>
       <p className="mt-4 text-xs text-slate-500">
-        Partner can join directly on mobile or PC without needing an account.
+        Your partner signs up or signs in to join, on mobile or PC. New accounts get 15 free
+        minutes.
       </p>
     </Modal>
   )

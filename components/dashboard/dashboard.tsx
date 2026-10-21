@@ -58,7 +58,7 @@ export function Dashboard({
                 : 'Good morning, Guest'}
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              Start a translated conversation across 140+ languages.
+              Start a translated conversation across 70+ languages.
             </p>
           </div>
           <div className="flex gap-2">
@@ -102,7 +102,7 @@ export function Dashboard({
 
           <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
             <p className="text-xs text-slate-500">Supported Languages</p>
-            <p className="mt-3 text-3xl font-semibold text-white">140+</p>
+            <p className="mt-3 text-3xl font-semibold text-white">70+</p>
             <p className="mt-3 text-xs text-slate-500">Neural Voice Dubbing enabled</p>
           </div>
         </div>
