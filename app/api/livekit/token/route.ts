@@ -2,33 +2,33 @@ import { AccessToken } from 'livekit-server-sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { serverEnv } from '@/lib/env'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getSessionUser } from '@/lib/supabase/server'
+import { getDisplayName } from '@/lib/user'
 
 /**
- * LEGACY (Phase 0: behaviour preserved). Phase 2 replaces this with session-authenticated,
- * room-authorized tokens (§2.1 #4): identity = user UUID, name in metadata.
+ * LEGACY (not used by the current UI). Identity now comes from the session; Phase 2 replaces
+ * this with GET /api/livekit/token?sessionId= and per-room authorization.
  */
 export async function GET(req: NextRequest) {
-  const room = req.nextUrl.searchParams.get('room') || 'quick-sync'
-  const username = req.nextUrl.searchParams.get('username') || 'Guest'
-  const userId = req.nextUrl.searchParams.get('userId')
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
 
-  if (userId) {
-    const { data: profile } = await createAdminClient()
-      .from('profiles')
-      .select('minutes_balance')
-      .eq('id', userId)
-      .single()
-
-    if (!profile || profile.minutes_balance <= 0) {
-      return NextResponse.json(
-        { error: 'Insufficient balance. Please upgrade your plan.' },
-        { status: 402 },
-      )
-    }
+  const { data: available } = await createAdminClient().rpc('has_available_minutes', {
+    p_user: user.id,
+  })
+  if (!available) {
+    return NextResponse.json(
+      { error: 'Insufficient balance. Please upgrade your plan.' },
+      { status: 402 },
+    )
   }
 
+  const room = req.nextUrl.searchParams.get('room') || 'quick-sync'
   const env = serverEnv()
-  const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, { identity: username })
+  const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
+    identity: user.id,
+    metadata: JSON.stringify({ name: getDisplayName(user) ?? user.email ?? 'Guest' }),
+  })
   at.addGrant({ room, roomJoin: true, canPublish: true, canSubscribe: true })
 
   return NextResponse.json({ token: await at.toJwt() })

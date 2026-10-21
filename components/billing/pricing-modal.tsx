@@ -1,27 +1,30 @@
 'use client'
 
-import type { User } from '@supabase/supabase-js'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/common/button'
 import { Modal } from '@/components/common/modal'
 import { LEMON_SQUEEZY_PLANS } from '@/lib/billing/plans'
 
 export function PricingModal({
-  user,
+  userId,
   balance,
   onClose,
 }: {
-  user: User | null
+  userId: string | null
   balance: number
   onClose: () => void
 }) {
+  const router = useRouter()
   const handleBuy = (checkoutUrl: string) => {
-    if (!user) {
-      alert('Please sign in first!')
+    if (!userId) {
+      router.push('/login?next=/dashboard')
       return
     }
-    // External Lemon Squeezy checkout, not an internal route.
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.assign(`${checkoutUrl}?checkout[custom][user_id]=${user.id}`)
+    // External Lemon Squeezy checkout, not an internal route. user_id comes back in the
+    // webhook's meta.custom_data so the subscription is linked to this account.
+    const url = new URL(checkoutUrl)
+    url.searchParams.set('checkout[custom][user_id]', userId)
+    window.location.assign(url.toString())
   }
 
   return (

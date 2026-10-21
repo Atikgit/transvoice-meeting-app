@@ -1,15 +1,16 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import type { Database } from './database.types'
 
 /**
- * Refreshes the Supabase auth session cookies on every request.
- * Wired into the root proxy (Next.js 16's replacement for middleware) in Phase 1,
- * together with route protection for /dashboard and /m/*.
+ * Refreshes the Supabase auth session cookies and returns the signed-in user id (or null).
+ * Used by proxy.ts. getClaims() verifies the JWT (locally when the project uses asymmetric
+ * signing keys), so this is an optimistic check; pages still call getUser() for authorization.
  */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
 
-  const supabase = createServerClient(
+  const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
     {
@@ -28,10 +29,9 @@ export async function updateSession(request: NextRequest) {
     },
   )
 
-  // Do not run code between createServerClient and getUser(): it can cause random logouts.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Do not run code between createServerClient and getClaims(): it can cause random logouts.
+  const { data } = await supabase.auth.getClaims()
+  const userId = typeof data?.claims.sub === 'string' ? data.claims.sub : null
 
-  return { response, user }
+  return { response, userId }
 }

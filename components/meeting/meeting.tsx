@@ -55,7 +55,6 @@ export function Meeting({
     enabled: mic,
     stream: localStream,
     tgtLang,
-    userId: user?.id,
     onTranslatingChange: setTranslating,
     onResult: (caption) => {
       setOriginalText(caption.original)

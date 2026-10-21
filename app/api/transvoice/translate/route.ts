@@ -1,32 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getSessionUser } from '@/lib/supabase/server'
 import { TransVoiceApiError, translateSpeech } from '@/lib/transvoice/client'
 
+/** Seconds billed per legacy recorder chunk (the old client always sent 3.0). */
+const LEGACY_SECONDS_PER_CHUNK = 3
+
 /**
- * LEGACY (Phase 0: behaviour preserved). Replaced in Phase 3 by POST /api/translate.
- * Known issues: trusts client userId and audioDurationSeconds (§2.1 #1, #2, #10).
+ * LEGACY translate endpoint for the `/` meeting shell; replaced in Phase 3 by POST /api/translate,
+ * and per-chunk billing by the Phase 4 minute meter.
+ * Identity now comes from the session (client userId / duration are ignored). Signed-out legacy
+ * guests are still translated unbilled until Phase 2 requires sign-in to join.
  */
 export async function POST(req: NextRequest) {
   try {
-    const { audio, tgt_lang, src_lang, azure_voice, userId, audioDurationSeconds } =
-      (await req.json()) as {
-        audio: string
-        tgt_lang?: string
-        src_lang?: string
-        azure_voice?: string
-        userId?: string
-        audioDurationSeconds?: number
-      }
-    const supabase = createAdminClient()
+    const { audio, tgt_lang, src_lang, azure_voice } = (await req.json()) as {
+      audio: string
+      tgt_lang?: string
+      src_lang?: string
+      azure_voice?: string
+    }
+    const user = await getSessionUser()
+    const admin = createAdminClient()
 
-    if (userId) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('minutes_balance')
-        .eq('id', userId)
-        .single()
-
-      if (!profile || profile.minutes_balance <= 0) {
+    if (user) {
+      const { data: available } = await admin.rpc('has_available_minutes', { p_user: user.id })
+      if (!available) {
         return NextResponse.json(
           { error: 'Minute balance exhausted', code: 'OUT_OF_MINUTES' },
           { status: 402 },
@@ -39,18 +38,20 @@ export async function POST(req: NextRequest) {
       tgtLang: tgt_lang || 'bn',
       srcLang: src_lang || 'auto',
       azureVoice: azure_voice || 'en-US-AvaNeural',
+      speakerId: user?.id,
     })
 
     if (result.kind === 'silence') {
       return NextResponse.json({ error: 'Silence' })
     }
 
-    if (userId && audioDurationSeconds) {
-      const usedMinutes = audioDurationSeconds / 60.0
-      await supabase.rpc('deduct_user_minutes', {
-        p_user_id: userId,
-        p_minutes: usedMinutes,
+    if (user) {
+      const { error } = await admin.rpc('debit_minutes', {
+        p_payer: user.id,
+        p_minutes: LEGACY_SECONDS_PER_CHUNK / 60,
+        p_reason: 'legacy_chunk',
       })
+      if (error) console.error('Legacy debit failed:', error.message)
     }
 
     return NextResponse.json({

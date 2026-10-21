@@ -7,6 +7,8 @@ import { Dashboard } from '@/components/dashboard/dashboard'
 import { CaptionBar } from '@/components/meeting/caption-bar'
 import { ControlBar } from '@/components/meeting/control-bar'
 
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+
 const noop = () => {}
 
 afterEach(cleanup)
@@ -52,7 +54,7 @@ describe('Dashboard', () => {
 
 describe('PricingModal', () => {
   it('lists the three Lemon Squeezy plans', () => {
-    render(<PricingModal user={null} balance={15} onClose={noop} />)
+    render(<PricingModal userId={null} balance={15} onClose={noop} />)
     for (const name of ['Bronze Starter', 'Diamond Pro', 'Business Standard']) {
       expect(screen.getByText(name)).toBeInTheDocument()
     }

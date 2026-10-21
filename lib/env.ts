@@ -43,7 +43,11 @@ const serverSchema = z.object({
   BILLING_MODE: z.enum(['wallclock']).default('wallclock'),
   LANG_MULTIPLIER_ENABLED: z.stringbool().default(true),
   RECONNECT_GRACE_SEC: z.coerce.number().int().positive().default(60),
-  FREE_TRIAL_MINUTES: z.coerce.number().int().nonnegative().default(15),
+  // The free trial amount lives in the database (private.app_settings), not here.
+
+  // Auth providers (server-side so they can change without rebuilding the image)
+  AUTH_GOOGLE_ENABLED: z.stringbool().default(false),
+  AUTH_LINKEDIN_ENABLED: z.stringbool().default(false),
 })
 
 export type ServerEnv = z.infer<typeof serverSchema>
@@ -51,7 +55,9 @@ export type ServerEnv = z.infer<typeof serverSchema>
 let cached: ServerEnv | undefined
 
 export function parseServerEnv(source: Record<string, string | undefined>): ServerEnv {
-  const result = serverSchema.safeParse(source)
+  // Treat `KEY=` (empty) as unset so optional variables copied from .env.example validate.
+  const defined = Object.fromEntries(Object.entries(source).filter(([, value]) => value !== ''))
+  const result = serverSchema.safeParse(defined)
   if (!result.success) {
     const issues = result.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)

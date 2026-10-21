@@ -1,4 +1,9 @@
-import { AppShell } from '@/components/app/app-shell'
+import { randomBytes } from 'node:crypto'
+import { AppShell, type Screen } from '@/components/app/app-shell'
+
+function initialScreen(view: unknown): Screen {
+  return view === 'join' || view === 'meeting' ? view : 'dashboard'
+}
 
 export default async function Home({
   searchParams,
@@ -9,8 +14,10 @@ export default async function Home({
 
   return (
     <AppShell
-      initialRoomId={typeof room === 'string' && room ? room : 'room-jbv6k9'}
-      initialScreen={view === 'join' ? 'join' : 'dashboard'}
+      initialRoomId={
+        typeof room === 'string' && room ? room : `room-${randomBytes(4).toString('hex')}`
+      }
+      initialScreen={initialScreen(view)}
     />
   )
 }

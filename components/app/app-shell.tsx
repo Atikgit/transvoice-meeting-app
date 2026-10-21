@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
-import { AuthModal } from '@/components/auth/auth-modal'
 import { PricingModal } from '@/components/billing/pricing-modal'
 import { Dashboard } from '@/components/dashboard/dashboard'
 import { InviteModal } from '@/components/invite/invite-modal'
 import { JoinScreen } from '@/components/join/join-screen'
 import { Meeting } from '@/components/meeting/meeting'
+import { availableMinutes } from '@/lib/supabase/database.types'
 import { createClient } from '@/lib/supabase/client'
 
 export type Screen = 'dashboard' | 'meeting' | 'join'
@@ -21,27 +22,28 @@ export function AppShell({
   initialScreen: Screen
 }) {
   const [screen, setScreen] = useState<Screen>(initialScreen)
-  const [modal, setModal] = useState<'invite' | 'auth' | 'pricing' | null>(null)
+  const [modal, setModal] = useState<'invite' | 'pricing' | null>(null)
   const [roomId, setRoomId] = useState(initialRoomId)
   const [srcLang, setSrcLang] = useState('en-US')
   const [tgtLang, setTgtLang] = useState('bn-BD')
   const [guestName, setGuestName] = useState('Guest Partner')
   const [user, setUser] = useState<User | null>(null)
-  const [balance, setBalance] = useState<number>(15)
+  const [balance, setBalance] = useState<number>(0)
 
   const supabase = createClient()
+  const router = useRouter()
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user) {
         setUser(data.user)
         supabase
-          .from('profiles')
-          .select('minutes_balance')
-          .eq('id', data.user.id)
+          .from('billing_accounts')
+          .select('trial_minutes_remaining, prepaid_minutes_remaining')
+          .eq('user_id', data.user.id)
           .maybeSingle()
-          .then(({ data: p }) => {
-            if (p?.minutes_balance !== undefined) setBalance(Number(p.minutes_balance))
+          .then(({ data: account }) => {
+            if (account) setBalance(availableMinutes(account))
           })
       }
     })
@@ -50,7 +52,7 @@ export function AppShell({
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     setUser(null)
-    setBalance(15)
+    setBalance(0)
     window.location.reload()
   }
 
@@ -97,14 +99,13 @@ export function AppShell({
         balance={balance}
         onMeeting={startMeeting}
         onJoin={() => setScreen('join')}
-        onAuth={() => setModal('auth')}
+        onAuth={() => router.push('/login?next=/')}
         onPricing={() => setModal('pricing')}
         onSignOut={handleSignOut}
       />
       {modal === 'invite' && <InviteModal roomId={roomId} onClose={() => setModal(null)} />}
-      {modal === 'auth' && <AuthModal onClose={() => setModal(null)} />}
       {modal === 'pricing' && (
-        <PricingModal user={user} balance={balance} onClose={() => setModal(null)} />
+        <PricingModal userId={user?.id ?? null} balance={balance} onClose={() => setModal(null)} />
       )}
     </>
   )
