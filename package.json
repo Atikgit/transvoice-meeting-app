@@ -2,6 +2,10 @@
   "name": "transvoice-meeting-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "packageManager": "pnpm@10.34.7",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -61,6 +65,5 @@
     "onlyBuiltDependencies": [
       "unrs-resolver"
     ]
-  },
-  "packageManager": "pnpm@10.34.7"
+  }
 }
