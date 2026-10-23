@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { TEST_ENV } from './tests/mocks/env'
 
 const PORT = Number(process.env.E2E_PORT ?? 3100)
 
@@ -8,7 +9,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'on-first-retry',
     permissions: ['camera', 'microphone'],
     launchOptions: {
@@ -20,9 +21,14 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['Pixel 7'] } },
   ],
   webServer: {
-    command: `pnpm dev --port ${PORT}`,
-    url: `http://localhost:${PORT}`,
+    // Loopback only: never expose the dev server on a public interface.
+    command: `pnpm dev --hostname 127.0.0.1 --port ${PORT}`,
+    url: `http://127.0.0.1:${PORT}/login`,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 180_000,
+    // Fake credentials (tests/mocks/env.ts) unless the environment provides real ones.
+    env: Object.fromEntries(
+      Object.entries(TEST_ENV).map(([key, value]) => [key, process.env[key] ?? value]),
+    ),
   },
 })
