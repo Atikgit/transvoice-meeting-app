@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { rememberPendingNext } from '@/lib/auth/pending-next'
 import { enabledProviders, type OAuthProvider } from '@/lib/auth/providers'
 import { DEFAULT_AFTER_LOGIN, safeNextPath } from '@/lib/auth/redirect'
 import { appOrigin, clientIp } from '@/lib/http/request'
@@ -112,6 +113,8 @@ export async function signUp(_prev: AuthFormState, formData: FormData): Promise<
   // Email confirmation disabled in Supabase → already signed in.
   if (data.session) redirect(next)
 
+  await rememberPendingNext(next)
+
   // Same message whether or not the address was already registered (no account enumeration).
   return {
     notice: `Check ${parsed.data.email} for a confirmation link. Your free minutes are added once you confirm.`,
@@ -151,6 +154,7 @@ export async function resendConfirmation(
     return { error: RATE_LIMITED }
   }
 
+  await rememberPendingNext(safeNextPath(formData.get('next')))
   const supabase = await createClient()
   const { error } = await supabase.auth.resend({
     type: 'signup',

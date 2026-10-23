@@ -10,8 +10,10 @@ const auth = {
 let ip = '203.0.113.1'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ auth }) }))
+const cookieJar = { set: vi.fn() }
 vi.mock('next/headers', () => ({
   headers: async () => new Headers({ 'x-forwarded-for': ip, host: 'meet.transvoice.ai' }),
+  cookies: async () => cookieJar,
 }))
 vi.mock('next/navigation', () => ({
   redirect: (url: string) => {
@@ -156,6 +158,16 @@ describe('resendConfirmation', () => {
       options: { emailRedirectTo: 'https://meet.transvoice.ai/auth/callback?next=%2Fdashboard' },
     })
     expect(state.notice).toMatch(/If that email is waiting/)
+  })
+
+  it('remembers a non-default destination for the confirmation link', async () => {
+    auth.resend.mockResolvedValue({ error: null })
+    await resendConfirmation({}, form({ email: fresh(), next: '/invite/abc' }))
+    expect(cookieJar.set).toHaveBeenCalledWith(
+      'tv_pending_next',
+      '/invite/abc',
+      expect.objectContaining({ httpOnly: true, sameSite: 'lax' }),
+    )
   })
 })
 
