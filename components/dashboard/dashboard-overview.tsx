@@ -1,5 +1,6 @@
 import { Link2, Lock, UserPlus, Video, Zap } from 'lucide-react'
 import { Button } from '@/components/common/button'
+import { UserManual } from '@/components/dashboard/user-manual'
 import { LANGUAGE_COUNT_LABEL, LANGUAGES_AND_VOICES } from '@/lib/transvoice/languages'
 
 /** Workspace body: greeting, meeting actions and the three summary cards. */
@@ -96,6 +97,8 @@ export function DashboardOverview({
           </p>
         </div>
       </div>
+
+      <UserManual />
     </div>
   )
 }

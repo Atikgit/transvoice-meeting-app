@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PricingModal } from '@/components/billing/pricing-modal'
 import { Dashboard } from '@/components/dashboard/dashboard'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
+import { UserManual } from '@/components/dashboard/user-manual'
 import { CaptionBar } from '@/components/meeting/caption-bar'
 import { ControlBar } from '@/components/meeting/control-bar'
 
@@ -123,5 +124,25 @@ describe('Dashboard invite button', () => {
     fireEvent.click(screen.getByRole('button', { name: /Get minutes to invite/ }))
     expect(onPricing).toHaveBeenCalled()
     expect(onInvite).not.toHaveBeenCalled()
+  })
+})
+
+describe('User manual', () => {
+  it('lists the six steps and collapses on mobile', () => {
+    render(<UserManual />)
+    expect(
+      screen.getByRole('heading', {
+        name: /User Manual — How to start a meeting with your partner/,
+      }),
+    ).toBeInTheDocument()
+    const toggle = screen.getByRole('button', { name: /Show steps/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    const list = screen.getByRole('list', { hidden: true })
+    expect(list.className).toMatch(/\bhidden\b.*md:grid|md:grid.*\bhidden\b/)
+    expect(list.querySelectorAll('li')).toHaveLength(6)
+    expect(list).toHaveTextContent('signs up free (gets 15 free minutes)')
+    expect(list).toHaveTextContent('Chat is always free.')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
   })
 })
