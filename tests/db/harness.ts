@@ -48,9 +48,38 @@ export function migrationFiles(): string[] {
     .sort()
 }
 
-export async function createTestDb(): Promise<PGlite> {
+/**
+ * The live database before Phase 1: the v0 profiles table with minutes_balance and signup
+ * triggers granting 10 minutes, under the conventional name and a non-standard one.
+ */
+export const LEGACY_V0_SCHEMA = `
+  create table public.profiles (
+    id uuid primary key references auth.users (id) on delete cascade,
+    full_name text,
+    minutes_balance numeric not null default 10
+  );
+
+  create function public.handle_new_user() returns trigger language plpgsql security definer as $$
+  begin
+    insert into public.profiles (id, minutes_balance) values (new.id, 10);
+    return new;
+  end $$;
+  create trigger on_auth_user_created after insert on auth.users
+    for each row execute function public.handle_new_user();
+
+  create function public.give_signup_minutes() returns trigger language plpgsql security definer as $$
+  begin
+    update public.profiles set minutes_balance = minutes_balance + 10 where id = new.id;
+    return new;
+  end $$;
+  create trigger v0_signup_bonus after insert on auth.users
+    for each row execute function public.give_signup_minutes();
+`
+
+export async function createTestDb({ before }: { before?: string } = {}): Promise<PGlite> {
   const db = new PGlite()
   await db.exec(SUPABASE_STUB)
+  if (before) await db.exec(before)
   for (const file of migrationFiles()) {
     try {
       await db.exec(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'))

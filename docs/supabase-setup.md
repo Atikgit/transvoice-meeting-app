@@ -22,6 +22,16 @@ pnpm dlx supabase db push
 > data (approved for production, see `docs/PROMPT.md` §13). `20261022000400` then backfills every
 > existing user. Production deploy order and checks: [deploy-phase-1.md](deploy-phase-1.md).
 
+Check that only the Phase 1 signup triggers remain on `auth.users` (expected:
+`on_auth_user_created → private.handle_new_user()` and
+`on_auth_user_email_confirmed → private.handle_user_email_confirmed()`):
+
+```sql
+select t.tgname, p.oid::regprocedure
+from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+where t.tgrelid = 'auth.users'::regclass and not t.tgisinternal;
+```
+
 After applying, regenerate the TypeScript types so new tables are typed:
 
 ```sh
