@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { EMAIL_FLOW_PARAM } from '@/lib/auth/link-errors'
 import { rememberPendingNext } from '@/lib/auth/pending-next'
 import { enabledProviders, type OAuthProvider } from '@/lib/auth/providers'
 import { DEFAULT_AFTER_LOGIN, safeNextPath } from '@/lib/auth/redirect'
@@ -46,8 +47,9 @@ function firstIssue(error: z.ZodError): string {
   return error.issues[0]?.message ?? 'Please check the form.'
 }
 
-function callbackUrl(origin: string, next: string): string {
-  return `${origin}/auth/callback?next=${encodeURIComponent(next)}`
+function callbackUrl(origin: string, next: string, flow?: 'email'): string {
+  const url = `${origin}/auth/callback?next=${encodeURIComponent(next)}`
+  return flow ? `${url}&${EMAIL_FLOW_PARAM}=${flow}` : url
 }
 
 export async function signIn(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
@@ -97,7 +99,7 @@ export async function signUp(_prev: AuthFormState, formData: FormData): Promise<
     password: parsed.data.password,
     options: {
       data: { full_name: parsed.data.full_name },
-      emailRedirectTo: callbackUrl(await appOrigin(), next),
+      emailRedirectTo: callbackUrl(await appOrigin(), next, 'email'),
     },
   })
   if (error) {
@@ -160,7 +162,7 @@ export async function resendConfirmation(
     type: 'signup',
     email: parsed.data,
     options: {
-      emailRedirectTo: callbackUrl(await appOrigin(), safeNextPath(formData.get('next'))),
+      emailRedirectTo: callbackUrl(await appOrigin(), safeNextPath(formData.get('next')), 'email'),
     },
   })
   if (error) console.error('auth.resend failed:', error.code ?? error.message)

@@ -155,7 +155,9 @@ describe('resendConfirmation', () => {
     expect(auth.resend).toHaveBeenCalledWith({
       type: 'signup',
       email,
-      options: { emailRedirectTo: 'https://meet.transvoice.ai/auth/callback?next=%2Fdashboard' },
+      options: {
+        emailRedirectTo: 'https://meet.transvoice.ai/auth/callback?next=%2Fdashboard&flow=email',
+      },
     })
     expect(state.notice).toMatch(/If that email is waiting/)
   })
