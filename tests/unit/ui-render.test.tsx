@@ -4,6 +4,7 @@ import type { User } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PricingModal } from '@/components/billing/pricing-modal'
 import { Dashboard } from '@/components/dashboard/dashboard'
+import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
 import { CaptionBar } from '@/components/meeting/caption-bar'
 import { ControlBar } from '@/components/meeting/control-bar'
 
@@ -23,6 +24,7 @@ describe('Dashboard', () => {
         onAuth={noop}
         onPricing={noop}
         onJoin={noop}
+        onInvite={noop}
         onSignOut={noop}
       />,
     )
@@ -45,6 +47,7 @@ describe('Dashboard', () => {
         onAuth={noop}
         onPricing={noop}
         onJoin={noop}
+        onInvite={noop}
         onSignOut={noop}
       />,
     )
@@ -87,5 +90,38 @@ describe('Meeting pieces', () => {
     expect(screen.getByText('2')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Leave/ }))
     expect(onLeave).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Dashboard invite button', () => {
+  const overview = (canInvite: boolean, onInvite = vi.fn(), onPricing = vi.fn()) => {
+    render(
+      <DashboardOverview
+        greeting="Hi"
+        balance={canInvite ? 15 : 0}
+        canInvite={canInvite}
+        onMeeting={noop}
+        onJoin={noop}
+        onPricing={onPricing}
+        onInvite={onInvite}
+      />,
+    )
+    return { onInvite, onPricing }
+  }
+
+  it('sits next to Join with link and Start meeting', () => {
+    const { onInvite } = overview(true)
+    fireEvent.click(screen.getByRole('button', { name: /Invite Partner/ }))
+    expect(onInvite).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Join with link/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Start meeting/ })).toBeInTheDocument()
+  })
+
+  it('becomes "Get minutes to invite" → pricing at 0 minutes', () => {
+    const { onInvite, onPricing } = overview(false)
+    expect(screen.queryByRole('button', { name: /Invite Partner/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Get minutes to invite/ }))
+    expect(onPricing).toHaveBeenCalled()
+    expect(onInvite).not.toHaveBeenCalled()
   })
 })

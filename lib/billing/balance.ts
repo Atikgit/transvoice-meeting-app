@@ -20,6 +20,15 @@ export function availableMinutes(
   return Number(account.trial_minutes_remaining) + Number(account.prepaid_minutes_remaining)
 }
 
+/**
+ * Whether the user can start calls or invite (UI hint; the database's has_available_minutes is
+ * authoritative and also applies postpaid credit limits).
+ */
+export function canSpendMinutes(account: Balance | null): boolean {
+  if (!account) return false
+  return account.billing_type === 'postpaid' || availableMinutes(account) > 0
+}
+
 /** Header text: remaining minutes, or usage for postpaid accounts. */
 export function minutesLabel(account: Balance | null): string {
   if (!account) return '—'

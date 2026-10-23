@@ -1,4 +1,4 @@
-import { Link2, Video, Zap } from 'lucide-react'
+import { Link2, Lock, UserPlus, Video, Zap } from 'lucide-react'
 import { Button } from '@/components/common/button'
 import { LANGUAGE_COUNT_LABEL, LANGUAGES_AND_VOICES } from '@/lib/transvoice/languages'
 
@@ -6,15 +6,20 @@ import { LANGUAGE_COUNT_LABEL, LANGUAGES_AND_VOICES } from '@/lib/transvoice/lan
 export function DashboardOverview({
   greeting,
   balance,
+  canInvite,
   onMeeting,
   onPricing,
   onJoin,
+  onInvite,
 }: {
   greeting: string
   balance: number
+  /** False at 0 available minutes: inviting is replaced by "Get minutes to invite" (Rule 1). */
+  canInvite: boolean
   onMeeting: () => void
   onPricing: () => void
   onJoin: () => void
+  onInvite: () => void
 }) {
   return (
     <div className="mx-auto max-w-6xl px-5 py-10 lg:px-10">
@@ -28,11 +33,27 @@ export function DashboardOverview({
             Start a translated conversation in {LANGUAGES_AND_VOICES}.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={onJoin}>
             <Link2 size={15} />
             Join with link
           </Button>
+          {canInvite ? (
+            <Button variant="outline" onClick={onInvite}>
+              <UserPlus size={15} />
+              Invite Partner
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={onPricing}
+              className="text-slate-400"
+              title="You need available minutes to invite a partner"
+            >
+              <Lock size={15} />
+              Get minutes to invite
+            </Button>
+          )}
           <Button onClick={onMeeting}>
             <Video size={15} />
             Start meeting

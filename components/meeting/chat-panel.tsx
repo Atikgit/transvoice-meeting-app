@@ -65,7 +65,7 @@ export function ChatPanel({
           placeholder="Message everyone..."
           className="flex-1 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-cyan-300"
         />
-        <Button className="px-3 py-2">
+        <Button type="submit" aria-label="Send message" className="px-3 py-2">
           <Send size={14} />
         </Button>
       </form>

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { DashboardHome } from '@/components/dashboard/dashboard-home'
 import { currentBalance } from '@/lib/auth/account'
-import { availableMinutes } from '@/lib/billing/balance'
+import { availableMinutes, canSpendMinutes } from '@/lib/billing/balance'
 import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -26,6 +26,7 @@ export default async function DashboardPage() {
       userId={user.id}
       greeting={`Welcome back, ${name}`}
       balance={account ? availableMinutes(account) : 0}
+      canInvite={canSpendMinutes(account)}
     />
   )
 }

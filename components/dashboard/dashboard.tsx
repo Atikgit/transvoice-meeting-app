@@ -13,6 +13,7 @@ export function Dashboard({
   onAuth,
   onPricing,
   onJoin,
+  onInvite,
   onSignOut,
 }: {
   user: User | null
@@ -21,6 +22,7 @@ export function Dashboard({
   onAuth: () => void
   onPricing: () => void
   onJoin: () => void
+  onInvite: () => void
   onSignOut: () => void
 }) {
   return (
@@ -58,6 +60,8 @@ export function Dashboard({
         onMeeting={onMeeting}
         onPricing={onPricing}
         onJoin={onJoin}
+        canInvite={Boolean(user) && balance > 0}
+        onInvite={onInvite}
       />
     </main>
   )

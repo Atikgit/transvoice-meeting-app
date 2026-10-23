@@ -10,6 +10,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type VoiceGender = 'male' | 'female'
 export type OriginalAudioMode = 'off' | 'duck' | 'mute'
 export type BillingType = 'free' | 'prepaid' | 'postpaid'
+export type CallStatus = 'ringing' | 'live' | 'ended' | 'missed' | 'declined'
 export type BillingStatus =
   'active' | 'on_trial' | 'past_due' | 'paused' | 'unpaid' | 'cancelled' | 'expired'
 
@@ -70,9 +71,81 @@ export type Database = {
         Update: never
         Relationships: []
       }
+      meetings: {
+        Row: {
+          id: string
+          owner_id: string
+          title: string | null
+          room_name: string
+          max_participants: number
+          locked: boolean
+          created_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      invitations: {
+        /** token_hash is not selectable by clients. */
+        Row: {
+          id: string
+          meeting_id: string
+          inviter_id: string
+          token_hash: string
+          email: string | null
+          max_uses: number
+          used_count: number
+          sponsor_window: string
+          expires_at: string
+          revoked_at: string | null
+          created_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      sponsored_connections: {
+        Row: {
+          id: string
+          sponsor_id: string
+          guest_id: string
+          meeting_id: string
+          invitation_id: string | null
+          expires_at: string
+          revoked_at: string | null
+          created_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      call_sessions: {
+        Row: {
+          id: string
+          meeting_id: string
+          host_id: string
+          initiated_by: string
+          status: CallStatus
+          started_at: string | null
+          ended_at: string | null
+          end_reason: string | null
+          created_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
     }
     Views: { [_ in never]: never }
     Functions: {
+      create_invitation: {
+        Args: { p_user: string; p_token_hash: string; p_window?: string; p_meeting?: string }
+        Returns: { meeting_id: string; invitation_id: string; expires_at: string }[]
+      }
+      accept_invitation: {
+        Args: { p_token_hash: string; p_user: string }
+        Returns: string
+      }
       ensure_user_account: {
         Args: { p_user: string }
         Returns: boolean

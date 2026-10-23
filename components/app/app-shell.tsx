@@ -82,7 +82,7 @@ export function AppShell({
           onInvite={() => setModal('invite')}
           onLeave={() => setScreen('dashboard')}
         />
-        {modal === 'invite' && <InviteModal roomId={roomId} onClose={() => setModal(null)} />}
+        {modal === 'invite' && <InviteModal onClose={() => setModal(null)} />}
       </>
     )
   }
@@ -94,11 +94,12 @@ export function AppShell({
         balance={balance}
         onMeeting={startMeeting}
         onJoin={() => setScreen('join')}
+        onInvite={() => setModal('invite')}
         onAuth={() => router.push('/login?next=/')}
         onPricing={() => setModal('pricing')}
         onSignOut={handleSignOut}
       />
-      {modal === 'invite' && <InviteModal roomId={roomId} onClose={() => setModal(null)} />}
+      {modal === 'invite' && <InviteModal onClose={() => setModal(null)} />}
       {modal === 'pricing' && (
         <PricingModal userId={user?.id ?? null} balance={balance} onClose={() => setModal(null)} />
       )}

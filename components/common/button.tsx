@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ComponentProps } from 'react'
 
 export type ButtonVariant = 'primary' | 'ghost' | 'outline' | 'danger'
 
@@ -10,25 +10,16 @@ const styles: Record<ButtonVariant, string> = {
 }
 
 export function Button({
-  children,
-  onClick,
   variant = 'primary',
   className = '',
-  disabled = false,
-}: {
-  children: ReactNode
-  onClick?: () => void
-  variant?: ButtonVariant
-  className?: string
-  disabled?: boolean
-}) {
+  type = 'button',
+  ...props
+}: ComponentProps<'button'> & { variant?: ButtonVariant }) {
   return (
     <button
-      disabled={disabled}
-      onClick={onClick}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${styles[variant]} ${className}`}
-    >
-      {children}
-    </button>
+      type={type}
+      className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 disabled:opacity-50 ${styles[variant]} ${className}`}
+      {...props}
+    />
   )
 }

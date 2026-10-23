@@ -10,6 +10,7 @@ const LIMITS = {
   // Password reset and confirmation emails: checked per IP and per email.
   passwordReset: { tokens: 5, window: '1 h' },
   resendConfirmation: { tokens: 5, window: '1 h' },
+  invitation: { tokens: 20, window: '1 h' },
 } satisfies Record<string, { tokens: number; window: Duration }>
 
 export type RateLimitName = keyof typeof LIMITS
