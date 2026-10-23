@@ -12,6 +12,7 @@ export function VideoTile({
   isLocal,
   stream,
   isWaiting = false,
+  pipOnMobile = false,
 }: {
   name: string
   initials: string
@@ -21,6 +22,8 @@ export function VideoTile({
   isLocal?: boolean
   stream?: MediaStream | null
   isWaiting?: boolean
+  /** Shown as the small mobile picture-in-picture: no footer, smaller avatar. */
+  pipOnMobile?: boolean
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -55,13 +58,17 @@ export function VideoTile({
         </div>
       ) : (
         <div className="flex h-full items-center justify-center">
-          <div className="flex size-24 items-center justify-center rounded-full border-4 border-white/15 bg-cyan-700 text-2xl font-semibold text-white">
+          <div
+            className={`flex size-24 items-center justify-center rounded-full border-4 border-white/15 bg-cyan-700 text-2xl font-semibold text-white ${pipOnMobile ? 'max-md:size-12 max-md:border-2 max-md:text-sm' : ''}`}
+          >
             {initials}
           </div>
         </div>
       )}
 
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-slate-950/90 to-transparent p-4 pt-12">
+      <div
+        className={`absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-slate-950/90 to-transparent p-4 pt-12 ${pipOnMobile ? 'max-md:hidden' : ''}`}
+      >
         <div>
           <p className="text-sm font-semibold text-white">{name}</p>
           <p className="text-[11px] text-slate-400">{cameraOn ? 'Camera Active' : 'Camera Off'}</p>

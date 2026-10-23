@@ -148,7 +148,7 @@ export function MeetingRoom({
           </p>
         )}
 
-        <VideoGrid>
+        <VideoGrid pip>
           {[
             <VideoTile
               key="partner"
@@ -168,6 +168,7 @@ export function MeetingRoom({
               cameraOn={camera}
               isLocal={true}
               stream={localStream}
+              pipOnMobile
             />,
           ]}
         </VideoGrid>
