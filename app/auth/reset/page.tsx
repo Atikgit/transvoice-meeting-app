@@ -5,7 +5,7 @@ import { AuthCard } from '@/components/auth/auth-card'
 import { ResetPasswordForm } from '@/components/auth/password-forms'
 import { getSessionUser } from '@/lib/supabase/server'
 
-export const metadata: Metadata = { title: 'Choose a new password · TransVoice' }
+export const metadata: Metadata = { title: 'Choose a new password' }
 
 /**
  * Target of the password reset email. The recommended template opens a recovery session in

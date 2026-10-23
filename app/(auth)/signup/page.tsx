@@ -7,7 +7,7 @@ import { enabledProviders } from '@/lib/auth/providers'
 import { safeNextPath, withNext } from '@/lib/auth/redirect'
 import { FREE_TRIAL_MINUTES } from '@/lib/billing/config'
 
-export const metadata: Metadata = { title: 'Create account · TransVoice' }
+export const metadata: Metadata = { title: 'Create account' }
 
 export default async function SignupPage({
   searchParams,

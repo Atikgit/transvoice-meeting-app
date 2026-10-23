@@ -5,8 +5,9 @@ import { LoginForm } from '@/components/auth/login-form'
 import { OAuthButtons } from '@/components/auth/oauth-buttons'
 import { enabledProviders } from '@/lib/auth/providers'
 import { safeNextPath, withNext } from '@/lib/auth/redirect'
+import { BRAND } from '@/lib/brand'
 
-export const metadata: Metadata = { title: 'Sign in · TransVoice' }
+export const metadata: Metadata = { title: 'Sign in' }
 
 const ERRORS: Record<string, string> = {
   callback: 'That sign-in link is invalid or has expired. Please try again.',
@@ -40,7 +41,7 @@ export default async function LoginPage({
       subtitle="Sign in to start or join a translated meeting."
       footer={
         <>
-          New to TransVoice?{' '}
+          New to {BRAND.name}?{' '}
           <Link
             href={withNext('/signup', next)}
             className="font-medium text-cyan-300 hover:text-cyan-200"

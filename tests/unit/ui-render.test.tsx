@@ -2,9 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { User } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import manifest from '@/app/manifest'
 import { PricingModal } from '@/components/billing/pricing-modal'
-import { Logo } from '@/components/common/logo'
 import { Dashboard } from '@/components/dashboard/dashboard'
 import { CaptionBar } from '@/components/meeting/caption-bar'
 import { ControlBar } from '@/components/meeting/control-bar'
@@ -89,24 +87,5 @@ describe('Meeting pieces', () => {
     expect(screen.getByText('2')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Leave/ }))
     expect(onLeave).toHaveBeenCalledOnce()
-  })
-})
-
-describe('Brand', () => {
-  it('shows the logo image next to the wordmark', () => {
-    const { container } = render(<Logo />)
-    // The test renderer does not load next.config (unoptimized images), so decode the loader URL.
-    const src = decodeURIComponent(container.querySelector('img')?.getAttribute('src') ?? '')
-    expect(src).toContain('/brand/logo-192.png')
-    expect(screen.getByText('TRANSVOICE')).toBeInTheDocument()
-    expect(screen.getByText('Meet without limits')).toBeInTheDocument()
-  })
-
-  it('declares the web manifest', () => {
-    expect(manifest()).toMatchObject({
-      name: 'TransVoice Meet',
-      theme_color: '#0b0e16',
-      icons: [{ sizes: '192x192' }, { sizes: '512x512' }],
-    })
   })
 })

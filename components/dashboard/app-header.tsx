@@ -3,13 +3,14 @@ import { LogOut } from 'lucide-react'
 import { signOut } from '@/app/(auth)/actions'
 import { Logo } from '@/components/common/logo'
 import { NavLinks } from '@/components/dashboard/nav-links'
+import { BRAND } from '@/lib/brand'
 
 /** Header for the signed-in /dashboard area. */
 export function AppHeader({ minutesLabel }: { minutesLabel: string }) {
   return (
     <header className="flex min-h-[74px] flex-wrap items-center justify-between gap-3 border-b border-white/[.08] px-5 py-3 lg:px-10">
       <div className="flex items-center gap-6">
-        <Link href="/dashboard" aria-label="TransVoice dashboard">
+        <Link href="/dashboard" aria-label={`${BRAND.name} dashboard`}>
           <Logo />
         </Link>
         <NavLinks />

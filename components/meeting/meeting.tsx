@@ -14,6 +14,7 @@ import { useLocalMedia } from '@/features/meeting/useLocalMedia'
 import { playTtsAudio } from '@/features/translation/playTtsAudio'
 import { useLegacyChunkTranslator } from '@/features/translation/useLegacyChunkTranslator'
 import { getDisplayName } from '@/lib/user'
+import { BRAND } from '@/lib/brand'
 
 export function Meeting({
   user,
@@ -83,7 +84,7 @@ export function Meeting({
               <p className="font-mono text-[10px] uppercase tracking-[.2em] text-slate-600">
                 LIVE SESSION
               </p>
-              <h1 className="mt-1 text-lg font-semibold text-white">TransVoice Meeting</h1>
+              <h1 className="mt-1 text-lg font-semibold text-white">{BRAND.name} meeting</h1>
             </div>
             <span className="flex items-center gap-2 text-xs text-slate-400">
               <Users size={14} /> {partnerConnected ? '2 People' : '1 Person'}

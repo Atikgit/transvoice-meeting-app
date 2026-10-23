@@ -1,10 +1,11 @@
 import type { MetadataRoute } from 'next'
+import { BRAND } from '@/lib/brand'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'TransVoice Meet',
-    short_name: 'TransVoice',
-    description: 'Live voice-translated meetings.',
+    name: BRAND.appName,
+    short_name: BRAND.name,
+    description: `${BRAND.description}.`,
     start_url: '/dashboard',
     display: 'standalone',
     background_color: '#0b0e16',

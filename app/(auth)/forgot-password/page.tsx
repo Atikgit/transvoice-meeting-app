@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { AuthCard } from '@/components/auth/auth-card'
 import { ForgotPasswordForm } from '@/components/auth/password-forms'
 
-export const metadata: Metadata = { title: 'Reset password · TransVoice' }
+export const metadata: Metadata = { title: 'Reset password' }
 
 const ERRORS: Record<string, string> = {
   link: 'That reset link is invalid or has expired. Request a new one below.',

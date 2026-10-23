@@ -3,10 +3,12 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { LANGUAGES_AND_VOICES } from '@/lib/transvoice/languages'
 import './globals.css'
+import { BRAND, TITLE_TEMPLATE } from '@/lib/brand'
 
 export const metadata: Metadata = {
-  title: 'TransVoice Meet',
-  description: `Secure, live voice-translated meetings in ${LANGUAGES_AND_VOICES}.`,
+  title: { default: BRAND.appName, template: TITLE_TEMPLATE },
+  applicationName: BRAND.appName,
+  description: `${BRAND.description} in ${LANGUAGES_AND_VOICES}.`,
   generator: 'v0.app',
 }
 

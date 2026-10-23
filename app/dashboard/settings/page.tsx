@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { SettingsForm } from '@/components/settings/settings-form'
 import { createClient } from '@/lib/supabase/server'
 
-export const metadata: Metadata = { title: 'Settings · TransVoice' }
+export const metadata: Metadata = { title: 'Settings' }
 
 export default async function SettingsPage() {
   const supabase = await createClient()
