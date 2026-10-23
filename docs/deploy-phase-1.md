@@ -120,11 +120,11 @@ git pull origin main
 ./deploy.sh
 ```
 
-`docker-compose.yml` now publishes the container on **`127.0.0.1:3003`** only, so it is no
-longer reachable from the internet directly. Nginx must proxy to `http://127.0.0.1:3003`, and set
-both `X-Forwarded-For` and `X-Real-IP`. The app trusts those headers for the signup country only
-because nothing else can reach the port. Compose recreates the container because the port binding
-changed.
+`docker-compose.yml` publishes the container on **`172.17.0.1:3003`**, the Docker bridge
+gateway: Nginx runs in its own container (`transvoice_nginx`) and reaches the app there, while
+the port is not exposed on the public interface. Nginx must set both `X-Forwarded-For` and
+`X-Real-IP`; the app trusts those headers for the signup country only because nothing else can
+reach the port.
 
 ### Smoke test
 
