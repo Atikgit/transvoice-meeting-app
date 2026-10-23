@@ -45,6 +45,7 @@ export default async function MeetingPage({
       userId={context.userId}
       role={context.role}
       roomName={context.meeting.roomName}
+      title={context.meeting.title ?? 'Translated meeting'}
       displayName={context.profile.fullName}
       listenLang={context.profile.listenLang}
       initialSession={session}

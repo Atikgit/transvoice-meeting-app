@@ -42,6 +42,7 @@ const room = (role: 'host' | 'guest', initialSession: SessionState = { status: '
       userId="u1"
       role={role}
       roomName="m-room"
+      title="Translated meeting"
       displayName="Atik"
       listenLang="en-US"
       initialSession={initialSession}

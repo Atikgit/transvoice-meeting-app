@@ -29,6 +29,8 @@ export interface MeetingRoomProps {
   role: MeetingRole
   /** Realtime channel name (meetings.room_name). */
   roomName: string
+  /** Shown in the header. */
+  title: string
   displayName: string
   /** Language this participant hears (profiles.listen_lang). */
   listenLang: string
@@ -51,6 +53,7 @@ export function MeetingRoom({
   userId,
   role,
   roomName,
+  title,
   displayName,
   listenLang,
   initialSession,
@@ -124,12 +127,10 @@ export function MeetingRoom({
     <main className="grid h-dvh grid-rows-[auto_1fr_auto_auto] overflow-hidden bg-[#0b0e16] text-slate-100">
       <h1 className="sr-only">{BRAND.name} meeting</h1>
       <MeetingHeader
-        roomId={roomName}
-        partnerConnected={channel.partnerConnected}
-        partnerName={channel.partnerName}
-        minutesLabel={minutesLabel}
+        title={title}
+        status={live ? 'live' : channel.partnerConnected ? 'ready' : 'waiting'}
         statusLabel={statusLabel}
-        live={live}
+        minutesLabel={minutesLabel && minutesLabel !== '—' ? minutesLabel : undefined}
       />
 
       <section aria-label="Participants" className="relative min-h-0 px-4 pt-4 lg:px-6">

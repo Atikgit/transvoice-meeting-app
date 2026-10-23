@@ -35,6 +35,7 @@ export default async function RoomPreview({
       userId="00000000-0000-4000-8000-000000000003"
       role={role === 'guest' ? 'guest' : 'host'}
       roomName="dev-preview"
+      title="Translated meeting"
       displayName="Preview User"
       listenLang="en-US"
       initialSession={session}

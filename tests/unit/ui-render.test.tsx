@@ -7,6 +7,7 @@ import { joinPathFromLink } from '@/components/dashboard/join-link-modal'
 import { UserManual } from '@/components/dashboard/user-manual'
 import { appendCaption, CaptionBar } from '@/components/meeting/caption-bar'
 import { ControlBar } from '@/components/meeting/control-bar'
+import { MeetingHeader } from '@/components/meeting/meeting-header'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
@@ -171,4 +172,17 @@ describe('Join with link', () => {
     ['https://evil.example/phish', null],
     ['hello', null],
   ])('%s → %s', (input, path) => expect(joinPathFromLink(input)).toBe(path))
+})
+
+describe('Meeting header', () => {
+  it('shows brand, meeting name, encrypted session and the status pill; never a stray dash', () => {
+    const { container } = render(
+      <MeetingHeader title="Weekly sync" status="live" statusLabel="Live 01:23" />,
+    )
+    expect(screen.getByText('TransVoice AI')).toBeInTheDocument()
+    expect(screen.getByText('Weekly sync')).toBeInTheDocument()
+    expect(screen.getByText('Encrypted session')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Live 01:23')
+    expect(container.textContent).not.toContain('—')
+  })
 })
