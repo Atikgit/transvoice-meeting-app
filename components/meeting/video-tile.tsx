@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { AudioLines, MicOff, Users } from 'lucide-react'
+import { Mic, MicOff, Users } from 'lucide-react'
 
 export function VideoTile({
   name,
@@ -67,7 +67,7 @@ export function VideoTile({
         </div>
         <div className="rounded-lg bg-slate-950/60 p-2">
           {active ? (
-            <AudioLines size={14} className="text-cyan-300 animate-pulse" />
+            <Mic size={14} className="text-cyan-300 animate-pulse" />
           ) : (
             <MicOff size={14} className="text-rose-400" />
           )}

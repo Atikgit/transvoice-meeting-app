@@ -11,6 +11,10 @@ import { z } from 'zod'
 const serverSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
+  // Public URL used in auth email links, e.g. https://meet.transvoice.ai.
+  // Unset (Vercel previews, local dev): taken from the request.
+  APP_URL: z.url().optional(),
+
   // Supabase
   NEXT_PUBLIC_SUPABASE_URL: z.url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
@@ -44,6 +48,12 @@ const serverSchema = z.object({
   LANG_MULTIPLIER_ENABLED: z.stringbool().default(true),
   RECONNECT_GRACE_SEC: z.coerce.number().int().positive().default(60),
   // The free trial amount lives in the database (private.app_settings), not here.
+
+  // Signup country (analytics). Without the salt no IP hash is stored; without the GeoLite2
+  // database (downloaded at image build with MAXMIND_LICENSE_KEY) the country is null.
+  IP_HASH_SALT: z.string().min(16).optional(),
+  MAXMIND_LICENSE_KEY: z.string().min(1).optional(),
+  GEOIP_DB_PATH: z.string().min(1).optional(),
 
   // Auth providers (server-side so they can change without rebuilding the image)
   AUTH_GOOGLE_ENABLED: z.stringbool().default(false),

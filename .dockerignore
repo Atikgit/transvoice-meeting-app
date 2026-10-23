@@ -12,3 +12,4 @@ docs
 Dockerfile
 docker-compose.yml
 Caddyfile
+geoip

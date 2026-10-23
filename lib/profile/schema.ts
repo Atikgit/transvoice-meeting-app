@@ -1,7 +1,10 @@
 import { z } from 'zod'
-import { isSupportedLanguage } from '@/lib/transvoice/languages'
+import { isSpokenLanguage, isSupportedLanguage } from '@/lib/transvoice/languages'
 
-const language = z.string().refine(isSupportedLanguage, 'Choose a language from the list.')
+const listenLanguage = z.string().refine(isSupportedLanguage, 'Choose a language from the list.')
+const spokenLanguage = z
+  .string()
+  .refine(isSpokenLanguage, 'Choose a spoken language from the list.')
 const emptyToNull = (value: string) => (value === '' ? null : value)
 
 /** Editable profile fields (matches the column grants in the RLS migration). */
@@ -20,8 +23,8 @@ export const profileUpdateSchema = z.object({
       'Use a full LinkedIn URL, e.g. https://www.linkedin.com/in/your-name',
     )
     .transform(emptyToNull),
-  spoken_lang: language,
-  listen_lang: language,
+  spoken_lang: spokenLanguage,
+  listen_lang: listenLanguage,
   voice_gender: z.enum(['male', 'female']),
   original_audio_mode: z.enum(['off', 'duck', 'mute']),
 })

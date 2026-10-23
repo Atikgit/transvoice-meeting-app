@@ -30,3 +30,18 @@ test('an external next value is neutralised', async ({ page }) => {
     '/signup?next=%2Fdashboard',
   )
 })
+
+test('login links to the forgot-password page', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByRole('link', { name: 'Forgot password?' }).click()
+  await expect(page).toHaveURL(/\/forgot-password$/)
+  await expect(page.getByRole('heading', { name: 'Forgot your password?' })).toBeVisible()
+})
+
+test('a reset page without a recovery session offers a new link', async ({ page }) => {
+  await page.goto('/auth/reset')
+  await expect(page.getByRole('link', { name: 'Request a new link' })).toHaveAttribute(
+    'href',
+    '/forgot-password',
+  )
+})

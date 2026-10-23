@@ -4,7 +4,7 @@ import { useActionState, type ReactNode } from 'react'
 import { updateProfile, type SettingsFormState } from '@/app/dashboard/settings/actions'
 import { FormMessage, inputClass } from '@/components/auth/auth-card'
 import type { Profile } from '@/lib/supabase/database.types'
-import { languageOptions } from '@/lib/transvoice/languages'
+import { languageOptions, spokenLanguageOptions } from '@/lib/transvoice/languages'
 
 const selectClass =
   'w-full rounded-xl border border-white/10 bg-[#151c2a] px-3 py-3 text-sm text-slate-200 outline-none focus:border-cyan-300'
@@ -83,7 +83,7 @@ export function SettingsForm({ profile }: { profile: EditableProfile }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="I speak">
             <select name="spoken_lang" defaultValue={profile.spoken_lang} className={selectClass}>
-              {languageOptions.map((l) => (
+              {spokenLanguageOptions.map((l) => (
                 <option key={l.code} value={l.code}>
                   {l.label}
                 </option>

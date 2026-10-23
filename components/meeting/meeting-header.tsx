@@ -5,10 +5,12 @@ export function MeetingHeader({
   roomId,
   partnerConnected,
   partnerName,
+  minutesLabel,
 }: {
   roomId: string
   partnerConnected: boolean
   partnerName: string
+  minutesLabel?: string
 }) {
   return (
     <header className="flex h-[70px] items-center justify-between border-b border-white/[.08] px-5 lg:px-8">
@@ -21,6 +23,11 @@ export function MeetingHeader({
         </span>
       </div>
       <div className="flex items-center gap-3">
+        {minutesLabel && (
+          <span className="hidden text-xs font-semibold text-cyan-300 sm:block">
+            {minutesLabel}
+          </span>
+        )}
         <span
           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${partnerConnected ? 'bg-emerald-400/15 text-emerald-300' : 'bg-amber-400/15 text-amber-300'}`}
         >

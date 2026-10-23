@@ -1,5 +1,6 @@
 import 'server-only'
 import { headers } from 'next/headers'
+import { serverEnv } from '@/lib/env'
 
 /**
  * Public origin of the current request, from the proxy headers (Caddy / Vercel) or Host.
@@ -12,6 +13,12 @@ export async function requestOrigin(): Promise<string> {
     h.get('x-forwarded-proto') ??
     (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https')
   return `${proto.split(',')[0]!.trim()}://${host.split(',')[0]!.trim()}`
+}
+
+/** Origin for links in auth emails: APP_URL when set, else the request origin. */
+export async function appOrigin(): Promise<string> {
+  const appUrl = serverEnv().APP_URL
+  return appUrl ? new URL(appUrl).origin : requestOrigin()
 }
 
 /** Client IP as reported by the reverse proxy; "unknown" when absent. */

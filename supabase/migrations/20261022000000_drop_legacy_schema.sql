@@ -1,8 +1,7 @@
 -- Legacy MVP schema reset.
 --
--- DECISION PENDING (docs/PROMPT.md §13): this file implements "test users only → fresh schema".
--- If real paying users exist, replace it with a data-preserving migration that copies
--- profiles.minutes_balance into billing_accounts before dropping anything.
+-- DECIDED (docs/PROMPT.md §13): the project only has test users, so the fresh schema is approved
+-- and legacy profiles.minutes_balance is not carried over.
 --
 -- Existing auth.users rows are kept; the next migrations backfill their profiles and billing accounts.
 

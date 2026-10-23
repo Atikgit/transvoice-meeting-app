@@ -1,10 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { AudioLines, ChevronDown } from 'lucide-react'
+import { ChevronDown, Mic } from 'lucide-react'
 import { Button } from '@/components/common/button'
 import { Logo } from '@/components/common/logo'
-import { languageOptions } from '@/lib/transvoice/languages'
+import {
+  LANGUAGES_AND_VOICES,
+  languageOptions,
+  spokenLanguageOptions,
+} from '@/lib/transvoice/languages'
 
 export function JoinScreen({
   onJoin,
@@ -56,7 +60,8 @@ export function JoinScreen({
               Join Translated Meeting
             </h1>
             <p className="mt-4 text-sm leading-6 text-slate-400">
-              Speak in your language, hear in theirs. Set your languages before joining.
+              Speak in your language, hear in theirs: {LANGUAGES_AND_VOICES}. Set your languages
+              before joining.
             </p>
             <div className="mt-8 space-y-3">
               <input
@@ -75,7 +80,7 @@ export function JoinScreen({
                     onChange={(e) => setSrcLang(e.target.value)}
                     className="w-full rounded-xl border border-white/10 bg-[#151c2a] px-3 py-2.5 text-xs text-slate-200 outline-none"
                   >
-                    {languageOptions.map((l) => (
+                    {spokenLanguageOptions.map((l) => (
                       <option key={l.code} value={l.code}>
                         {l.label}
                       </option>
@@ -125,7 +130,7 @@ export function JoinScreen({
               </span>
             </div>
             <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#192235]">
-              <AudioLines
+              <Mic
                 className={`size-10 ${mic ? 'text-cyan-300 animate-pulse' : 'text-slate-600'}`}
               />
               <span className="absolute bottom-2 left-2 text-[10px] text-slate-300">

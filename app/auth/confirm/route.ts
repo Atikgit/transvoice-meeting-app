@@ -1,5 +1,6 @@
 import type { EmailOtpType } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
+import { afterSignIn } from '@/lib/auth/account'
 import { safeNextPath } from '@/lib/auth/redirect'
 import { requestOrigin } from '@/lib/http/request'
 import { createClient } from '@/lib/supabase/server'
@@ -27,9 +28,14 @@ export async function GET(request: NextRequest) {
 
   if (tokenHash && type && EMAIL_OTP_TYPES.includes(type)) {
     const supabase = await createClient()
-    const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
-    if (!error) return NextResponse.redirect(`${origin}${next}`)
+    const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
+    if (!error) {
+      if (data.user) await afterSignIn(data.user.id, request.headers)
+      return NextResponse.redirect(`${origin}${next}`)
+    }
   }
+
+  if (type === 'recovery') return NextResponse.redirect(`${origin}/forgot-password?error=link`)
 
   const login = new URL('/login', origin)
   login.searchParams.set('error', 'confirm')

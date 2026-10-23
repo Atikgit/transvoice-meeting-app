@@ -26,11 +26,17 @@ describe('profileUpdateSchema', () => {
     ['linkedin_url', 'https://evil.com/in/atik'],
     ['linkedin_url', 'http://linkedin.com/in/atik'],
     ['spoken_lang', 'xx-XX'],
+    ['spoken_lang', 'zu-ZA'], // listen-only: Whisper cannot recognize isiZulu
+    ['listen_lang', 'xx-XX'],
     ['voice_gender', 'robot'],
     ['original_audio_mode', 'loud'],
     ['headline', 'x'.repeat(161)],
   ])('rejects invalid %s', (field, value) => {
     expect(profileUpdateSchema.safeParse({ ...valid, [field]: value }).success).toBe(false)
+  })
+
+  it('accepts listen-only languages for listening', () => {
+    expect(profileUpdateSchema.safeParse({ ...valid, listen_lang: 'zu-ZA' }).success).toBe(true)
   })
 
   it('ignores fields users may not edit', () => {

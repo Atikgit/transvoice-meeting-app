@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Check, Link2 } from 'lucide-react'
 import { Button } from '@/components/common/button'
 import { Modal } from '@/components/common/modal'
+import { LANGUAGES_AND_VOICES } from '@/lib/transvoice/languages'
 
 // Legacy guessable link; replaced by hashed, expiring /invite/[token] links in Phase 2.
 export function InviteModal({ roomId, onClose }: { roomId: string; onClose: () => void }) {
@@ -13,7 +14,10 @@ export function InviteModal({ roomId, onClose }: { roomId: string; onClose: () =
 
   return (
     <Modal title="Invite participant" onClose={onClose}>
-      <p className="text-sm text-slate-400">Send this link to your partner to join this room.</p>
+      <p className="text-sm text-slate-400">
+        Send this link to your partner to join this room. Each of you speaks and hears your own
+        language, with {LANGUAGES_AND_VOICES}.
+      </p>
       <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/50 p-2">
         <Link2 size={16} className="ml-2 text-cyan-300" />
         <span className="min-w-0 flex-1 truncate px-2 text-xs text-slate-300">{link}</span>

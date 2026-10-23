@@ -6,9 +6,11 @@ services:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
         NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
+        MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
+        GEOIP_REFRESH: ${GEOIP_REFRESH:-}
     image: transvoice-meeting-app:latest
     container_name: transvoice_meeting_app
     env_file: .env.production
     restart: unless-stopped
     ports:
-      - "3003:3000"
+      - "172.17.0.1:3003:3000"

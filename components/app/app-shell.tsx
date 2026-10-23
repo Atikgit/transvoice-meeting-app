@@ -8,7 +8,7 @@ import { Dashboard } from '@/components/dashboard/dashboard'
 import { InviteModal } from '@/components/invite/invite-modal'
 import { JoinScreen } from '@/components/join/join-screen'
 import { Meeting } from '@/components/meeting/meeting'
-import { availableMinutes } from '@/lib/supabase/database.types'
+import { availableMinutes, type Balance, fetchBalance, minutesLabel } from '@/lib/billing/balance'
 import { createClient } from '@/lib/supabase/client'
 
 export type Screen = 'dashboard' | 'meeting' | 'join'
@@ -28,7 +28,8 @@ export function AppShell({
   const [tgtLang, setTgtLang] = useState('bn-BD')
   const [guestName, setGuestName] = useState('Guest Partner')
   const [user, setUser] = useState<User | null>(null)
-  const [balance, setBalance] = useState<number>(0)
+  const [account, setAccount] = useState<Balance | null>(null)
+  const balance = account ? availableMinutes(account) : 0
 
   const supabase = createClient()
   const router = useRouter()
@@ -37,14 +38,7 @@ export function AppShell({
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user) {
         setUser(data.user)
-        supabase
-          .from('billing_accounts')
-          .select('trial_minutes_remaining, prepaid_minutes_remaining')
-          .eq('user_id', data.user.id)
-          .maybeSingle()
-          .then(({ data: account }) => {
-            if (account) setBalance(availableMinutes(account))
-          })
+        fetchBalance(supabase, data.user.id).then(setAccount)
       }
     })
   }, [supabase])
@@ -52,7 +46,7 @@ export function AppShell({
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     setUser(null)
-    setBalance(0)
+    setAccount(null)
     window.location.reload()
   }
 
@@ -81,6 +75,7 @@ export function AppShell({
       <>
         <Meeting
           user={user}
+          minutesLabel={user ? minutesLabel(account) : undefined}
           roomId={roomId}
           tgtLang={tgtLang}
           guestName={guestName}

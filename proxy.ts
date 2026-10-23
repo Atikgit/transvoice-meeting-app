@@ -3,7 +3,7 @@ import { DEFAULT_AFTER_LOGIN, safeNextPath } from '@/lib/auth/redirect'
 import { updateSession } from '@/lib/supabase/middleware'
 
 const PROTECTED = [/^\/dashboard(\/|$)/, /^\/m\//]
-const AUTH_PAGES = ['/login', '/signup']
+const AUTH_PAGES = ['/login', '/signup', '/forgot-password']
 
 export async function proxy(request: NextRequest) {
   const { response, userId } = await updateSession(request)
@@ -38,6 +38,6 @@ function redirectWithCookies(url: URL, from: NextResponse) {
 export const config = {
   // Pages only: API routes authenticate themselves, and static assets need no session.
   matcher: [
-    '/((?!api/|_next/static|_next/image|favicon.ico|icon|apple-icon|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!api/|_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 }

@@ -24,6 +24,13 @@ const SUPABASE_STUB = `
     raw_user_meta_data jsonb not null default '{}'
   );
 
+  create table auth.identities (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users (id) on delete cascade,
+    provider text not null,
+    identity_data jsonb not null default '{}'
+  );
+
   create function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
   $$;
@@ -66,6 +73,32 @@ export async function createUser(
     [email, confirmed, fullName ?? null],
   )
   return rows[0]!.id
+}
+
+/**
+ * A Google/LinkedIn user as Supabase Auth may store it: provider-verified identity, but
+ * email_confirmed_at not set and the auth.users triggers skipped (session_replication_role).
+ */
+export async function createOAuthUserWithoutTriggers(
+  db: PGlite,
+  email: string,
+  provider: 'google' | 'linkedin_oidc',
+): Promise<string> {
+  let id = ''
+  await db.transaction(async (tx) => {
+    await tx.exec(`set local session_replication_role = replica`)
+    const { rows } = await tx.query<{ id: string }>(
+      `insert into auth.users (email) values ($1) returning id`,
+      [email],
+    )
+    id = rows[0]!.id
+    await tx.query(
+      `insert into auth.identities (user_id, provider, identity_data)
+       values ($1, $2, jsonb_build_object('email', $3::text, 'email_verified', true))`,
+      [id, provider, email],
+    )
+  })
+  return id
 }
 
 export async function confirmEmail(db: PGlite, userId: string): Promise<void> {

@@ -1,7 +1,14 @@
 import type { PGlite } from '@electric-sql/pglite'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { FREE_TRIAL_MINUTES } from '@/lib/billing/config'
-import { balances, confirmEmail, createTestDb, createUser } from './harness'
+import {
+  asUser,
+  balances,
+  confirmEmail,
+  createOAuthUserWithoutTriggers,
+  createTestDb,
+  createUser,
+} from './harness'
 
 let db: PGlite
 
@@ -71,6 +78,46 @@ describe('signup and the free trial', () => {
     const b = await createUser(db, 'a.b@example.com')
     expect((await balances(db, a)).trial).toBe(FREE_TRIAL_MINUTES)
     expect((await balances(db, b)).trial).toBe(FREE_TRIAL_MINUTES)
+  })
+})
+
+describe('ensure_user_account (called on every sign-in)', () => {
+  const ensure = (user: string) =>
+    db.query<{ granted: boolean }>('select public.ensure_user_account($1) granted', [user])
+
+  it('creates the missing account and grants the trial to a verified OAuth identity', async () => {
+    for (const provider of ['google', 'linkedin_oidc'] as const) {
+      const user = await createOAuthUserWithoutTriggers(db, `${provider}@example.com`, provider)
+      expect((await ensure(user)).rows[0]!.granted).toBe(true)
+      expect(await balances(db, user)).toMatchObject({ trial: FREE_TRIAL_MINUTES, prepaid: 0 })
+    }
+  })
+
+  it('is idempotent and never grants twice', async () => {
+    const user = await createUser(db, 'repeat@example.com')
+    expect((await ensure(user)).rows[0]!.granted).toBe(false)
+    expect((await ensure(user)).rows[0]!.granted).toBe(false)
+    expect((await balances(db, user)).trial).toBe(FREE_TRIAL_MINUTES)
+  })
+
+  it('does not grant to an unconfirmed email signup', async () => {
+    const user = await createUser(db, 'unconfirmed@example.com', { confirmed: false })
+    expect((await ensure(user)).rows[0]!.granted).toBe(false)
+    expect((await balances(db, user)).trial).toBe(0)
+  })
+
+  it('respects the once-per-normalized-email rule across providers', async () => {
+    await createUser(db, 'Same.Person@gmail.com')
+    const oauth = await createOAuthUserWithoutTriggers(db, 'sameperson+x@gmail.com', 'google')
+    expect((await ensure(oauth)).rows[0]!.granted).toBe(false)
+    expect((await balances(db, oauth)).trial).toBe(0)
+  })
+
+  it('is not callable by signed-in users', async () => {
+    const user = await createUser(db, 'caller@example.com')
+    await expect(
+      asUser(db, user, (tx) => tx.query('select public.ensure_user_account($1)', [user])),
+    ).rejects.toThrow(/permission denied/)
   })
 })
 

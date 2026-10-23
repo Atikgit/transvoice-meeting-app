@@ -369,7 +369,12 @@ Answers given after Phase 0. These override earlier sections where they conflict
 - **No rollover.** Unused subscription minutes are reset at each renewal: the prepaid bucket is *set* to the plan's minutes, and the forfeited remainder is logged as a `usage_ledger` row with `kind='expire'`. The **15 free signup minutes never expire**: they live in a separate `trial_minutes_remaining` bucket. Debits use subscription minutes first, then trial minutes.
 - **Free trial anti-abuse:** the trial is granted when the email is verified (OAuth signups arrive verified), once per normalized email hash (lowercase, `+tag` stripped, Gmail dots ignored). The hash is kept after account deletion.
 - **Auth UI** shows email, Google and LinkedIn (OIDC). Each provider button is hidden unless `AUTH_GOOGLE_ENABLED` / `AUTH_LINKEDIN_ENABLED` is true (server-side flags, default off, so they change without an image rebuild).
-- **Languages:** the API supports 140+, but the UI lists the 73 tested languages and its copy says "70+ languages" until the full list is added.
+- **Fresh schema approved (2026-10-22).** The Supabase project `uvgcaedyalkzsqykdhaw` only has test users, so `20261022000000_drop_legacy_schema.sql` drops the MVP tables and every auth user is backfilled with a profile, a billing account and (if verified) the trial.
+- **Diamond Pro is monthly** in Lemon Squeezy, like Bronze Starter and Business Standard ($8.88/mo → 300 min per period).
+- **Trial on first OAuth sign-in:** besides the auth.users triggers, `/auth/callback` and `/auth/confirm` call `ensure_user_account()` on every sign-in, which grants the trial to a confirmed email or a provider-verified Google/LinkedIn identity (still once per normalized email).
+- **Languages:** the pickers list every Azure Neural TTS locale (154, from `lib/transvoice/languages.ts`) and the copy says "140+ languages & voices". "I speak" only offers languages Whisper can recognize; "I want to hear" offers all.
+- **Signup country** (`profiles.country_code`, `country_name`, `signup_ip_hash`, `signup_at`) is analytics only: written once by the auth callbacks with the service role, never selectable or editable by clients, never shown in the UI. Offline GeoLite2 lookup (or Cloudflare `CF-IPCountry`); the raw IP is never stored.
+- **Password reset** via `/forgot-password` → email → `/auth/reset`. Neutral responses (no account enumeration); 5/hour per IP and per email. Rate limits fall back to process memory when Upstash is not configured.
 - **Hosting:** see §9.1.
 
 **Begin with Phase 0 now.**

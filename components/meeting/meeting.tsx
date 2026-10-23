@@ -17,6 +17,7 @@ import { getDisplayName } from '@/lib/user'
 
 export function Meeting({
   user,
+  minutesLabel,
   roomId,
   tgtLang,
   guestName,
@@ -24,6 +25,8 @@ export function Meeting({
   onLeave,
 }: {
   user: User | null
+  /** Payer's remaining minutes (signed-in users only). */
+  minutesLabel?: string
   roomId: string
   tgtLang: string
   guestName: string
@@ -70,6 +73,7 @@ export function Meeting({
         roomId={roomId}
         partnerConnected={partnerConnected}
         partnerName={partnerName}
+        minutesLabel={minutesLabel}
       />
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">

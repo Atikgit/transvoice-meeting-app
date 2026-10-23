@@ -1,5 +1,7 @@
+export const dynamic = 'force-dynamic'
 import { randomBytes } from 'node:crypto'
 import { AppShell, type Screen } from '@/components/app/app-shell'
+
 
 function initialScreen(view: unknown): Screen {
   return view === 'join' || view === 'meeting' ? view : 'dashboard'

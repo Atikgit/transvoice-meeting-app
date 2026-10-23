@@ -19,7 +19,8 @@ pnpm dlx supabase db push
 
 > `20261022000000_drop_legacy_schema.sql` drops the MVP `profiles` table and the
 > `add_user_minutes` / `deduct_user_minutes` functions. Only run it if the existing data is test
-> data (see `docs/PROMPT.md` §13).
+> data (approved for production, see `docs/PROMPT.md` §13). `20261022000400` then backfills every
+> existing user. Production deploy order and checks: [deploy-phase-1.md](deploy-phase-1.md).
 
 After applying, regenerate the TypeScript types so new tables are typed:
 
@@ -31,11 +32,20 @@ pnpm db:types
 
 Supabase → Authentication:
 
-| Setting                                         | Value                                                                                                                                       |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sign In / Providers → Email → **Confirm email** | **On.** Trial minutes are granted on confirmation.                                                                                          |
-| URL Configuration → **Site URL**                | Production URL, e.g. `https://app.transvoice.example`                                                                                       |
-| URL Configuration → **Redirect URLs**           | `https://<prod-domain>/auth/callback`, `https://*-<vercel-team>.vercel.app/auth/callback` (previews), `http://localhost:3000/auth/callback` |
+| Setting                                         | Value                                                                                                                                                               |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign In / Providers → Email → **Confirm email** | **On.** Trial minutes are granted on confirmation.                                                                                                                  |
+| URL Configuration → **Site URL**                | `https://meet.transvoice.ai`                                                                                                                                        |
+| URL Configuration → **Redirect URLs**           | `https://meet.transvoice.ai/auth/callback`, `https://meet.transvoice.ai/auth/reset`, `https://*-<vercel-team>.vercel.app/**` (previews), `http://localhost:3000/**` |
+
+The app sends `APP_URL` (`https://meet.transvoice.ai` in production) as the redirect target of
+every auth email, so it must match an allow-listed URL.
+
+**SMTP:** Supabase's built-in email sender is limited to a few messages per hour for the whole
+project and is meant for testing. Before launch, set Authentication → Emails → **SMTP Settings**
+to a real provider (Resend, Postmark, SES…), then raise Authentication → Rate Limits → email
+sending. The app adds its own limits on top (password reset and resend confirmation: 5/hour per
+IP and per email).
 
 ### Email template
 
@@ -50,6 +60,27 @@ when the email is opened in a different browser:
 
 (Without this change the default link still works through `/auth/callback`, but only in the
 browser that signed up.)
+
+Authentication → Emails → **Reset Password** (subject: `Reset your TransVoice password`):
+
+```html
+<h2>Reset your password</h2>
+<p>Someone asked to reset the password for your TransVoice Meet account ({{ .Email }}).</p>
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/auth/reset">
+    Choose a new password
+  </a>
+</p>
+<p>
+  The link works once and expires in 1 hour. If you did not ask for this, ignore this email: your
+  password stays the same.
+</p>
+```
+
+`/auth/confirm` opens a recovery session and sends the user to `/auth/reset` to set the new
+password (min. 8 characters), then on to `/dashboard`. Like the signup link, it works in any
+browser. The default template (`{{ .ConfirmationURL }}`) also works, through
+`/auth/reset?code=…`, but only in the browser that requested the reset.
 
 ## 3. OAuth providers
 

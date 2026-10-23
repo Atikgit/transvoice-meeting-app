@@ -29,6 +29,11 @@ export type Database = {
           original_audio_mode: OriginalAudioMode
           created_at: string
           updated_at: string
+          /** Server-only analytics columns: not selectable or editable by clients. */
+          country_code: string | null
+          country_name: string | null
+          signup_ip_hash: string | null
+          signup_at: string | null
         }
         Insert: never
         Update: {
@@ -68,6 +73,19 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      ensure_user_account: {
+        Args: { p_user: string }
+        Returns: boolean
+      }
+      record_signup_geo: {
+        Args: {
+          p_user: string
+          p_country_code: string | null
+          p_country_name: string | null
+          p_ip_hash: string | null
+        }
+        Returns: boolean
+      }
       has_available_minutes: {
         Args: { p_user: string }
         Returns: boolean
@@ -115,10 +133,3 @@ export type Database = {
 
 export type Profile = Database['public']['Tables']['profiles']['Row']
 export type BillingAccount = Database['public']['Tables']['billing_accounts']['Row']
-
-/** Minutes the user can spend now (trial + prepaid); postpaid accounts report accrual instead. */
-export function availableMinutes(
-  account: Pick<BillingAccount, 'trial_minutes_remaining' | 'prepaid_minutes_remaining'>,
-): number {
-  return Number(account.trial_minutes_remaining) + Number(account.prepaid_minutes_remaining)
-}

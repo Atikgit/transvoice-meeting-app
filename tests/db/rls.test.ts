@@ -52,6 +52,27 @@ describe('profiles', () => {
     expect(row).toEqual({ headline: 'Founder', spoken_lang: 'bn-BD' })
   })
 
+  it('accepts locales with script and dialect subtags, rejects malformed ones', async () => {
+    const row = await asUser(db, alice, async (tx) => {
+      await tx.query(
+        `update public.profiles set spoken_lang = 'sr-Latn-RS', listen_lang = 'zh-CN-sichuan'
+         where id = $1`,
+        [alice],
+      )
+      const { rows } = await tx.query(
+        'select spoken_lang, listen_lang from public.profiles where id = $1',
+        [alice],
+      )
+      return rows[0]
+    })
+    expect(row).toEqual({ spoken_lang: 'sr-Latn-RS', listen_lang: 'zh-CN-sichuan' })
+    await expect(
+      asUser(db, alice, (tx) =>
+        tx.query(`update public.profiles set listen_lang = 'en_us; drop' where id = $1`, [alice]),
+      ),
+    ).rejects.toThrow(/check constraint/)
+  })
+
   it("a user cannot update someone else's profile", async () => {
     const affected = await asUser(db, alice, async (tx) => {
       const result = await tx.query(
@@ -74,6 +95,70 @@ describe('profiles', () => {
   it('a user cannot insert or delete profiles', async () => {
     await expect(
       asUser(db, alice, (tx) => tx.query(`delete from public.profiles where id = $1`, [alice])),
+    ).rejects.toThrow(/permission denied/)
+  })
+})
+
+describe('signup geo columns', () => {
+  const GEO_COLUMNS = ['country_code', 'country_name', 'signup_ip_hash', 'signup_at']
+  const record = (user: string, code: string | null, hash: string | null) =>
+    db.query<{ ok: boolean }>(`select public.record_signup_geo($1, $2, $3, $4) ok`, [
+      user,
+      code,
+      code ? `Name of ${code}` : null,
+      hash,
+    ])
+
+  it.each(GEO_COLUMNS)('%s is neither selectable nor updatable by users', async (column) => {
+    await expect(
+      asUser(db, alice, (tx) =>
+        tx.query(`select ${column} from public.profiles where id = $1`, [alice]),
+      ),
+    ).rejects.toThrow(/permission denied/)
+    await expect(
+      asUser(db, alice, (tx) =>
+        tx.query(`update public.profiles set ${column} = null where id = $1`, [alice]),
+      ),
+    ).rejects.toThrow(/permission denied/)
+  })
+
+  it("is hidden from call partners' select * too", async () => {
+    await expect(
+      asUser(db, bob, (tx) => tx.query(`select * from public.profiles where id = $1`, [alice])),
+    ).rejects.toThrow(/permission denied/)
+  })
+
+  it('is recorded once, while country_code is null', async () => {
+    const user = await createUser(db, 'geo@example.com')
+    const hash1 = 'a'.repeat(64)
+    expect((await record(user, null, hash1)).rows[0]!.ok).toBe(true) // lookup failed: retry later
+    expect((await record(user, 'BD', 'b'.repeat(64))).rows[0]!.ok).toBe(true)
+    expect((await record(user, 'US', 'c'.repeat(64))).rows[0]!.ok).toBe(false)
+
+    const { rows } = await db.query<Record<string, unknown>>(
+      `select country_code, country_name, signup_ip_hash, signup_at is not null has_at
+       from public.profiles where id = $1`,
+      [user],
+    )
+    expect(rows[0]).toEqual({
+      country_code: 'BD',
+      country_name: 'Name of BD',
+      signup_ip_hash: hash1, // first value kept
+      has_at: true,
+    })
+  })
+
+  it('rejects malformed values', async () => {
+    const user = await createUser(db, 'geo-bad@example.com')
+    await expect(record(user, 'Bangladesh', null)).rejects.toThrow(/check constraint/)
+    await expect(record(user, 'BD', '203.0.113.7')).rejects.toThrow(/check constraint/)
+  })
+
+  it('cannot be written by users through the function', async () => {
+    await expect(
+      asUser(db, alice, (tx) =>
+        tx.query(`select public.record_signup_geo($1, 'US', 'United States', null)`, [alice]),
+      ),
     ).rejects.toThrow(/permission denied/)
   })
 })

@@ -1,5 +1,6 @@
 import { Link2, Video, Zap } from 'lucide-react'
 import { Button } from '@/components/common/button'
+import { LANGUAGE_COUNT_LABEL, LANGUAGES_AND_VOICES } from '@/lib/transvoice/languages'
 
 /** Workspace body: greeting, meeting actions and the three summary cards. */
 export function DashboardOverview({
@@ -24,7 +25,7 @@ export function DashboardOverview({
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">{greeting}</h1>
           <p className="mt-2 text-sm text-slate-500">
-            Start a translated conversation across 70+ languages.
+            Start a translated conversation in {LANGUAGES_AND_VOICES}.
           </p>
         </div>
         <div className="flex gap-2">
@@ -68,8 +69,10 @@ export function DashboardOverview({
 
         <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
           <p className="text-xs text-slate-500">Supported Languages</p>
-          <p className="mt-3 text-3xl font-semibold text-white">70+</p>
-          <p className="mt-3 text-xs text-slate-500">Neural Voice Dubbing enabled</p>
+          <p className="mt-3 text-3xl font-semibold text-white">{LANGUAGE_COUNT_LABEL}</p>
+          <p className="mt-3 text-xs text-slate-500">
+            {LANGUAGES_AND_VOICES} · neural voice dubbing
+          </p>
         </div>
       </div>
     </div>
