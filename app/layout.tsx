@@ -15,6 +15,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: 'dark',
   themeColor: '#0b0e16',
+  // Lets the meeting controls pad for the home indicator (env(safe-area-inset-bottom)).
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({
