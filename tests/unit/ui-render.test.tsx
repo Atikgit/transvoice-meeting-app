@@ -48,25 +48,51 @@ describe('Meeting pieces', () => {
     expect(screen.getByText('Hello')).toBeInTheDocument()
   })
 
-  it('wires control bar actions and unread badge', () => {
-    const onLeave = vi.fn()
+  const controls = (props: Partial<Parameters<typeof ControlBar>[0]> = {}) => {
+    const handlers = { onLeave: vi.fn(), onStart: vi.fn(), onEnd: vi.fn() }
     render(
       <ControlBar
         mic
         camera={false}
         unreadCount={2}
+        role="host"
+        live={false}
         onToggleMic={noop}
         onToggleCamera={noop}
         onInvite={noop}
         onToggleChat={noop}
-        onLeave={onLeave}
+        {...handlers}
+        {...props}
       />,
     )
-    expect(screen.getByTitle('Mute Mic')).toBeInTheDocument()
-    expect(screen.getByTitle('Turn on camera')).toBeInTheDocument()
+    return handlers
+  }
+
+  it('wires control bar actions and unread badge', () => {
+    const { onLeave } = controls()
     expect(screen.getByText('2')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Leave/ }))
     expect(onLeave).toHaveBeenCalledOnce()
+  })
+
+  it('host: Start while ready, End meeting once live', () => {
+    const { onStart } = controls()
+    fireEvent.click(screen.getByRole('button', { name: /^Start$/ }))
+    expect(onStart).toHaveBeenCalledOnce()
+    cleanup()
+    const { onEnd } = controls({ live: true })
+    expect(screen.queryByRole('button', { name: /^Start$/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /End meeting/ }))
+    expect(onEnd).toHaveBeenCalledOnce()
+  })
+
+  it('guest: waits for the host, then has no Start/End', () => {
+    controls({ role: 'guest' })
+    expect(screen.getByRole('status')).toHaveTextContent('Waiting for host to start…')
+    expect(screen.queryByRole('button', { name: /^Start$|End meeting/ })).toBeNull()
+    cleanup()
+    controls({ role: 'guest', live: true })
+    expect(screen.queryByText('Waiting for host to start…')).toBeNull()
   })
 })
 

@@ -3,10 +3,11 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
-import type { ChatMessage, TranslationCaption } from './types'
+import type { ChatMessage, SessionState, TranslationCaption } from './types'
 
 /**
- * Supabase Realtime broadcast channel for partner presence, chat and translations.
+ * Supabase Realtime broadcast channel for partner presence, chat, translations and the host's
+ * session state (Start / End meeting).
  * Legacy: Phase 2 moves presence to LiveKit, Phase 3 moves translations to LiveKit data
  * messages, Phase 6 persists chat.
  */
@@ -14,10 +15,16 @@ export function useLegacyRoomChannel({
   roomId,
   myDisplayName,
   onTranslation,
+  onSessionState,
+  onPeerJoined,
 }: {
   roomId: string
   myDisplayName: string
   onTranslation: (caption: TranslationCaption) => void
+  /** The host started or ended the meeting. */
+  onSessionState?: (state: SessionState) => void
+  /** Someone entered the room (the host re-sends the session state for late joiners). */
+  onPeerJoined?: () => void
 }) {
   const [partnerConnected, setPartnerConnected] = useState(false)
   const [partnerName, setPartnerName] = useState('Partner')
@@ -31,6 +38,8 @@ export function useLegacyRoomChannel({
   ])
   const channelRef = useRef<RealtimeChannel | null>(null)
   const handleTranslation = useEffectEvent(onTranslation)
+  const handleSessionState = useEffectEvent((state: SessionState) => onSessionState?.(state))
+  const handlePeerJoined = useEffectEvent(() => onPeerJoined?.())
 
   useEffect(() => {
     const supabase = createClient()
@@ -48,6 +57,10 @@ export function useLegacyRoomChannel({
           event: 'confirm_presence',
           payload: { name: myDisplayName },
         })
+        handlePeerJoined()
+      })
+      .on('broadcast', { event: 'session_state' }, ({ payload }) => {
+        handleSessionState(payload as SessionState)
       })
       .on('broadcast', { event: 'confirm_presence' }, ({ payload }) => {
         setPartnerConnected(true)
@@ -102,5 +115,16 @@ export function useLegacyRoomChannel({
     })
   }
 
-  return { partnerConnected, partnerName, messages, sendChat, broadcastTranslation }
+  const broadcastSessionState = (state: SessionState) => {
+    void channelRef.current?.send({ type: 'broadcast', event: 'session_state', payload: state })
+  }
+
+  return {
+    partnerConnected,
+    partnerName,
+    messages,
+    sendChat,
+    broadcastTranslation,
+    broadcastSessionState,
+  }
 }

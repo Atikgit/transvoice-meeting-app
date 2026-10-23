@@ -6,11 +6,16 @@ export function MeetingHeader({
   partnerConnected,
   partnerName,
   minutesLabel,
+  statusLabel,
+  live,
 }: {
   roomId: string
   partnerConnected: boolean
   partnerName: string
   minutesLabel?: string
+  /** "Ready" / "Live 00:00" / "Waiting for partner…" */
+  statusLabel: string
+  live: boolean
 }) {
   return (
     <header className="flex h-[70px] items-center justify-between border-b border-white/[.08] px-5 lg:px-8">
@@ -29,12 +34,13 @@ export function MeetingHeader({
           </span>
         )}
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${partnerConnected ? 'bg-emerald-400/15 text-emerald-300' : 'bg-amber-400/15 text-amber-300'}`}
+          title={partnerConnected ? `Connected with ${partnerName}` : undefined}
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${live || partnerConnected ? 'bg-emerald-400/15 text-emerald-300' : 'bg-amber-400/15 text-amber-300'}`}
         >
           <span
-            className={`size-2 rounded-full ${partnerConnected ? 'bg-emerald-400' : 'bg-amber-400 animate-ping'}`}
+            className={`size-2 rounded-full ${live ? 'animate-pulse bg-rose-400' : partnerConnected ? 'bg-emerald-400' : 'animate-ping bg-amber-400'}`}
           />
-          {partnerConnected ? `Connected with ${partnerName}` : 'Waiting for partner...'}
+          <span className="tabular-nums">{statusLabel}</span>
         </span>
       </div>
     </header>
