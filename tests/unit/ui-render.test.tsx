@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { User } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PricingModal } from '@/components/billing/pricing-modal'
-import { Dashboard } from '@/components/dashboard/dashboard'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
+import { joinPathFromLink } from '@/components/dashboard/join-link-modal'
 import { UserManual } from '@/components/dashboard/user-manual'
 import { CaptionBar } from '@/components/meeting/caption-bar'
 import { ControlBar } from '@/components/meeting/control-bar'
@@ -15,44 +14,21 @@ const noop = () => {}
 
 afterEach(cleanup)
 
-describe('Dashboard', () => {
-  it('renders the guest workspace with the minutes card', () => {
+describe('Dashboard overview', () => {
+  it('greets the user and shows the minutes card', () => {
     render(
-      <Dashboard
-        user={null}
+      <DashboardOverview
+        greeting="Welcome back, Atik"
         balance={15}
+        canInvite
         onMeeting={noop}
-        onAuth={noop}
         onPricing={noop}
         onJoin={noop}
         onInvite={noop}
-        onSignOut={noop}
-      />,
-    )
-    expect(screen.getByRole('heading', { name: 'Good morning, Guest' })).toBeInTheDocument()
-    expect(screen.getByText('15 min')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
-  })
-
-  it('greets a signed-in user by full name', () => {
-    const user = {
-      id: 'u1',
-      email: 'a@b.co',
-      user_metadata: { full_name: 'Atik' },
-    } as unknown as User
-    render(
-      <Dashboard
-        user={user}
-        balance={120}
-        onMeeting={noop}
-        onAuth={noop}
-        onPricing={noop}
-        onJoin={noop}
-        onInvite={noop}
-        onSignOut={noop}
       />,
     )
     expect(screen.getByRole('heading', { name: 'Welcome back, Atik' })).toBeInTheDocument()
+    expect(screen.getByText('Translation minutes')).toBeInTheDocument()
   })
 })
 
@@ -145,4 +121,17 @@ describe('User manual', () => {
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
   })
+})
+
+describe('Join with link', () => {
+  it.each([
+    ['https://meet.transvoice.ai/invite/' + 'a'.repeat(43), '/invite/' + 'a'.repeat(43)],
+    ['a'.repeat(43), '/invite/' + 'a'.repeat(43)],
+    [
+      'https://meet.transvoice.ai/m/11111111-1111-4111-8111-111111111111',
+      '/m/11111111-1111-4111-8111-111111111111/lobby',
+    ],
+    ['https://evil.example/phish', null],
+    ['hello', null],
+  ])('%s → %s', (input, path) => expect(joinPathFromLink(input)).toBe(path))
 })

@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useTransition } from 'react'
+import { createMeeting } from '@/app/m/actions'
 import { PricingModal } from '@/components/billing/pricing-modal'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
+import { JoinLinkModal } from '@/components/dashboard/join-link-modal'
 import { InviteModal } from '@/components/invite/invite-modal'
 
-/** Client part of /dashboard. Meetings still open in the legacy `/` shell until Phase 2. */
+/** Client part of /dashboard: meeting actions and their modals. */
 export function DashboardHome({
   userId,
   greeting,
@@ -18,21 +19,37 @@ export function DashboardHome({
   balance: number
   canInvite: boolean
 }) {
-  const router = useRouter()
   const [pricing, setPricing] = useState(false)
   const [inviting, setInviting] = useState(false)
+  const [joining, setJoining] = useState(false)
+  const [creating, startCreating] = useTransition()
+  const [error, setError] = useState<string>()
+
+  // Start meeting → new meeting → its lobby (the action redirects).
+  const startMeeting = () =>
+    startCreating(async () => {
+      const result = await createMeeting()
+      if (result?.error) setError(result.error)
+    })
 
   return (
     <>
       <DashboardOverview
         greeting={greeting}
         balance={balance}
-        onMeeting={() => router.push('/?view=meeting')}
-        onJoin={() => router.push('/?view=join')}
+        onMeeting={startMeeting}
+        startingMeeting={creating}
+        onJoin={() => setJoining(true)}
         onPricing={() => setPricing(true)}
         canInvite={canInvite}
         onInvite={() => setInviting(true)}
       />
+      {error && (
+        <p role="alert" className="mx-auto max-w-6xl px-5 text-sm text-rose-300 lg:px-10">
+          {error}
+        </p>
+      )}
+      {joining && <JoinLinkModal onClose={() => setJoining(false)} />}
       {inviting && (
         <InviteModal
           onClose={() => setInviting(false)}

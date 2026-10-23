@@ -9,6 +9,7 @@ export function DashboardOverview({
   balance,
   canInvite,
   onMeeting,
+  startingMeeting = false,
   onPricing,
   onJoin,
   onInvite,
@@ -18,6 +19,8 @@ export function DashboardOverview({
   /** False at 0 available minutes: inviting is replaced by "Get minutes to invite" (Rule 1). */
   canInvite: boolean
   onMeeting: () => void
+  /** The meeting is being created (button busy). */
+  startingMeeting?: boolean
   onPricing: () => void
   onJoin: () => void
   onInvite: () => void
@@ -55,9 +58,9 @@ export function DashboardOverview({
               Get minutes to invite
             </Button>
           )}
-          <Button onClick={onMeeting}>
+          <Button onClick={onMeeting} disabled={startingMeeting} aria-busy={startingMeeting}>
             <Video size={15} />
-            Start meeting
+            {startingMeeting ? 'Opening lobby…' : 'Start meeting'}
           </Button>
         </div>
       </div>

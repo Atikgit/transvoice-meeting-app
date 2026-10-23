@@ -138,6 +138,10 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      create_meeting: {
+        Args: { p_user: string; p_title?: string }
+        Returns: string
+      }
       create_invitation: {
         Args: { p_user: string; p_token_hash: string; p_window?: string; p_meeting?: string }
         Returns: { meeting_id: string; invitation_id: string; expires_at: string }[]

@@ -1,24 +1,7 @@
-export const dynamic = 'force-dynamic'
-import { randomBytes } from 'node:crypto'
-import { AppShell, type Screen } from '@/components/app/app-shell'
+import { redirect } from 'next/navigation'
 
-function initialScreen(view: unknown): Screen {
-  return view === 'join' || view === 'meeting' ? view : 'dashboard'
-}
-
-export default async function Home({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>
-}) {
-  const { room, view } = await searchParams
-
-  return (
-    <AppShell
-      initialRoomId={
-        typeof room === 'string' && room ? room : `room-${randomBytes(4).toString('hex')}`
-      }
-      initialScreen={initialScreen(view)}
-    />
-  )
+// No landing page yet (Phase 7): the legacy single-page shell is retired, so "/" opens the
+// dashboard (or the login page when signed out).
+export default function Home() {
+  redirect('/dashboard')
 }

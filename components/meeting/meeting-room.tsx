@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import type { User } from '@supabase/supabase-js'
+import { useRouter } from 'next/navigation'
 import { Users } from 'lucide-react'
+import { InviteModal } from '@/components/invite/invite-modal'
 import { CaptionBar } from '@/components/meeting/caption-bar'
 import { ChatPanel } from '@/components/meeting/chat-panel'
 import { ControlBar } from '@/components/meeting/control-bar'
@@ -13,37 +14,48 @@ import { useLegacyRoomChannel } from '@/features/meeting/useLegacyRoomChannel'
 import { useLocalMedia } from '@/features/meeting/useLocalMedia'
 import { playTtsAudio } from '@/features/translation/playTtsAudio'
 import { useLegacyChunkTranslator } from '@/features/translation/useLegacyChunkTranslator'
-import { getDisplayName } from '@/lib/user'
 import { BRAND } from '@/lib/brand'
 
-export function Meeting({
-  user,
-  minutesLabel,
-  roomId,
-  tgtLang,
-  guestName,
-  onInvite,
-  onLeave,
-}: {
-  user: User | null
-  /** Payer's remaining minutes (signed-in users only). */
+export interface MeetingRoomProps {
+  meetingId: string
+  /** Realtime channel name (meetings.room_name). */
+  roomName: string
+  displayName: string
+  /** Language this participant hears (profiles.listen_lang). */
+  listenLang: string
+  /** Payer's remaining minutes, shown to the host. */
   minutesLabel?: string
-  roomId: string
-  tgtLang: string
-  guestName: string
-  onInvite: () => void
-  onLeave: () => void
-}) {
-  const [mic, setMic] = useState(true)
-  const [camera, setCamera] = useState(true)
+  /** Camera / mic choice from the lobby. */
+  initialCamera: boolean
+  initialMic: boolean
+}
+
+/** /m/[meetingId]: the translated meeting room. */
+export function MeetingRoom({
+  meetingId,
+  roomName,
+  displayName,
+  listenLang,
+  minutesLabel,
+  initialCamera,
+  initialMic,
+}: MeetingRoomProps) {
+  const router = useRouter()
+  const [mic, setMic] = useState(initialMic)
+  const [camera, setCamera] = useState(initialCamera)
   const [chat, setChat] = useState(false)
+  const [inviting, setInviting] = useState(false)
   const [translating, setTranslating] = useState(false)
   const [originalText, setOriginalText] = useState('Listening to your speech...')
   const [translatedText, setTranslatedText] = useState(
     'আপনার কথা অনুবাদ করার জন্য অপেক্ষা করা হচ্ছে...',
   )
 
-  const myDisplayName = getDisplayName(user) || guestName || 'You'
+  const myDisplayName = displayName || 'You'
+  const roomId = roomName
+  const tgtLang = listenLang
+  const onLeave = () => router.push('/dashboard')
+  const onInvite = () => setInviting(true)
   const localStream = useLocalMedia({ camera, mic })
 
   const showCaption = (caption: TranslationCaption) => {
@@ -140,6 +152,7 @@ export function Meeting({
           />
         )}
       </div>
+      {inviting && <InviteModal meetingId={meetingId} onClose={() => setInviting(false)} />}
     </main>
   )
 }

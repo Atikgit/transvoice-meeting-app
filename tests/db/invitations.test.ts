@@ -146,3 +146,18 @@ describe('accept_invitation', () => {
     ).rejects.toThrow(/permission denied/)
   })
 })
+
+describe('create_meeting', () => {
+  it('creates a meeting owned by the user with a random room name; service role only', async () => {
+    const { rows } = await db.query<{ id: string }>('select public.create_meeting($1) id', [host])
+    const { rows: meeting } = await db.query<{ owner_id: string; room_name: string }>(
+      'select owner_id, room_name from public.meetings where id = $1',
+      [rows[0]!.id],
+    )
+    expect(meeting[0]!.owner_id).toBe(host)
+    expect(meeting[0]!.room_name).toMatch(/^m-[0-9a-f]{32}$/)
+    await expect(
+      asUser(db, host, (tx) => tx.query('select public.create_meeting($1)', [host])),
+    ).rejects.toThrow(/permission denied/)
+  })
+})
