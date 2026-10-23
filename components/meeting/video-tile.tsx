@@ -32,7 +32,8 @@ export function VideoTile({
 
   return (
     <div
-      className={`relative min-h-[260px] overflow-hidden rounded-2xl border ${active ? 'border-cyan-300/50 shadow-[0_0_22px_rgba(103,232,249,.15)]' : 'border-white/10'} ${color}`}
+      data-testid="video-tile"
+      className={`relative h-full w-full overflow-hidden rounded-2xl border ${active ? 'border-cyan-300/50 shadow-[0_0_22px_rgba(103,232,249,.15)]' : 'border-white/10'} ${color}`}
     >
       {cameraOn && stream ? (
         <video

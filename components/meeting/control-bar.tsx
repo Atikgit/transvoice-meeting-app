@@ -45,7 +45,7 @@ export function ControlBar({
   onLeave: () => void
 }) {
   return (
-    <div className="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-white/[.08] pt-4">
+    <div className="mt-3 flex flex-wrap items-center justify-center gap-2 border-t border-white/[.08] px-4 py-3">
       <button
         onClick={onToggleMic}
         className={`flex size-11 items-center justify-center rounded-xl border transition ${mic ? 'border-cyan-300/40 bg-cyan-300/15 text-cyan-200' : 'border-rose-500/40 bg-rose-500/15 text-rose-300'}`}

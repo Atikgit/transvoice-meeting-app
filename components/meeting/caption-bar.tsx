@@ -10,7 +10,7 @@ export function CaptionBar({
   translatedText: string
 }) {
   return (
-    <div className="relative mt-4 rounded-2xl border border-cyan-300/20 bg-[#151d2c] p-4">
+    <div className="relative mx-4 mt-3 rounded-2xl border border-cyan-300/20 bg-[#151d2c] p-4 lg:mx-6">
       <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
         <Sparkles size={13} /> {translating ? 'Translating live...' : 'Live translation'}
       </div>

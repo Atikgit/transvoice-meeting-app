@@ -28,7 +28,7 @@ export function ChatPanel({
   }
 
   return (
-    <aside className="flex flex-col w-full border-l border-white/[.08] bg-[#10131d] p-5 lg:w-[340px]">
+    <aside className="flex h-full w-full flex-col rounded-2xl border border-white/[.08] bg-[#10131d] p-5 shadow-2xl">
       <div className="flex justify-between items-center pb-4 border-b border-white/[.08]">
         <div>
           <h2 className="font-semibold text-white text-sm">Meeting Chat</h2>
@@ -36,7 +36,11 @@ export function ChatPanel({
             {partnerConnected ? '2 participants' : 'Only you'}
           </p>
         </div>
-        <button onClick={onClose} className="text-slate-400 hover:text-white">
+        <button
+          onClick={onClose}
+          aria-label="Close chat"
+          className="text-slate-400 hover:text-white"
+        >
           <X size={18} />
         </button>
       </div>

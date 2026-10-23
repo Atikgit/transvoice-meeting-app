@@ -2,13 +2,13 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users } from 'lucide-react'
 import { PricingModal } from '@/components/billing/pricing-modal'
 import { InviteModal } from '@/components/invite/invite-modal'
 import { CaptionBar } from '@/components/meeting/caption-bar'
 import { ChatPanel } from '@/components/meeting/chat-panel'
 import { ControlBar } from '@/components/meeting/control-bar'
 import { MeetingHeader } from '@/components/meeting/meeting-header'
+import { VideoGrid } from '@/components/meeting/video-grid'
 import { VideoTile } from '@/components/meeting/video-tile'
 import type { SessionState, TranslationCaption } from '@/features/meeting/types'
 import { useLegacyRoomChannel } from '@/features/meeting/useLegacyRoomChannel'
@@ -123,7 +123,8 @@ export function MeetingRoom({
       : 'Waiting for partner…'
 
   return (
-    <main className="flex min-h-screen flex-col bg-[#0b0e16] text-slate-100">
+    <main className="grid h-dvh grid-rows-[auto_1fr_auto_auto] overflow-hidden bg-[#0b0e16] text-slate-100">
+      <h1 className="sr-only">{BRAND.name} meeting</h1>
       <MeetingHeader
         roomId={roomName}
         partnerConnected={channel.partnerConnected}
@@ -133,47 +134,34 @@ export function MeetingRoom({
         live={live}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <section className="flex min-w-0 flex-1 flex-col p-4 lg:p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[.2em] text-slate-600">
-                {live ? 'LIVE SESSION' : 'READY'}
-              </p>
-              <h1 className="mt-1 text-lg font-semibold text-white">{BRAND.name} meeting</h1>
-            </div>
-            <span className="flex items-center gap-2 text-xs text-slate-400">
-              <Users size={14} /> {channel.partnerConnected ? '2 People' : '1 Person'}
-            </span>
-          </div>
+      <section aria-label="Participants" className="relative min-h-0 px-4 pt-4 lg:px-6">
+        {(session.problem || session.notice) && (
+          <p
+            role={session.problem ? 'alert' : 'status'}
+            className={`absolute inset-x-4 top-4 z-20 mx-auto max-w-xl rounded-lg border p-3 text-center text-sm shadow-lg lg:inset-x-6 ${session.problem ? 'border-rose-500/30 bg-[#2a1520] text-rose-200' : 'border-cyan-300/30 bg-[#12222c] text-cyan-100'}`}
+          >
+            {session.problem?.error ?? session.notice}
+            {session.problem?.code === 'NO_MINUTES' && (
+              <button onClick={() => setModal('pricing')} className="ml-1 font-semibold underline">
+                Get minutes
+              </button>
+            )}
+          </p>
+        )}
 
-          {(session.problem || session.notice) && (
-            <p
-              role={session.problem ? 'alert' : 'status'}
-              className={`mb-3 rounded-lg border p-3 text-sm ${session.problem ? 'border-rose-500/20 bg-rose-500/10 text-rose-300' : 'border-cyan-300/20 bg-cyan-300/10 text-cyan-200'}`}
-            >
-              {session.problem?.error ?? session.notice}
-              {session.problem?.code === 'NO_MINUTES' && (
-                <button
-                  onClick={() => setModal('pricing')}
-                  className="ml-1 font-semibold underline"
-                >
-                  Get minutes
-                </button>
-              )}
-            </p>
-          )}
-
-          <div className="grid flex-1 gap-4 md:grid-cols-2">
+        <VideoGrid>
+          {[
             <VideoTile
+              key="partner"
               name={channel.partnerConnected ? channel.partnerName : 'Waiting for partner...'}
               initials={channel.partnerName.slice(0, 2).toUpperCase()}
               color="bg-teal-900/60"
               active={channel.partnerConnected}
               cameraOn={channel.partnerConnected}
               isWaiting={!channel.partnerConnected}
-            />
+            />,
             <VideoTile
+              key="self"
               name={`${myDisplayName} (You)`}
               initials="You"
               color="bg-indigo-900/60"
@@ -181,44 +169,46 @@ export function MeetingRoom({
               cameraOn={camera}
               isLocal={true}
               stream={localStream}
-            />
-          </div>
-
-          <CaptionBar
-            translating={translating}
-            originalText={
-              originalText || (live ? 'Listening…' : 'Translation starts when the meeting starts.')
-            }
-            translatedText={translatedText}
-          />
-
-          <ControlBar
-            mic={mic}
-            camera={camera}
-            unreadCount={channel.messages.length - 1}
-            role={role}
-            live={live}
-            busy={session.pending}
-            onToggleMic={() => setMic(!mic)}
-            onToggleCamera={() => setCamera(!camera)}
-            onInvite={() => setModal('invite')}
-            onToggleChat={() => setChat(!chat)}
-            onStart={start}
-            onEnd={end}
-            onLeave={() => router.push('/dashboard')}
-          />
-        </section>
+            />,
+          ]}
+        </VideoGrid>
 
         {chat && (
-          <ChatPanel
-            messages={channel.messages}
-            myDisplayName={myDisplayName}
-            partnerConnected={channel.partnerConnected}
-            onSend={channel.sendChat}
-            onClose={() => setChat(false)}
-          />
+          <div className="absolute inset-0 z-30 md:inset-y-0 md:right-4 md:left-auto md:w-[340px] lg:right-6">
+            <ChatPanel
+              messages={channel.messages}
+              myDisplayName={myDisplayName}
+              partnerConnected={channel.partnerConnected}
+              onSend={channel.sendChat}
+              onClose={() => setChat(false)}
+            />
+          </div>
         )}
-      </div>
+      </section>
+
+      <CaptionBar
+        translating={translating}
+        originalText={
+          originalText || (live ? 'Listening…' : 'Translation starts when the meeting starts.')
+        }
+        translatedText={translatedText}
+      />
+
+      <ControlBar
+        mic={mic}
+        camera={camera}
+        unreadCount={channel.messages.length - 1}
+        role={role}
+        live={live}
+        busy={session.pending}
+        onToggleMic={() => setMic(!mic)}
+        onToggleCamera={() => setCamera(!camera)}
+        onInvite={() => setModal('invite')}
+        onToggleChat={() => setChat(!chat)}
+        onStart={start}
+        onEnd={end}
+        onLeave={() => router.push('/dashboard')}
+      />
       {modal === 'invite' && (
         <InviteModal
           meetingId={meetingId}
