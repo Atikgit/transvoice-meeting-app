@@ -5,7 +5,7 @@ import { PricingModal } from '@/components/billing/pricing-modal'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
 import { joinPathFromLink } from '@/components/dashboard/join-link-modal'
 import { UserManual } from '@/components/dashboard/user-manual'
-import { CaptionBar } from '@/components/meeting/caption-bar'
+import { appendCaption, CaptionBar } from '@/components/meeting/caption-bar'
 import { ControlBar } from '@/components/meeting/control-bar'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
@@ -42,6 +42,17 @@ describe('PricingModal', () => {
 })
 
 describe('Meeting pieces', () => {
+  it('keeps only the latest caption text', () => {
+    expect(appendCaption('', ' Hello ')).toBe('Hello')
+    expect(appendCaption('Hello', 'world')).toBe('Hello world')
+    expect(appendCaption('a'.repeat(400), 'new words', 20)).toBe('aaaaaaaaaa new words')
+  })
+
+  it('shows the placeholder before any caption', () => {
+    render(<CaptionBar translating={false} originalText="" translatedText="" placeholder="Soon" />)
+    expect(screen.getByText('Soon')).toBeInTheDocument()
+  })
+
   it('shows live captions', () => {
     render(<CaptionBar translating originalText="হ্যালো" translatedText="Hello" />)
     expect(screen.getByText('Translating live...')).toBeInTheDocument()

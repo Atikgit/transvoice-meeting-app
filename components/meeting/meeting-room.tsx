@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PricingModal } from '@/components/billing/pricing-modal'
 import { InviteModal } from '@/components/invite/invite-modal'
-import { CaptionBar } from '@/components/meeting/caption-bar'
+import { appendCaption, CaptionBar } from '@/components/meeting/caption-bar'
 import { ChatPanel } from '@/components/meeting/chat-panel'
 import { ControlBar } from '@/components/meeting/control-bar'
 import { MeetingHeader } from '@/components/meeting/meeting-header'
@@ -77,8 +77,8 @@ export function MeetingRoom({
   )
 
   const showCaption = (caption: TranslationCaption) => {
-    setOriginalText(caption.original)
-    setTranslatedText(caption.translated)
+    setOriginalText((text) => appendCaption(text, caption.original))
+    setTranslatedText((text) => appendCaption(text, caption.translated))
     if (caption.audio) playTtsAudio(caption.audio)
   }
 
@@ -100,10 +100,8 @@ export function MeetingRoom({
     tgtLang: listenLang,
     onTranslatingChange: setTranslating,
     onResult: (caption) => {
-      setOriginalText(caption.original)
-      setTranslatedText(caption.translated)
+      showCaption(caption)
       channel.broadcastTranslation(caption)
-      if (caption.audio) playTtsAudio(caption.audio)
     },
   })
 
@@ -188,10 +186,9 @@ export function MeetingRoom({
 
       <CaptionBar
         translating={translating}
-        originalText={
-          originalText || (live ? 'Listening…' : 'Translation starts when the meeting starts.')
-        }
+        originalText={originalText}
         translatedText={translatedText}
+        placeholder={live ? 'Listening…' : 'Translation starts when the meeting starts.'}
       />
 
       <ControlBar
