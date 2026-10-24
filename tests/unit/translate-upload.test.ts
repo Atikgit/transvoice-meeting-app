@@ -1,5 +1,8 @@
+import { http, HttpResponse } from 'msw'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { server } from '../mocks/server'
+import { TEST_ENV } from '../mocks/env'
 import { encodeWav, isWav, wavSeconds } from '@/lib/translation/wav'
 
 const getSessionUser = vi.fn()
@@ -147,6 +150,59 @@ describe('POST /api/translate admission', () => {
       { topic: 'tvx.caption', destinationIdentities: ['guest-1'] },
       { topic: 'tvx.audio', destinationIdentities: ['guest-1'] },
     ])
+  })
+
+  describe('same-language listeners (Rule: no API call, no TTS, original audio untouched)', () => {
+    const apiCalls = () => {
+      const bodies: { tgt_lang: string }[] = []
+      server.use(
+        http.post(`${TEST_ENV.TRANSVOICE_API_URL}/`, async ({ request }) => {
+          bodies.push((await request.json()) as { tgt_lang: string })
+          return HttpResponse.json({ original_text: 'o', translated_text: 't', tts_audio: 'QQ==' })
+        }),
+      )
+      return bodies
+    }
+    const withListeners = (participants: { userId: string; listenLang: string }[]) =>
+      rpc.mockResolvedValue({ data: { ...context, participants }, error: null })
+
+    it('everyone hears the speaker language: nothing is translated or sent', async () => {
+      const bodies = apiCalls()
+      withListeners([
+        { userId: 'guest-1', listenLang: 'bn-BD' },
+        { userId: 'guest-2', listenLang: 'bn-IN' }, // same language, other region
+      ])
+      listParticipants.mockImplementation(async () => [
+        { identity: me },
+        { identity: 'guest-1' },
+        { identity: 'guest-2' },
+      ])
+      const res = await post(upload(SESSION()))
+      expect(await res.json()).toEqual({ utteranceId: UTTERANCE, languages: [] })
+      expect(bodies).toEqual([])
+      expect(sendData).not.toHaveBeenCalled()
+    })
+
+    it('mixed room: only the other-language listener gets a call, caption and audio', async () => {
+      const bodies = apiCalls()
+      withListeners([
+        { userId: 'guest-1', listenLang: 'bn-BD' }, // same as the speaker
+        { userId: 'guest-2', listenLang: 'en-US' },
+      ])
+      listParticipants.mockImplementation(async () => [
+        { identity: me },
+        { identity: 'guest-1' },
+        { identity: 'guest-2' },
+      ])
+      await post(upload(SESSION()))
+      expect(bodies.map((b) => b.tgt_lang)).toEqual(['en'])
+      const destinations = sendData.mock.calls.map(
+        (c) =>
+          (c as unknown as [string, Uint8Array, number, { destinationIdentities: string[] }])[3]
+            .destinationIdentities,
+      )
+      expect(destinations).toEqual([['guest-2'], ['guest-2']])
+    })
   })
 
   it('401 signed out', async () => {
