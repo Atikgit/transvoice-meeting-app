@@ -21,3 +21,6 @@ coverage/
 
 # Local GeoLite2 database (downloaded at image build)
 geoip/
+
+# Supabase CLI link state
+supabase/.temp/

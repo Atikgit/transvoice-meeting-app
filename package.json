@@ -18,7 +18,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "db:types": "supabase gen types typescript --linked --schema public > lib/supabase/database.types.ts",
-    "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/gen-icons.ts"
+    "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/gen-icons.ts",
+    "auth:templates": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/push-auth-templates.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
