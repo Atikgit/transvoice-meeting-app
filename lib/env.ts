@@ -39,6 +39,10 @@ const serverSchema = z.object({
   USAGE_INGEST_SECRET: z.string().min(32).optional(),
   CRON_SECRET: z.string().min(32).optional(),
 
+  // Private beta for live translation until the Phase 3 minute meter: comma-separated emails of
+  // meeting hosts. Unset → only the default allowlist (lib/translation/gate.ts); `*` → everyone.
+  TRANSLATION_BETA_ALLOWLIST: z.string().optional(),
+
   // Translated audio clip cache (60 s). Unset: in-process memory (single container).
   // Only over a private Docker network, never a published port.
   REDIS_URL: z

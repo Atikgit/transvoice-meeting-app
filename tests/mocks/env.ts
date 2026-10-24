@@ -9,4 +9,5 @@ export const TEST_ENV = {
   TRANSVOICE_API_URL: 'https://transvoice.test',
   TRANSVOICE_MASTER_API_KEY: 'tv_test_master_key',
   LEMONSQUEEZY_WEBHOOK_SECRET: 'test-ls-webhook-secret',
+  TRANSLATION_BETA_ALLOWLIST: 'host@example.com',
 } as const

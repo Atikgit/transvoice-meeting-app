@@ -36,6 +36,7 @@ import { useLiveKitToken } from '@/features/meeting/useLiveKitToken'
 import { useMeetingChat } from '@/features/meeting/useMeetingChat'
 import { captionText } from '@/features/translation/captions'
 import type { OriginalAudioMode } from '@/features/translation/playback'
+import { BETA_MESSAGE } from '@/lib/translation/gate'
 import { useLiveTranslation } from '@/features/translation/useLiveTranslation'
 import { useTranslatedAudio } from '@/features/translation/useTranslatedAudio'
 import { formatElapsed, useElapsedSeconds, useRoomState } from '@/features/meeting/useRoomState'
@@ -55,6 +56,8 @@ export interface MeetingRoomProps {
   displayName: string
   /** How the speaker's original voice is treated while their translation plays (Settings). */
   originalAudioMode: OriginalAudioMode
+  /** False while live translation is in private beta for this meeting's host. */
+  translationEnabled: boolean
   /** Languages for this session (profile defaults; the room's menu changes them). */
   spokenLang: string
   listenLang: string
@@ -186,6 +189,7 @@ function RoomView({
   title,
   displayName,
   originalAudioMode,
+  translationEnabled,
   spokenLang,
   listenLang,
   initialState,
@@ -220,6 +224,7 @@ function RoomView({
   const translation = useLiveTranslation({
     sessionId,
     status: session.state.status,
+    enabled: translationEnabled,
     playingTranslation: audio.playing, // echo safety: never listen while a clip plays
     onTranscript: audio.addOwnTranscript,
   })
@@ -330,6 +335,7 @@ function RoomView({
         originalText: captions.original,
         translatedText: captions.translated,
         placeholder:
+          (translationEnabled ? undefined : BETA_MESSAGE) ??
           translation.notice?.text ??
           (audio.unavailable
             ? 'Translation is temporarily unavailable (captions only).'

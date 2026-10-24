@@ -5,7 +5,9 @@ import { RoomNotice } from '@/components/meeting/room-notice'
 import { currentBalance } from '@/lib/auth/account'
 import { availableMinutes, minutesLabel } from '@/lib/billing/balance'
 import { ensureRoom } from '@/lib/livekit/rooms'
+import { serverEnv } from '@/lib/env'
 import { loadMeetingContext } from '@/lib/meetings/load'
+import { betaAllows } from '@/lib/translation/gate'
 import type { RoomState } from '@/lib/meetings/room-state'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -50,6 +52,12 @@ export default async function MeetingPage({
   await ensureRoom(session.session_id, initialState).catch((e: unknown) =>
     console.error('LiveKit ensureRoom failed:', e instanceof Error ? e.message : e),
   )
+  // Private beta: translation only for meetings hosted by allow-listed emails.
+  const { data: hostUser } = await createAdminClient().auth.admin.getUserById(session.host_id)
+  const translationEnabled = betaAllows(
+    hostUser.user?.email,
+    serverEnv().TRANSLATION_BETA_ALLOWLIST,
+  )
   const balance = context.role === 'host' ? await currentBalance(context.userId) : null
 
   return (
@@ -62,6 +70,7 @@ export default async function MeetingPage({
       title={context.meeting.title ?? 'Translated meeting'}
       displayName={context.profile.fullName}
       originalAudioMode={context.profile.originalAudioMode}
+      translationEnabled={translationEnabled}
       spokenLang={context.profile.spokenLang}
       listenLang={context.profile.listenLang}
       initialState={initialState}

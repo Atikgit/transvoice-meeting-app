@@ -27,7 +27,7 @@ export interface AudioMessage {
 }
 
 export interface NoticeMessage {
-  kind: 'translation_unavailable' | 'translation_beta'
+  kind: 'translation_unavailable'
 }
 
 /** LiveKit reliable packets carry at most ~15 KiB of user data. */
@@ -66,7 +66,7 @@ const audioSchema = z.object({
   url: z.string().regex(/^\/api\/tts\/[A-Za-z0-9_-]{24}$/),
   speechEndedAt: z.number(),
 })
-const noticeSchema = z.object({ kind: z.enum(['translation_unavailable', 'translation_beta']) })
+const noticeSchema = z.object({ kind: z.literal('translation_unavailable') })
 
 /** Decodes a data message by topic; null for unknown topics and malformed payloads. */
 export function parseDataMessage(

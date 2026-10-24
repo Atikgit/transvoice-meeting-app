@@ -244,6 +244,28 @@ describe('POST /api/translate admission', () => {
     })
   })
 
+  it('private beta: a meeting hosted by someone else gets 403 BETA and no translation', async () => {
+    rpc.mockResolvedValue({ data: { ...context, hostEmail: 'stranger@example.com' }, error: null })
+    const res = await post(upload(SESSION()))
+    expect(res.status).toBe(403)
+    expect(await res.json()).toMatchObject({
+      code: 'BETA',
+      error: 'Live translation is in private beta.',
+    })
+    expect(sendData).not.toHaveBeenCalled()
+  })
+
+  it('needs minutes: 402 PAYER_NO_MINUTES when the payer ran out', async () => {
+    rpc.mockResolvedValue({
+      data: { ...context, speaker: { ...context.speaker, payerHasMinutes: false } },
+      error: null,
+    })
+    const res = await post(upload(SESSION()))
+    expect(res.status).toBe(402)
+    expect(await res.json()).toMatchObject({ code: 'PAYER_NO_MINUTES' })
+    expect(sendData).not.toHaveBeenCalled()
+  })
+
   it('401 signed out', async () => {
     getSessionUser.mockImplementation(async () => null)
     expect((await post(upload(SESSION()))).status).toBe(401)

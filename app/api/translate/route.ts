@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { serverEnv } from '@/lib/env'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { loadTranslationContext } from '@/lib/translation/context'
 import { deliverResult } from '@/lib/translation/deliver'
+import { translationGate } from '@/lib/translation/gate'
 import { groupListeners, translateForListeners } from '@/lib/translation/fanout'
 import { logTranslate } from '@/lib/translation/log'
 import { parseTranslateUpload } from '@/lib/translation/request'
@@ -34,6 +36,15 @@ export async function POST(request: NextRequest) {
   }
 
   const { context } = loaded
+  const gate = translationGate({
+    hostEmail: context.hostEmail,
+    payerHasMinutes: context.speaker.payerHasMinutes,
+    speakerIsPayer: context.speaker.payerId === user.id,
+    allowlist: serverEnv().TRANSLATION_BETA_ALLOWLIST,
+  })
+  if (!gate.ok) {
+    return NextResponse.json({ code: gate.code, error: gate.error }, { status: gate.status })
+  }
   const groups = groupListeners(context.participants, context.speaker.spokenLang)
   // Same-language listeners only: nothing to translate (original audio at full volume).
   if (groups.size === 0) {

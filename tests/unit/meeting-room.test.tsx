@@ -135,6 +135,7 @@ const room = (role: 'host' | 'guest', initialState: RoomState = READY) => {
       title="Translated meeting"
       displayName="Atik"
       originalAudioMode="duck"
+      translationEnabled
       spokenLang="bn-BD"
       listenLang="en-US"
       initialState={initialState}
@@ -153,6 +154,7 @@ const room = (role: 'host' | 'guest', initialState: RoomState = READY) => {
         title="Translated meeting"
         displayName="Atik"
         originalAudioMode="duck"
+        translationEnabled
         spokenLang="bn-BD"
         listenLang="en-US"
         initialState={initialState}
@@ -276,6 +278,7 @@ describe('Lobby choices in the room', () => {
         title="Translated meeting"
         displayName="Atik"
         originalAudioMode="duck"
+        translationEnabled
         spokenLang="bn-BD"
         listenLang="en-US"
         initialState={READY}
@@ -332,6 +335,30 @@ describe('Reconnect (Rule 5)', () => {
     metadataChanged({ ...LIVE, status: 'ended', endReason: 'reconnect_timeout' })
     expect(screen.getByText('The connection was lost and the meeting ended.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Call again/ })).toBeInTheDocument()
+  })
+})
+
+describe('Private beta', () => {
+  it('says so in the caption bar when translation is not enabled for this meeting', async () => {
+    render(
+      <MeetingRoom
+        meetingId="11111111-1111-4111-8111-111111111111"
+        sessionId={SESSION}
+        userId="u1"
+        role="guest"
+        roomName="m-room"
+        title="Translated meeting"
+        displayName="Atik"
+        originalAudioMode="duck"
+        translationEnabled={false}
+        spokenLang="bn-BD"
+        listenLang="en-US"
+        initialState={LIVE}
+        initialCamera
+        initialMic
+      />,
+    )
+    expect(await screen.findByText('Live translation is in private beta.')).toBeInTheDocument()
   })
 })
 
