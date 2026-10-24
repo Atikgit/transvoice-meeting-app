@@ -72,17 +72,28 @@ pnpm auth:templates --dry-run   # shows what would change
 pnpm auth:templates             # applies it (PATCH /v1/projects/{ref}/config/auth)
 ```
 
+**Invite Partner → "Send invite by email".** With `RESEND_API_KEY` or `SMTP_HOST/USER/PASS`
+set, the app sends its own branded email (`lib/email/invite-template.ts`) to any address. Without
+them it calls `auth.admin.inviteUserByEmail` with
+`data: { inviter_name, invite_url, invite_path: "/invite/<token>" }`; the Invite user template
+then links to `/auth/confirm?token_hash=…&type=invite&next={{ .Data.invite_path }}`, so the
+new user confirms the address (15 trial minutes), chooses a password and lands on the invite.
+The button goes through `/auth/confirm` instead of straight to `invite_url` because the invited
+account must be verified first, otherwise signing up afterwards fails with "already
+registered". This path only reaches people without an account; `inviter_name` is not used in
+the template because it is user-controlled.
+
 The project ref comes from `SUPABASE_PROJECT_REF`, `--project-ref`, or `supabase link`.
 Existing redirect URLs (localhost, previews) are kept; `--replace-allow-list` sets exactly
 `APP_URL/**`. Email clients ignore stylesheets and gradients, so the templates use inline styles
 and a solid gold " AI"; the logo must stay at `https://meet.transvoice.ai/brand/logo-192.png`.
 
-| Template     | Link                                                                    | Lands on                          |
-| ------------ | ----------------------------------------------------------------------- | --------------------------------- |
-| Confirmation | `/auth/confirm?token_hash=…&type=email&next=/dashboard`                 | `/dashboard` (or the invite page) |
-| Recovery     | `/auth/confirm?token_hash=…&type=recovery&next=/auth/reset`             | `/auth/reset` → `/dashboard`      |
-| Email change | `/auth/confirm?token_hash=…&type=email_change&next=/dashboard/settings` | `/dashboard/settings`             |
-| Invite       | `/auth/confirm?token_hash=…&type=invite`                                | `/auth/reset` (choose a password) |
+| Template     | Link                                                                    | Lands on                                                                                     |
+| ------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Confirmation | `/auth/confirm?token_hash=…&type=email&next=/dashboard`                 | `/dashboard` (or the invite page)                                                            |
+| Recovery     | `/auth/confirm?token_hash=…&type=recovery&next=/auth/reset`             | `/auth/reset` → `/dashboard`                                                                 |
+| Email change | `/auth/confirm?token_hash=…&type=email_change&next=/dashboard/settings` | `/dashboard/settings`                                                                        |
+| Invite       | `/auth/confirm?token_hash=…&type=invite[&next={{ .Data.invite_path }}]` | `/auth/reset` (choose a password) → the `/invite/<token>` page when sent from Invite Partner |
 
 ## 3. OAuth providers
 

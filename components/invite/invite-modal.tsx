@@ -1,8 +1,13 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Check, Copy, Link2, Mail, MessageCircle, Share2 } from 'lucide-react'
-import { createInvitation, type CreateInvitationResult } from '@/app/invite/actions'
+import { Check, Copy, Link2, Mail, MessageCircle, Send, Share2 } from 'lucide-react'
+import {
+  createInvitation,
+  sendInvitationEmail,
+  type CreateInvitationResult,
+  type SendInviteEmailResult,
+} from '@/app/invite/actions'
 import { Button } from '@/components/common/button'
 import { Modal } from '@/components/common/modal'
 import { FREE_TRIAL_MINUTES } from '@/lib/billing/config'
@@ -85,9 +90,10 @@ export function InviteModal({
             <Share2 size={14} aria-hidden /> LinkedIn
           </a>
           <a href={links.email} className={shareClass}>
-            <Mail size={14} aria-hidden /> Email
+            <Mail size={14} aria-hidden /> Email app
           </a>
         </div>
+        <SendInviteEmail inviteUrl={result.url} />
         <p className="mt-4 text-xs text-slate-500">
           Your partner signs up free ({FREE_TRIAL_MINUTES} free minutes) and joins your room. Their
           call minutes come from your balance while the link&apos;s sponsorship is valid.
@@ -141,5 +147,59 @@ export function InviteModal({
         <Link2 size={15} /> {pending ? 'Creating link…' : 'Create invite link'}
       </Button>
     </Modal>
+  )
+}
+
+/** "Send invite by email": the server emails the branded invitation for this link. */
+function SendInviteEmail({ inviteUrl }: { inviteUrl: string }) {
+  const [email, setEmail] = useState('')
+  const [result, setResult] = useState<SendInviteEmailResult | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  const send = (event: React.FormEvent) => {
+    event.preventDefault()
+    startTransition(async () => {
+      const sent = await sendInvitationEmail({ inviteUrl, email })
+      setResult(sent)
+      if (sent.ok) setEmail('')
+    })
+  }
+
+  return (
+    <form onSubmit={send} className="mt-4 rounded-xl border border-white/10 bg-white/[.02] p-3">
+      <label htmlFor="invite-email" className="block text-xs font-medium text-slate-400">
+        Send invite by email
+      </label>
+      <div className="mt-2 flex gap-2">
+        <input
+          id="invite-email"
+          type="email"
+          required
+          autoComplete="off"
+          inputMode="email"
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value)
+            if (result) setResult(null)
+          }}
+          placeholder="partner@example.com"
+          aria-invalid={result?.ok === false && result.code === 'INVALID'}
+          className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:border-cyan-300"
+        />
+        <Button type="submit" disabled={pending || !email} className="shrink-0 px-3 py-2 text-xs">
+          <Send size={14} /> {pending ? 'Sending…' : 'Send Invite'}
+        </Button>
+      </div>
+      {result?.ok && (
+        <p role="status" className="mt-2 text-xs text-emerald-300">
+          Invitation sent to {result.to}.
+        </p>
+      )}
+      {result && !result.ok && (
+        <p role="alert" className="mt-2 text-xs text-rose-300">
+          {result.error}
+        </p>
+      )}
+    </form>
   )
 }

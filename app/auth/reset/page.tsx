@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { AuthCard } from '@/components/auth/auth-card'
 import { ResetPasswordForm } from '@/components/auth/password-forms'
+import { safeNextPath } from '@/lib/auth/redirect'
 import { getSessionUser } from '@/lib/supabase/server'
 
 export const metadata: Metadata = { title: 'Choose a new password' }
@@ -17,7 +18,8 @@ export default async function ResetPasswordPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const { code } = await searchParams
+  const { code, next: nextParam } = await searchParams
+  const next = safeNextPath(nextParam)
   if (typeof code === 'string' && code) {
     redirect(`/auth/callback?code=${encodeURIComponent(code)}&next=/auth/reset`)
   }
@@ -30,7 +32,7 @@ export default async function ResetPasswordPage({
       subtitle={user?.email ? `For ${user.email}. Use at least 8 characters.` : undefined}
     >
       {user ? (
-        <ResetPasswordForm />
+        <ResetPasswordForm next={next} />
       ) : (
         <p className="text-sm text-slate-400">
           This reset link is invalid or has expired.{' '}

@@ -13,11 +13,15 @@ const LIMITS = {
   invitation: { tokens: 20, window: '1 h' },
   meeting: { tokens: 30, window: '1 h' },
   call: { tokens: 10, window: '1 m' },
+  // Invite emails: per user and per IP (10/20 an hour), per recipient (3 a day).
+  inviteEmailUser: { tokens: 10, window: '1 h' },
+  inviteEmailIp: { tokens: 20, window: '1 h' },
+  inviteEmailRecipient: { tokens: 3, window: '1 d' },
 } satisfies Record<string, { tokens: number; window: Duration }>
 
 export type RateLimitName = keyof typeof LIMITS
 
-const WINDOW_MS: Record<string, number> = { m: 60_000, h: 3_600_000 }
+const WINDOW_MS: Record<string, number> = { m: 60_000, h: 3_600_000, d: 86_400_000 }
 
 interface Limiter {
   limit(key: string): Promise<{ success: boolean }>

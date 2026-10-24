@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { EMAIL_FLOW_PARAM } from '@/lib/auth/link-errors'
 import { rememberPendingNext } from '@/lib/auth/pending-next'
 import { enabledProviders, type OAuthProvider } from '@/lib/auth/providers'
-import { DEFAULT_AFTER_LOGIN, safeNextPath } from '@/lib/auth/redirect'
+import { safeNextPath } from '@/lib/auth/redirect'
 import { appOrigin, clientIp } from '@/lib/http/request'
 import { checkRateLimit, checkRateLimits } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
@@ -219,7 +219,7 @@ export async function updatePassword(
     }
   }
 
-  redirect(DEFAULT_AFTER_LOGIN)
+  redirect(safeNextPath(formData.get('next')))
 }
 
 export async function signOut(): Promise<void> {

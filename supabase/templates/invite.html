@@ -69,7 +69,7 @@
                 "
               >
                 <h1 style="margin: 0 0 12px; font-size: 20px; line-height: 28px; color: #ffffff">
-                  You're invited to TransVoice AI
+                  {{ if .Data.invite_path }}You're invited to a TransVoice AI meeting{{ else }}You're invited to TransVoice AI{{ end }}
                 </h1>
                 <p style="margin: 0 0 24px; font-size: 14px; line-height: 22px; color: #94a3b8">
                   You have been invited to create a TransVoice AI account for live voice-translated
@@ -79,7 +79,7 @@
                   <tr>
                     <td bgcolor="#67e8f9" style="border-radius: 12px">
                       <a
-                        href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite"
+                        href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite{{ if .Data.invite_path }}&next={{ .Data.invite_path }}{{ end }}"
                         style="
                           display: inline-block;
                           padding: 14px 24px;

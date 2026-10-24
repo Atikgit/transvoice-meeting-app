@@ -55,6 +55,16 @@ const serverSchema = z.object({
   MAXMIND_LICENSE_KEY: z.string().min(1).optional(),
   GEOIP_DB_PATH: z.string().min(1).optional(),
 
+  // Branded emails sent by the app (invites). Resend or SMTP; without either, invites to new
+  // users fall back to Supabase's "Invite user" email.
+  EMAIL_FROM: z.string().min(3).default('TransVoice AI <no-reply@transvoice.ai>'),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: z.stringbool().default(false),
+  SMTP_USER: z.string().min(1).optional(),
+  SMTP_PASS: z.string().min(1).optional(),
+
   // Auth providers (server-side so they can change without rebuilding the image)
   AUTH_GOOGLE_ENABLED: z.stringbool().default(false),
   AUTH_LINKEDIN_ENABLED: z.stringbool().default(false),

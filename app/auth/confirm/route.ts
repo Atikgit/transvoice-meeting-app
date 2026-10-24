@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { afterSignIn } from '@/lib/auth/account'
 import { classifyLinkError, loginErrorFor } from '@/lib/auth/link-errors'
 import { PENDING_NEXT_COOKIE, resolveNext } from '@/lib/auth/pending-next'
+import { DEFAULT_AFTER_LOGIN } from '@/lib/auth/redirect'
 import { requestOrigin } from '@/lib/http/request'
 import { createClient } from '@/lib/supabase/server'
 
@@ -43,7 +44,13 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
   if (!error) {
     if (data.user) await afterSignIn(data.user.id, request.headers)
-    return redirect(SET_PASSWORD_TYPES.includes(type) ? '/auth/reset' : next)
+    if (!SET_PASSWORD_TYPES.includes(type)) return redirect(next)
+    // Invited users choose a password first, then continue (e.g. to their /invite/<token>).
+    return redirect(
+      type === 'invite' && next !== DEFAULT_AFTER_LOGIN
+        ? `/auth/reset?next=${encodeURIComponent(next)}`
+        : '/auth/reset',
+    )
   }
 
   console.error('[auth/confirm] verifyOtp failed', {

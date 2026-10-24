@@ -73,6 +73,11 @@ describe('/auth/confirm', () => {
     expect(location(res)).toBe('https://meet.transvoice.ai/auth/reset')
   })
 
+  it('invite with a next: choose a password, then continue to the invitation', async () => {
+    const res = await confirm('token_hash=t&type=invite&next=/invite/abc')
+    expect(location(res)).toBe('https://meet.transvoice.ai/auth/reset?next=%2Finvite%2Fabc')
+  })
+
   it('email_change: follows next', async () => {
     const res = await confirm('token_hash=t&type=email_change&next=/dashboard/settings')
     expect(location(res)).toBe('https://meet.transvoice.ai/dashboard/settings')

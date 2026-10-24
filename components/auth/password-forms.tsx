@@ -35,12 +35,13 @@ export function ForgotPasswordForm({ initialError }: { initialError?: string }) 
   )
 }
 
-export function ResetPasswordForm() {
+export function ResetPasswordForm({ next }: { next?: string }) {
   const [state, action, pending] = useActionState<AuthFormState, FormData>(updatePassword, {})
 
   return (
     <form action={action} className="space-y-3">
       {state.error && <FormMessage tone="error">{state.error}</FormMessage>}
+      {next && <input type="hidden" name="next" value={next} />}
       <label className="block">
         <span className="sr-only">New password</span>
         <input
