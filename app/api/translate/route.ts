@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { loadTranslationContext } from '@/lib/translation/context'
+import { deliverResult } from '@/lib/translation/deliver'
 import { groupListeners, translateForListeners } from '@/lib/translation/fanout'
 import { parseTranslateUpload } from '@/lib/translation/request'
 import { getSessionUser } from '@/lib/supabase/server'
@@ -42,6 +43,13 @@ export async function POST(request: NextRequest) {
     groups,
     sessionId: upload.sessionId,
     speakerId: user.id,
+    onResult: (result) =>
+      deliverResult({
+        sessionId: upload.sessionId,
+        utteranceId: upload.utteranceId,
+        speakerId: user.id,
+        result,
+      }),
   })
   const speech = results.find((r) => r.kind === 'speech')
   const failed = results.filter((r) => r.kind === 'failed')

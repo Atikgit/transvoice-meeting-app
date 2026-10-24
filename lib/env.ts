@@ -39,6 +39,13 @@ const serverSchema = z.object({
   USAGE_INGEST_SECRET: z.string().min(32).optional(),
   CRON_SECRET: z.string().min(32).optional(),
 
+  // Translated audio clip cache (60 s). Unset: in-process memory (single container).
+  // Only over a private Docker network, never a published port.
+  REDIS_URL: z
+    .string()
+    .regex(/^rediss?:\/\//, 'REDIS_URL must start with redis:// or rediss://')
+    .optional(),
+
   // Rate limiting (Phase 2+)
   UPSTASH_REDIS_REST_URL: z.url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),

@@ -64,8 +64,9 @@ async function translateWithRetry(translate: Translate, input: TranslateSpeechIn
 }
 
 /**
- * Translates one utterance for every listener language in parallel (Promise.allSettled).
- * Never throws; failures are reported per language.
+ * Translates one utterance for every listener language in parallel (Promise.allSettled) and
+ * hands each result to `onResult` as soon as it is ready. Never throws; failures are reported
+ * per language (a delivery error is logged, it does not turn a translation into a failure).
  */
 export async function translateForListeners({
   audioBase64,
@@ -76,6 +77,7 @@ export async function translateForListeners({
   speakerId,
   translate = translateSpeech,
   breaker = transvoiceBreaker,
+  onResult,
 }: {
   audioBase64: string
   spokenLang: string
@@ -85,33 +87,46 @@ export async function translateForListeners({
   speakerId: string
   translate?: Translate
   breaker?: CircuitBreaker
+  /** Called as soon as each language finishes (deliver without waiting for the slowest). */
+  onResult?: (result: LanguageResult) => Promise<unknown> | void
 }): Promise<LanguageResult[]> {
+  const translateOne = async (lang: string, listeners: string[]): Promise<LanguageResult> => {
+    const started = performance.now()
+    const ms = () => Math.round(performance.now() - started)
+    if (!breaker.allow()) return { lang, listeners, kind: 'failed', reason: 'circuit_open', ms: 0 }
+    try {
+      const result = await translateWithRetry(translate, {
+        audio: audioBase64,
+        srcLang: sourceLang(spokenLang),
+        tgtLang: toApiLang(lang),
+        azureVoice: getVoiceName(lang, voiceGender),
+        sessionId,
+        speakerId,
+      })
+      breaker.success()
+      return result.kind === 'silence'
+        ? { lang, listeners, kind: 'silence', ms: ms() }
+        : { lang, listeners, ...result, ms: ms() }
+    } catch (error) {
+      breaker.failure()
+      const timeout = error instanceof TransVoiceApiError && /timeout|aborted/i.test(error.message)
+      return { lang, listeners, kind: 'failed', reason: timeout ? 'timeout' : 'error', ms: ms() }
+    }
+  }
+
   const entries = [...groups.entries()]
   const settled = await Promise.allSettled(
-    entries.map(async ([lang, listeners]): Promise<LanguageResult> => {
-      const started = performance.now()
-      const ms = () => Math.round(performance.now() - started)
-      if (!breaker.allow())
-        return { lang, listeners, kind: 'failed', reason: 'circuit_open', ms: 0 }
+    entries.map(async ([lang, listeners]) => {
+      const result = await translateOne(lang, listeners)
       try {
-        const result = await translateWithRetry(translate, {
-          audio: audioBase64,
-          srcLang: sourceLang(spokenLang),
-          tgtLang: toApiLang(lang),
-          azureVoice: getVoiceName(lang, voiceGender),
-          sessionId,
-          speakerId,
-        })
-        breaker.success()
-        return result.kind === 'silence'
-          ? { lang, listeners, kind: 'silence', ms: ms() }
-          : { lang, listeners, ...result, ms: ms() }
+        await onResult?.(result)
       } catch (error) {
-        breaker.failure()
-        const timeout =
-          error instanceof TransVoiceApiError && /timeout|aborted/i.test(error.message)
-        return { lang, listeners, kind: 'failed', reason: timeout ? 'timeout' : 'error', ms: ms() }
+        console.error(
+          'Translation delivery failed:',
+          error instanceof Error ? error.message : error,
+        )
       }
+      return result
     }),
   )
   return settled.map((s, i) =>

@@ -5,12 +5,14 @@ import { encodeWav, isWav, wavSeconds } from '@/lib/translation/wav'
 const getSessionUser = vi.fn()
 const rpc = vi.fn()
 const listParticipants = vi.fn()
+const sendData = vi.fn(async () => {})
 vi.mock('@/lib/supabase/server', () => ({ getSessionUser }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ rpc }) }))
 vi.mock('livekit-server-sdk', async (original) => ({
   ...(await original<typeof import('livekit-server-sdk')>()),
   RoomServiceClient: class {
     listParticipants = listParticipants
+    sendData = sendData
   },
 }))
 
@@ -126,6 +128,25 @@ describe('POST /api/translate admission', () => {
       original: expect.any(String),
       languages: [{ lang: 'en-US', result: 'speech' }],
     })
+  })
+
+  it('delivers to the listeners over LiveKit data (caption + audio)', async () => {
+    await post(upload(SESSION()))
+    const topics = sendData.mock.calls.map(
+      (c) =>
+        (
+          c as unknown as [
+            string,
+            Uint8Array,
+            number,
+            { topic: string; destinationIdentities: string[] },
+          ]
+        )[3],
+    )
+    expect(topics).toEqual([
+      { topic: 'tvx.caption', destinationIdentities: ['guest-1'] },
+      { topic: 'tvx.audio', destinationIdentities: ['guest-1'] },
+    ])
   })
 
   it('401 signed out', async () => {
