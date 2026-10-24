@@ -74,7 +74,7 @@ function sessionError(message: string | undefined): SessionActionResult {
     ? 'NO_MINUTES'
     : /NOT_HOST|NOT_ALLOWED/.test(message ?? '')
       ? 'NOT_ALLOWED'
-      : message?.includes('NOT_LIVE')
+      : /NOT_LIVE|SESSION_CLOSED|NO_SESSION/.test(message ?? '')
         ? 'NOT_LIVE'
         : 'FAILED'
   if (code === 'FAILED') console.error('Call session action failed:', message)
@@ -87,8 +87,15 @@ const id = z.uuid()
 export async function startMeetingSession(meetingId: string): Promise<SessionActionResult> {
   const user = await getSessionUser()
   if (!user || !id.safeParse(meetingId).success) return sessionError('NOT_ALLOWED')
-  const { data, error } = await createAdminClient().rpc('start_call_session', {
+  const admin = createAdminClient()
+  const { data: opened, error: openError } = await admin.rpc('open_call_session', {
     p_meeting: meetingId,
+    p_user: user.id,
+  })
+  const sessionId = opened?.[0]?.session_id
+  if (openError || !sessionId) return sessionError(openError?.message)
+  const { data, error } = await admin.rpc('start_call_session', {
+    p_session: sessionId,
     p_user: user.id,
   })
   const row = data?.[0]
@@ -103,7 +110,7 @@ export async function joinMeetingSession(
 ): Promise<SessionActionResult> {
   const user = await getSessionUser()
   if (!user || !id.safeParse(sessionId).success) return sessionError('NOT_ALLOWED')
-  const { error } = await createAdminClient().rpc('join_call_session', {
+  const { error } = await createAdminClient().rpc('admit_participant', {
     p_session: sessionId,
     p_user: user.id,
   })

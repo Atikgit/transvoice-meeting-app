@@ -10,7 +10,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type VoiceGender = 'male' | 'female'
 export type OriginalAudioMode = 'off' | 'duck' | 'mute'
 export type BillingType = 'free' | 'prepaid' | 'postpaid'
-export type CallStatus = 'ringing' | 'live' | 'ended' | 'missed' | 'declined'
+export type CallStatus = 'ringing' | 'ready' | 'live' | 'ended' | 'missed' | 'declined'
 export type BillingStatus =
   'active' | 'on_trial' | 'past_due' | 'paused' | 'unpaid' | 'cancelled' | 'expired'
 
@@ -138,17 +138,37 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
-      start_call_session: {
+      call_rights: {
         Args: { p_meeting: string; p_user: string }
-        Returns: { session_id: string; started_at: string }[]
+        Returns: 'host' | 'sponsored' | 'member' | null
       }
-      join_call_session: {
-        Args: { p_session: string; p_user: string }
+      resolve_payer: {
+        Args: { p_meeting: string; p_user: string }
         Returns: string
       }
-      end_call_session: {
+      open_call_session: {
+        Args: { p_meeting: string; p_user: string }
+        Returns: { session_id: string; status: CallStatus; started_at: string | null; host_id: string }[]
+      }
+      admit_participant: {
         Args: { p_session: string; p_user: string }
-        Returns: undefined
+        Returns: {
+          meeting_id: string
+          role: string
+          payer_id: string
+          spoken_lang: string
+          listen_lang: string
+          display_name: string
+          status: CallStatus
+        }[]
+      }
+      start_call_session: {
+        Args: { p_session: string; p_user: string }
+        Returns: { session_id: string; started_at: string }[]
+      }
+      end_call_session: {
+        Args: { p_session: string; p_user: string | null; p_reason?: string }
+        Returns: boolean
       }
       create_meeting: {
         Args: { p_user: string; p_title?: string }

@@ -11,8 +11,8 @@ let meeting: string
 
 beforeEach(async () => {
   db = await createTestDb()
-  host = await createUser(db, 'host@example.com')
-  guest = await createUser(db, 'guest@example.com')
+  host = await createUser(db, 'host@example.com', { fullName: 'Host' })
+  guest = await createUser(db, 'guest@example.com', { fullName: 'Guest' })
   const hash = createHash('sha256').update(randomBytes(32)).digest('hex')
   const { rows } = await db.query<{ meeting_id: string }>(
     `select meeting_id from public.create_invitation($1, $2, '7 days', null)`,
@@ -22,105 +22,135 @@ beforeEach(async () => {
   await db.query('select public.accept_invitation($1, $2)', [hash, guest])
 }, 30_000)
 
-const start = (user: string) =>
+const open = async (user: string) =>
+  (
+    await db.query<{ session_id: string; status: string; host_id: string }>(
+      'select * from public.open_call_session($1, $2)',
+      [meeting, user],
+    )
+  ).rows[0]!
+const admit = (session: string, user: string) =>
+  db.query<{ role: string; payer_id: string; spoken_lang: string; display_name: string }>(
+    'select * from public.admit_participant($1, $2)',
+    [session, user],
+  )
+const start = (session: string, user: string) =>
   db.query<{ session_id: string; started_at: Date }>(
     'select * from public.start_call_session($1, $2)',
-    [meeting, user],
+    [session, user],
   )
-const join = (session: string, user: string) =>
-  db.query<{ role: string }>('select public.join_call_session($1, $2) role', [session, user])
-const participants = async (session: string) =>
-  (
-    await db.query<{ user_id: string; role: string; payer_id: string }>(
-      'select user_id, role, payer_id from public.meeting_participants where session_id = $1 order by role desc',
-      [session],
-    )
-  ).rows
+const drain = (user: string) =>
+  db.query(`select public.debit_minutes($1, $2, 'test')`, [user, FREE_TRIAL_MINUTES])
+const expireSponsorship = () =>
+  db.query(`update public.sponsored_connections set expires_at = now() - interval '1 s'`)
+const rights = async (user: string) =>
+  (await db.query<{ r: string | null }>('select public.call_rights($1, $2) r', [meeting, user]))
+    .rows[0]!.r
 
-describe('start_call_session', () => {
-  it('makes a live session with the host as participant and payer', async () => {
-    const { rows } = await start(host)
-    const session = rows[0]!.session_id
-    const { rows: s } = await db.query<{ status: string; host_id: string }>(
-      'select status, host_id from public.call_sessions where id = $1',
-      [session],
-    )
-    expect(s[0]).toEqual({ status: 'live', host_id: host })
-    expect(await participants(session)).toEqual([{ user_id: host, role: 'host', payer_id: host }])
-  })
-
-  it('is idempotent while live', async () => {
-    const first = (await start(host)).rows[0]!
-    const again = (await start(host)).rows[0]!
-    expect(again.session_id).toBe(first.session_id)
-  })
-
-  it('only the host can start, and only with minutes', async () => {
-    await expect(start(guest)).rejects.toThrow(/NOT_HOST/)
-    await db.query(`select public.debit_minutes($1, $2, 'test')`, [host, FREE_TRIAL_MINUTES])
-    await expect(start(host)).rejects.toThrow(/NO_MINUTES/)
-  })
-})
-
-describe('join_call_session', () => {
-  it('bills a sponsored guest to the sponsor (Rule 2)', async () => {
-    const session = (await start(host)).rows[0]!.session_id
-    expect((await join(session, guest)).rows[0]!.role).toBe('guest')
-    await join(session, guest)
-    expect(await participants(session)).toEqual([
-      { user_id: host, role: 'host', payer_id: host },
-      { user_id: guest, role: 'guest', payer_id: host },
-    ])
-  })
-
-  it('after the window expires the guest pays, and needs minutes (Rule 3)', async () => {
-    await db.query(`update public.sponsored_connections set expires_at = now() - interval '1 s'`)
-    const session = (await start(host)).rows[0]!.session_id
-    await join(session, guest)
-    expect((await participants(session)).find((p) => p.user_id === guest)?.payer_id).toBe(guest)
-
-    const other = (await db.query<{ id: string }>('select id from public.call_sessions')).rows[0]!
-      .id
-    const broke = await createUser(db, 'broke@example.com')
-    await db.query(`select public.debit_minutes($1, $2, 'test')`, [broke, FREE_TRIAL_MINUTES])
-    await db.query(
-      `insert into public.sponsored_connections (sponsor_id, guest_id, meeting_id, expires_at)
-       values ($1, $2, $3, now() - interval '1 s')`,
-      [host, broke, meeting],
-    )
-    await expect(join(other, broke)).rejects.toThrow(/NO_MINUTES/)
-  })
-
-  it('rejects strangers and sessions that are not live', async () => {
-    const session = (await start(host)).rows[0]!.session_id
+describe('call_rights', () => {
+  it('host, sponsored guest, member after expiry, stranger', async () => {
     const stranger = await createUser(db, 'stranger@example.com')
-    await expect(join(session, stranger)).rejects.toThrow(/NOT_ALLOWED/)
-    await db.query('select public.end_call_session($1, $2)', [session, host])
-    await expect(join(session, guest)).rejects.toThrow(/SESSION_NOT_LIVE/)
+    expect(await rights(host)).toBe('host')
+    expect(await rights(guest)).toBe('sponsored')
+    expect(await rights(stranger)).toBeNull()
+    await expireSponsorship()
+    expect(await rights(guest)).toBe('member')
   })
 })
 
-describe('end_call_session', () => {
-  it('host only; records the end', async () => {
-    const session = (await start(host)).rows[0]!.session_id
-    await expect(
-      db.query('select public.end_call_session($1, $2)', [session, guest]),
-    ).rejects.toThrow(/NOT_HOST_OR_NOT_LIVE/)
-    await db.query('select public.end_call_session($1, $2)', [session, host])
-    const { rows } = await db.query<{ status: string; end_reason: string; ended: boolean }>(
-      'select status, end_reason, ended_at is not null ended from public.call_sessions where id = $1',
-      [session],
-    )
-    expect(rows[0]).toEqual({ status: 'ended', end_reason: 'host_ended', ended: true })
-    // A new Start creates a new session.
-    expect((await start(host)).rows[0]!.session_id).not.toBe(session)
+describe('open_call_session', () => {
+  it('creates one ready session per meeting and returns it to everyone with rights', async () => {
+    const first = await open(guest)
+    expect(first).toMatchObject({ status: 'ready', host_id: host })
+    expect((await open(host)).session_id).toBe(first.session_id)
   })
 
-  it('none of the session functions are callable by users', async () => {
+  it('refuses users without rights', async () => {
+    const stranger = await createUser(db, 'stranger@example.com')
+    await expect(open(stranger)).rejects.toThrow(/NOT_ALLOWED/)
+  })
+})
+
+describe('admit_participant (LiveKit token gate)', () => {
+  it('admits the host (paying for themselves) and the sponsored guest (paid by the host)', async () => {
+    const { session_id } = await open(host)
+    expect((await admit(session_id, host)).rows[0]).toMatchObject({
+      role: 'host',
+      payer_id: host,
+      display_name: 'Host',
+      spoken_lang: 'en-US',
+    })
+    expect((await admit(session_id, guest)).rows[0]).toMatchObject({
+      role: 'guest',
+      payer_id: host,
+    })
+    const { rows } = await db.query(
+      'select user_id from public.meeting_participants where session_id = $1',
+      [session_id],
+    )
+    expect(rows).toHaveLength(2)
+  })
+
+  it('admits the host even at 0 minutes (Start is what needs minutes)', async () => {
+    const { session_id } = await open(host)
+    await drain(host)
+    await expect(admit(session_id, host)).resolves.toBeDefined()
+    await expect(start(session_id, host)).rejects.toThrow(/NO_MINUTES/)
+  })
+
+  it('after the window expires the guest pays for themselves (Rule 3)', async () => {
+    const { session_id } = await open(host)
+    await expireSponsorship()
+    expect((await admit(session_id, guest)).rows[0]).toMatchObject({ payer_id: guest })
+  })
+
+  it('refuses an expired guest with 0 minutes', async () => {
+    const { session_id } = await open(host)
+    await expireSponsorship()
+    await drain(guest)
+    await expect(admit(session_id, guest)).rejects.toThrow(/NO_MINUTES/)
+  })
+
+  it('refuses strangers, closed and unknown sessions', async () => {
+    const { session_id } = await open(host)
+    const stranger = await createUser(db, 'stranger@example.com')
+    await expect(admit(session_id, stranger)).rejects.toThrow(/NOT_ALLOWED/)
+    await db.query('select public.end_call_session($1, $2)', [session_id, host])
+    await expect(admit(session_id, guest)).rejects.toThrow(/SESSION_CLOSED/)
+    await expect(admit('00000000-0000-4000-8000-000000000000', guest)).rejects.toThrow(/NO_SESSION/)
+  })
+})
+
+describe('start_call_session / end_call_session', () => {
+  it('ready → live → ended; a new open creates a new session', async () => {
+    const { session_id } = await open(host)
+    await expect(start(session_id, guest)).rejects.toThrow(/NOT_HOST/)
+    const live = (await start(session_id, host)).rows[0]!
+    expect((await start(session_id, host)).rows[0]!.started_at).toEqual(live.started_at)
+
+    await expect(
+      db.query('select public.end_call_session($1, $2)', [session_id, guest]),
+    ).rejects.toThrow(/NOT_HOST/)
+    const ended = await db.query<{ ok: boolean }>(
+      `select public.end_call_session($1, null, 'reconnect_timeout') ok`,
+      [session_id],
+    )
+    expect(ended.rows[0]!.ok).toBe(true)
+    const { rows } = await db.query<{ status: string; end_reason: string }>(
+      'select status, end_reason from public.call_sessions where id = $1',
+      [session_id],
+    )
+    expect(rows[0]).toEqual({ status: 'ended', end_reason: 'reconnect_timeout' })
+    expect((await open(host)).session_id).not.toBe(session_id)
+  })
+
+  it('none of the call functions are callable by users', async () => {
     for (const sql of [
-      `select * from public.start_call_session('${meeting}', '${host}')`,
+      `select public.call_rights('${meeting}', '${host}')`,
+      `select * from public.open_call_session('${meeting}', '${host}')`,
+      `select * from public.admit_participant(gen_random_uuid(), '${host}')`,
+      `select * from public.start_call_session(gen_random_uuid(), '${host}')`,
       `select public.end_call_session(gen_random_uuid(), '${host}')`,
-      `select public.join_call_session(gen_random_uuid(), '${host}')`,
     ]) {
       await expect(asUser(db, host, (tx) => tx.query(sql))).rejects.toThrow(/permission denied/)
     }
