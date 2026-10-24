@@ -24,3 +24,6 @@ geoip/
 
 # Supabase CLI link state
 supabase/.temp/
+
+# Copied from node_modules by scripts/copy-vad-assets.ts
+public/vad/

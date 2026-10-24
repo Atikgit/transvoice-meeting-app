@@ -7,8 +7,8 @@
   },
   "packageManager": "pnpm@10.34.7",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "pnpm -s vad:assets && next dev",
+    "build": "pnpm -s vad:assets && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -19,12 +19,14 @@
     "test:e2e": "playwright test",
     "db:types": "supabase gen types typescript --linked --schema public > lib/supabase/database.types.ts",
     "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/gen-icons.ts",
-    "auth:templates": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/push-auth-templates.ts"
+    "auth:templates": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/push-auth-templates.ts",
+    "vad:assets": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/copy-vad-assets.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@livekit/components-react": "^2.9.24",
     "@maxmind/geoip2-node": "7.1.0",
+    "@ricky0123/vad-web": "0.0.31",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.3",
     "@upstash/ratelimit": "^2.2.0",
@@ -37,6 +39,7 @@
     "lucide-react": "^1.16.0",
     "next": "16.3.0",
     "nodemailer": "10.0.16",
+    "onnxruntime-web": "1.30.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "server-only": "^0.0.1",

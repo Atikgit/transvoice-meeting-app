@@ -21,6 +21,7 @@ const config = [
       'test-results/**',
       'coverage/**',
       'next-env.d.ts',
+      'public/vad/**',
     ],
   },
 ]
