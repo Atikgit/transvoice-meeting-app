@@ -200,3 +200,48 @@ describe('translation_context', () => {
     await expect(ctx(session_id, stranger)).rejects.toThrow(/NOT_A_PARTICIPANT/)
   })
 })
+
+describe('set_participant_langs', () => {
+  const setLangs = (session: string, user: string, spoken: string | null, listen: string | null) =>
+    db.query<{ display_name: string; role: string; spoken_lang: string; listen_lang: string }>(
+      'select * from public.set_participant_langs($1, $2, $3, $4)',
+      [session, user, spoken, listen],
+    )
+
+  it('changes only the given language, for this session, and the next utterance reads it', async () => {
+    const { session_id } = await open(host)
+    await admit(session_id, host)
+    await admit(session_id, guest)
+    await start(session_id, host)
+
+    const changed = await setLangs(session_id, guest, null, 'es-ES')
+    expect(changed.rows[0]).toEqual({
+      display_name: 'Guest',
+      role: 'guest',
+      spoken_lang: 'en-US',
+      listen_lang: 'es-ES',
+    })
+    const ctx = await db.query<{ c: { participants: { userId: string; listenLang: string }[] } }>(
+      'select public.translation_context($1, $2) c',
+      [session_id, host],
+    )
+    expect(ctx.rows[0]!.c.participants).toEqual([{ userId: guest, listenLang: 'es-ES' }])
+    // The profile is untouched.
+    const { rows } = await db.query<{ listen_lang: string }>(
+      'select listen_lang from public.profiles where id = $1',
+      [guest],
+    )
+    expect(rows[0]!.listen_lang).toBe('en-US')
+  })
+
+  it('rejects malformed codes, strangers and closed sessions', async () => {
+    const { session_id } = await open(host)
+    await admit(session_id, guest)
+    await expect(setLangs(session_id, guest, 'en_US; drop', null)).rejects.toThrow(
+      /INVALID_LANGUAGE/,
+    )
+    await expect(setLangs(session_id, host, 'bn-BD', null)).rejects.toThrow(/NOT_A_PARTICIPANT/)
+    await db.query('select public.end_call_session($1, $2)', [session_id, host])
+    await expect(setLangs(session_id, guest, 'bn-BD', null)).rejects.toThrow(/SESSION_CLOSED/)
+  })
+})

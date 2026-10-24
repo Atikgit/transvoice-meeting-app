@@ -26,6 +26,7 @@ import { MeetingHeader } from '@/components/meeting/meeting-header'
 import { CallAgain } from '@/components/meeting/call-again'
 import { Control } from '@/components/meeting/control-bar'
 import { DeviceMenu } from '@/components/meeting/device-menu'
+import { LanguageMenu } from '@/components/meeting/language-menu'
 import { LatencyBadge } from '@/components/meeting/latency-badge'
 import { MeetingLayout } from '@/components/meeting/meeting-layout'
 import { ParticipantTile } from '@/components/meeting/participant-tile'
@@ -54,6 +55,9 @@ export interface MeetingRoomProps {
   displayName: string
   /** How the speaker's original voice is treated while their translation plays (Settings). */
   originalAudioMode: OriginalAudioMode
+  /** Languages for this session (profile defaults; the room's menu changes them). */
+  spokenLang: string
+  listenLang: string
   /** Session state when the page loaded (LiveKit room metadata takes over once connected). */
   initialState: RoomState
   /** Host's balance (minutes) and label. */
@@ -182,6 +186,8 @@ function RoomView({
   title,
   displayName,
   originalAudioMode,
+  spokenLang,
+  listenLang,
   initialState,
   balance = 0,
   minutesLabel,
@@ -317,6 +323,9 @@ function RoomView({
         )
       }
       caption={{
+        actions: (
+          <LanguageMenu sessionId={sessionId} spokenLang={spokenLang} listenLang={listenLang} />
+        ),
         translating: translation.translating,
         originalText: captions.original,
         translatedText: captions.translated,

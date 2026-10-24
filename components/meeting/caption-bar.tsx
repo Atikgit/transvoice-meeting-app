@@ -16,12 +16,15 @@ export function CaptionBar({
   originalText,
   translatedText,
   placeholder,
+  actions,
 }: {
   translating: boolean
   originalText: string
   translatedText: string
   /** Shown while there are no captions yet. */
   placeholder?: string
+  /** Controls at the right of the header (language menu). */
+  actions?: React.ReactNode
 }) {
   const empty = !originalText && !translatedText
 
@@ -30,9 +33,12 @@ export function CaptionBar({
       data-testid="caption-bar"
       className="mx-4 mt-3 rounded-2xl border border-cyan-300/20 bg-[#151d2c] px-4 py-2.5 lg:mx-6"
     >
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
-        <Sparkles size={12} aria-hidden />{' '}
-        {translating ? 'Translating live...' : 'Live translation'}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
+          <Sparkles size={12} aria-hidden />{' '}
+          {translating ? 'Translating live...' : 'Live translation'}
+        </div>
+        {actions}
       </div>
       {empty ? (
         <p className="mt-1 text-sm leading-5 text-slate-500">{placeholder}</p>

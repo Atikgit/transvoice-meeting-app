@@ -135,6 +135,8 @@ const room = (role: 'host' | 'guest', initialState: RoomState = READY) => {
       title="Translated meeting"
       displayName="Atik"
       originalAudioMode="duck"
+      spokenLang="bn-BD"
+      listenLang="en-US"
       initialState={initialState}
       initialCamera
       initialMic
@@ -151,6 +153,8 @@ const room = (role: 'host' | 'guest', initialState: RoomState = READY) => {
         title="Translated meeting"
         displayName="Atik"
         originalAudioMode="duck"
+        spokenLang="bn-BD"
+        listenLang="en-US"
         initialState={initialState}
         initialCamera
         initialMic
@@ -272,6 +276,8 @@ describe('Lobby choices in the room', () => {
         title="Translated meeting"
         displayName="Atik"
         originalAudioMode="duck"
+        spokenLang="bn-BD"
+        listenLang="en-US"
         initialState={READY}
         initialCamera={false}
         initialMic

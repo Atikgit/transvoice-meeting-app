@@ -139,6 +139,15 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      set_participant_langs: {
+        Args: {
+          p_session: string
+          p_user: string
+          p_spoken?: string | null
+          p_listen?: string | null
+        }
+        Returns: { display_name: string; role: string; spoken_lang: string; listen_lang: string }[]
+      }
       translation_context: {
         Args: { p_session: string; p_speaker: string }
         Returns: Json
