@@ -156,3 +156,47 @@ describe('start_call_session / end_call_session', () => {
     }
   })
 })
+
+describe('translation_context', () => {
+  const ctx = async (session: string, speaker: string) =>
+    (
+      await db.query<{ c: Record<string, unknown> }>(
+        'select public.translation_context($1, $2) c',
+        [session, speaker],
+      )
+    ).rows[0]!.c
+
+  it('returns speaker language, payer, host and the other participants’ listen languages', async () => {
+    const { session_id } = await open(host)
+    await db.query(
+      `update public.profiles set spoken_lang = 'bn-BD', voice_gender = 'male' where id = $1`,
+      [host],
+    )
+    await db.query(`update public.profiles set listen_lang = 'en-US' where id = $1`, [guest])
+    await admit(session_id, host)
+    await admit(session_id, guest)
+    await start(session_id, host)
+    expect(await ctx(session_id, host)).toEqual({
+      hostId: host,
+      hostEmail: 'host@example.com',
+      speaker: {
+        userId: host,
+        spokenLang: 'bn-BD',
+        payerId: host,
+        payerHasMinutes: true,
+        voiceGender: 'male',
+      },
+      participants: [{ userId: guest, listenLang: 'en-US' }],
+    })
+    expect((await ctx(session_id, guest)).speaker).toMatchObject({ payerId: host })
+  })
+
+  it('only for live sessions and their participants', async () => {
+    const { session_id } = await open(host)
+    await admit(session_id, host)
+    await expect(ctx(session_id, host)).rejects.toThrow(/SESSION_NOT_LIVE/)
+    await start(session_id, host)
+    const stranger = await createUser(db, 'stranger@example.com')
+    await expect(ctx(session_id, stranger)).rejects.toThrow(/NOT_A_PARTICIPANT/)
+  })
+})

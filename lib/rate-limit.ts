@@ -13,6 +13,7 @@ const LIMITS = {
   invitation: { tokens: 20, window: '1 h' },
   meeting: { tokens: 30, window: '1 h' },
   call: { tokens: 10, window: '1 m' },
+  translate: { tokens: 30, window: '1 m' },
   // Invite emails: per user and per IP (10/20 an hour), per recipient (3 a day).
   inviteEmailUser: { tokens: 10, window: '1 h' },
   inviteEmailIp: { tokens: 20, window: '1 h' },

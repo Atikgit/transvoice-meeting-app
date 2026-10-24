@@ -139,6 +139,10 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      translation_context: {
+        Args: { p_session: string; p_speaker: string }
+        Returns: Json
+      }
       record_livekit_event: {
         Args: {
           p_event_id: string

@@ -32,6 +32,7 @@ import { RoomNotice } from '@/components/meeting/room-notice'
 import { VideoTile } from '@/components/meeting/video-tile'
 import { useLiveKitToken } from '@/features/meeting/useLiveKitToken'
 import { useMeetingChat } from '@/features/meeting/useMeetingChat'
+import { useLiveTranslation } from '@/features/translation/useLiveTranslation'
 import { formatElapsed, useElapsedSeconds, useRoomState } from '@/features/meeting/useRoomState'
 import type { MeetingRole } from '@/lib/meetings/load'
 import type { RoomState } from '@/lib/meetings/room-state'
@@ -202,6 +203,7 @@ function RoomView({
   const session = useRoomState(sessionId, initialState)
   const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
 
+  const translation = useLiveTranslation({ sessionId, status: session.state.status })
   const live = session.state.status === 'live'
   const ended = session.state.status === 'ended'
   const elapsed = useElapsedSeconds(live ? session.state.startedAt : null)
@@ -301,12 +303,16 @@ function RoomView({
         )
       }
       caption={{
-        translating: false,
+        translating: translation.translating,
         originalText: '',
         translatedText: '',
-        placeholder: live
-          ? 'Live translation arrives in the next update.'
-          : 'Translation starts when the meeting starts.',
+        placeholder:
+          translation.notice?.text ??
+          (live
+            ? translation.speaking
+              ? 'Listening…'
+              : 'Speak naturally — your partner hears you in their language.'
+            : 'Translation starts when the meeting starts.'),
       }}
       controls={{
         mic: isMicrophoneEnabled,

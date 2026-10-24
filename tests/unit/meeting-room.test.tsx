@@ -79,6 +79,14 @@ vi.mock('@/components/meeting/participant-tile', () => ({
   ),
 }))
 vi.mock('@/features/calls/useUserChannel', () => ({ useUserChannel: () => {} }))
+vi.mock('@/features/translation/useLiveTranslation', () => ({
+  useLiveTranslation: () => ({
+    listening: false,
+    speaking: false,
+    translating: false,
+    notice: null,
+  }),
+}))
 vi.mock('@/components/meeting/device-menu', () => ({ DeviceMenu: () => <button>Devices</button> }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('@/app/invite/actions', () => ({ createInvitation: vi.fn() }))

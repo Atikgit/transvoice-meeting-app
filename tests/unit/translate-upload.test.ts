@@ -1,0 +1,154 @@
+import { NextRequest } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { encodeWav, isWav, wavSeconds } from '@/lib/translation/wav'
+
+const getSessionUser = vi.fn()
+const rpc = vi.fn()
+const listParticipants = vi.fn()
+vi.mock('@/lib/supabase/server', () => ({ getSessionUser }))
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ rpc }) }))
+vi.mock('livekit-server-sdk', async (original) => ({
+  ...(await original<typeof import('livekit-server-sdk')>()),
+  RoomServiceClient: class {
+    listParticipants = listParticipants
+  },
+}))
+
+const { POST } = await import('@/app/api/translate/route')
+const { parseTranslateUpload, MAX_AUDIO_BYTES } = await import('@/lib/translation/request')
+
+let n = 0
+const SESSION = () => `22222222-2222-4222-8222-${String(++n).padStart(12, '0')}`
+const UTTERANCE = '33333333-3333-4333-8333-333333333333'
+const wav = (seconds = 1) => encodeWav(new Float32Array(16_000 * seconds).fill(0.25))
+
+function form(fields: Record<string, string | Blob>) {
+  const data = new FormData()
+  for (const [k, v] of Object.entries(fields)) data.set(k, v)
+  return data
+}
+const upload = (session: string, audio: Blob = new Blob([wav()], { type: 'audio/wav' })) =>
+  form({ audio, sessionId: session, utteranceId: UTTERANCE, clientTs: '1761300000000' })
+const post = (body: FormData) =>
+  POST(new NextRequest('https://meet.transvoice.ai/api/translate', { method: 'POST', body }))
+
+const context = {
+  hostId: 'host-1',
+  hostEmail: 'host@example.com',
+  speaker: {
+    userId: 'user-1',
+    spokenLang: 'bn-BD',
+    payerId: 'host-1',
+    payerHasMinutes: true,
+    voiceGender: 'female',
+  },
+  participants: [{ userId: 'guest-1', listenLang: 'en-US' }],
+}
+
+let me = 'user-0'
+beforeEach(() => {
+  vi.clearAllMocks()
+  me = `user-${++n}` // one speaker per test: the rate limiter is process-wide
+  getSessionUser.mockImplementation(async () => ({ id: me }))
+  rpc.mockResolvedValue({ data: context, error: null })
+  listParticipants.mockImplementation(async () => [{ identity: me }, { identity: 'guest-1' }])
+})
+
+describe('WAV encoding', () => {
+  it('writes a 16 kHz mono 16-bit PCM header and clamps samples', () => {
+    const bytes = encodeWav(new Float32Array([0, 1, -1, 2]))
+    const view = new DataView(bytes.buffer)
+    expect(isWav(bytes)).toBe(true)
+    expect(bytes.length).toBe(44 + 8)
+    expect(view.getUint16(22, true)).toBe(1) // mono
+    expect(view.getUint32(24, true)).toBe(16_000)
+    expect(view.getUint16(34, true)).toBe(16)
+    expect([
+      view.getInt16(44, true),
+      view.getInt16(46, true),
+      view.getInt16(48, true),
+      view.getInt16(50, true),
+    ]).toEqual([0, 32767, -32768, 32767])
+    expect(wavSeconds(wav(2).length)).toBe(2)
+  })
+
+  it('a 12 s utterance stays well under the 2 MB limit', () => {
+    expect(wav(12).length).toBeLessThan(MAX_AUDIO_BYTES)
+  })
+})
+
+describe('parseTranslateUpload', () => {
+  it('accepts WAV with the required fields', async () => {
+    const parsed = await parseTranslateUpload(upload(SESSION()))
+    expect('error' in parsed).toBe(false)
+  })
+
+  it.each([
+    [
+      'missing audio',
+      () => form({ sessionId: SESSION(), utteranceId: UTTERANCE, clientTs: '1' }),
+      400,
+    ],
+    ['non-audio MIME', () => upload(SESSION(), new Blob([wav()], { type: 'text/plain' })), 415],
+    [
+      'WebM claimed as WAV',
+      () => upload(SESSION(), new Blob([new Uint8Array(100)], { type: 'audio/wav' })),
+      415,
+    ],
+    [
+      'over 2 MB',
+      () =>
+        upload(SESSION(), new Blob([new Uint8Array(MAX_AUDIO_BYTES + 1)], { type: 'audio/wav' })),
+      413,
+    ],
+    [
+      'bad ids',
+      () =>
+        form({
+          audio: new Blob([wav()], { type: 'audio/wav' }),
+          sessionId: 'x',
+          utteranceId: 'y',
+          clientTs: '1',
+        }),
+      400,
+    ],
+  ])('rejects %s', async (_label, make, status) => {
+    expect(await parseTranslateUpload(make())).toMatchObject({ status })
+  })
+})
+
+describe('POST /api/translate admission', () => {
+  it('202 for a connected participant of a live session', async () => {
+    const res = await post(upload(SESSION()))
+    expect(res.status).toBe(202)
+    expect(await res.json()).toEqual({ utteranceId: UTTERANCE, accepted: true })
+  })
+
+  it('401 signed out', async () => {
+    getSessionUser.mockImplementation(async () => null)
+    expect((await post(upload(SESSION()))).status).toBe(401)
+  })
+
+  it('403 when not connected to the LiveKit room', async () => {
+    listParticipants.mockResolvedValue([{ identity: 'guest-1' }])
+    const res = await post(upload(SESSION()))
+    expect(res.status).toBe(403)
+    expect((await res.json()).code).toBe('NOT_CONNECTED')
+  })
+
+  it.each([
+    ['SESSION_NOT_LIVE', 409],
+    ['NOT_A_PARTICIPANT', 403],
+  ])('%s → %i', async (code, status) => {
+    rpc.mockResolvedValue({ data: null, error: { message: code } })
+    expect((await post(upload(SESSION()))).status).toBe(status)
+  })
+
+  it('rate-limits to 30 per minute per user', async () => {
+    const session = SESSION()
+    const statuses: number[] = []
+    for (let i = 0; i < 31; i++) statuses.push((await post(upload(session))).status)
+    expect(statuses.slice(0, 30).every((s) => s === 202)).toBe(true)
+    expect(statuses[30]).toBe(429)
+  })
+})
