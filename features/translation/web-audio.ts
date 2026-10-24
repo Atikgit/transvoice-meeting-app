@@ -17,6 +17,11 @@ function audioContext(): AudioContext | null {
   return context
 }
 
+/** The page's shared AudioContext (created on first use), for the VAD and for playback. */
+export function sharedAudioContext(): AudioContext | null {
+  return audioContext()
+}
+
 /** Resumes (or creates) the context. Safe to call repeatedly; returns whether audio can play. */
 export async function unlockAudio(): Promise<boolean> {
   const ctx = audioContext()

@@ -7,6 +7,7 @@ import { MeetingRoom } from '@/components/meeting/meeting-room'
  * and /api/calls/* in the browser. 404 in production builds.
  *
  *   /dev/meeting?role=host|guest&session=<uuid>&user=<uuid>&name=<display name>
+ *     &spoken=bn-BD&listen=en-US&mic=off&audio=duck|mute|off&beta=off
  */
 export default async function DevMeeting({
   searchParams,
@@ -34,7 +35,7 @@ export default async function DevMeeting({
       originalAudioMode={q.audio === 'mute' ? 'mute' : q.audio === 'off' ? 'off' : 'duck'}
       initialState={{ status: 'ready', startedAt: null, hostId }}
       initialCamera
-      initialMic
+      initialMic={q.mic !== 'off'}
     />
   )
 }

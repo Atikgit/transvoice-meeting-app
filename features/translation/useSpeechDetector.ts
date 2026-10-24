@@ -3,6 +3,16 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { MicVAD } from '@ricky0123/vad-web'
 import { VAD_ASSET_PATH, VAD_SETTINGS } from './vad-gate'
+import { sharedAudioContext } from './web-audio'
+
+/** Destroys a VAD without throwing (its start-up may still be in flight). */
+async function retire(vad: MicVAD): Promise<void> {
+  try {
+    await vad.destroy()
+  } catch (e) {
+    console.warn('Voice activity detector cleanup:', e instanceof Error ? e.message : e)
+  }
+}
 
 export interface Utterance {
   /** 16 kHz mono samples in [-1, 1]. */
@@ -29,6 +39,7 @@ export function useSpeechDetector({
   const vadRef = useRef<MicVAD | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [speaking, setSpeaking] = useState(false)
+  const [ready, setReady] = useState(false)
   const emit = useEffectEvent(onUtterance)
 
   // Create the VAD for this microphone track.
@@ -45,6 +56,8 @@ export function useSpeechDetector({
           model: 'v5',
           baseAssetPath: VAD_ASSET_PATH,
           onnxWASMBasePath: VAD_ASSET_PATH,
+          // The shared context unlocked by a user gesture (iOS/Safari keep a private one suspended).
+          audioContext: sharedAudioContext() ?? undefined,
           startOnLoad: false,
           submitUserSpeechOnPause: false,
           redemptionMs: VAD_SETTINGS.redemptionMs,
@@ -78,8 +91,13 @@ export function useSpeechDetector({
             setSpeaking(false)
           },
         })
-        if (cancelled) return void vad.destroy()
+        // Build the audio graph now (model + worklet preloaded before the meeting starts) and
+        // pause: MicVAD.destroy() and pause() throw on a VAD that was never started.
+        await vad.start()
+        await vad.pause()
+        if (cancelled) return void retire(vad)
         vadRef.current = vad
+        setReady(true)
         setError(null)
       } catch (e) {
         console.error('Voice activity detection failed to start:', e)
@@ -90,19 +108,27 @@ export function useSpeechDetector({
     return () => {
       cancelled = true
       clearTimeout(splitTimer)
-      void vadRef.current?.destroy()
+      if (vadRef.current) void retire(vadRef.current)
       vadRef.current = null
+      setReady(false)
     }
   }, [track])
 
-  // Start / pause with the gate (pausing drops any partial utterance).
+  // Start / pause with the gate (pausing drops any partial utterance). MicVAD throws on pause()
+  // before its first start(), and start() must wait until the model has loaded.
   useEffect(() => {
     const vad = vadRef.current
-    if (!vad) return
-    if (listening) void vad.start()
-    else void vad.pause()
-  }, [listening, track, error])
+    if (!vad || !ready) return
+    if (listening) {
+      void vad.start().catch((e: unknown) => {
+        console.error('Voice activity detection could not start:', e)
+        setError('Live translation is unavailable in this browser.')
+      })
+    } else if (vad.listening) {
+      void vad.pause().catch(() => {})
+    }
+  }, [listening, ready])
 
   // A paused VAD drops the partial utterance without an end event.
-  return { error, speaking: speaking && listening }
+  return { error, ready, speaking: speaking && listening }
 }
