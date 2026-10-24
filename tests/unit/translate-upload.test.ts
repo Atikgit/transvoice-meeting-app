@@ -152,6 +152,45 @@ describe('POST /api/translate admission', () => {
     ])
   })
 
+  it('logs stage timings per utterance and nothing personal', async () => {
+    const lines: string[] = []
+    const info = vi
+      .spyOn(console, 'info')
+      .mockImplementation((line: string) => void lines.push(line))
+    await post(upload(SESSION()))
+    info.mockRestore()
+    const entry = JSON.parse(lines.find((l) => l.includes('"event":"translate"'))!)
+    expect(entry).toMatchObject({
+      event: 'translate',
+      audioBytes: expect.any(Number),
+      intakeMs: expect.any(Number),
+      contextMs: expect.any(Number),
+      totalMs: expect.any(Number),
+      languages: [
+        {
+          lang: 'en-US',
+          outcome: 'speech',
+          apiMs: expect.any(Number),
+          captionMs: expect.any(Number),
+          audioMs: expect.any(Number),
+        },
+      ],
+    })
+    const text = lines.join('\n')
+    for (const secret of [
+      'Hello, how are you?',
+      'হ্যালো',
+      'QQ==',
+      'UklGR',
+      me,
+      'guest-1',
+      'host-1',
+      'host@example.com',
+    ]) {
+      expect(text).not.toContain(secret)
+    }
+  })
+
   describe('same-language listeners (Rule: no API call, no TTS, original audio untouched)', () => {
     const apiCalls = () => {
       const bodies: { tgt_lang: string }[] = []

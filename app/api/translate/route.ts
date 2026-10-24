@@ -3,6 +3,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { loadTranslationContext } from '@/lib/translation/context'
 import { deliverResult } from '@/lib/translation/deliver'
 import { groupListeners, translateForListeners } from '@/lib/translation/fanout'
+import { logTranslate } from '@/lib/translation/log'
 import { parseTranslateUpload } from '@/lib/translation/request'
 import { getSessionUser } from '@/lib/supabase/server'
 
@@ -12,6 +13,7 @@ import { getSessionUser } from '@/lib/supabase/server'
  * No billing here: the Phase 3 minute meter bills connected time.
  */
 export async function POST(request: NextRequest) {
+  const startedAt = performance.now()
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 })
   if (!(await checkRateLimit('translate', user.id))) {
@@ -24,7 +26,9 @@ export async function POST(request: NextRequest) {
   if ('error' in upload)
     return NextResponse.json({ error: upload.error }, { status: upload.status })
 
+  const contextStartedAt = performance.now()
   const loaded = await loadTranslationContext(upload.sessionId, user.id)
+  const contextMs = Math.round(performance.now() - contextStartedAt)
   if (!loaded.ok) {
     return NextResponse.json({ code: loaded.code, error: loaded.error }, { status: loaded.status })
   }
@@ -36,6 +40,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ utteranceId: upload.utteranceId, languages: [] })
   }
 
+  const delivered = new Map<string, { captionMs: number; audioMs: number } | null>()
   const results = await translateForListeners({
     audioBase64: Buffer.from(upload.audio).toString('base64'),
     spokenLang: context.speaker.spokenLang,
@@ -43,14 +48,37 @@ export async function POST(request: NextRequest) {
     groups,
     sessionId: upload.sessionId,
     speakerId: user.id,
-    onResult: (result) =>
-      deliverResult({
-        sessionId: upload.sessionId,
-        utteranceId: upload.utteranceId,
-        speakerId: user.id,
-        speechEndedAt: upload.clientTs,
-        result,
-      }),
+    onResult: async (result) => {
+      delivered.set(
+        result.lang,
+        await deliverResult({
+          sessionId: upload.sessionId,
+          utteranceId: upload.utteranceId,
+          speakerId: user.id,
+          speechEndedAt: upload.clientTs,
+          result,
+        }),
+      )
+    },
+  })
+  logTranslate({
+    sessionId: upload.sessionId,
+    audioBytes: upload.audio.length,
+    intakeMs: Math.round(contextStartedAt - startedAt),
+    contextMs,
+    languages: results.map((r) => {
+      const d = delivered.get(r.lang)
+      return {
+        lang: r.lang,
+        outcome: r.kind,
+        reason: r.kind === 'failed' ? r.reason : undefined,
+        apiMs: r.ms,
+        captionMs: d?.captionMs,
+        // deliverResult reports -1 when there was no audio to send.
+        audioMs: d && d.audioMs >= 0 ? d.audioMs : undefined,
+      }
+    }),
+    totalMs: Math.round(performance.now() - startedAt),
   })
   const speech = results.find((r) => r.kind === 'speech')
   const failed = results.filter((r) => r.kind === 'failed')
