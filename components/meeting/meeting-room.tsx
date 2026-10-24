@@ -7,6 +7,7 @@ import {
   RoomAudioRenderer,
   useConnectionState,
   useLocalParticipant,
+  usePersistentUserChoices,
   useRemoteParticipants,
   useTracks,
 } from '@livekit/components-react'
@@ -70,6 +71,9 @@ function canShareScreen(): boolean {
 export function MeetingRoom(props: MeetingRoomProps) {
   const [attempt, setAttempt] = useState(0)
   const token = useLiveKitToken(props.sessionId, attempt)
+  // Devices chosen in the lobby (LiveKit persistent choices); on/off comes from the lobby form.
+  const { userChoices } = usePersistentUserChoices({ preventSave: true })
+  const device = (id: string) => (id && id !== 'default' ? { deviceId: id } : {})
 
   if (token.status !== 'ready') {
     return (
@@ -98,8 +102,16 @@ export function MeetingRoom(props: MeetingRoomProps) {
       token={token.token}
       connect
       options={ROOM_OPTIONS}
-      audio={props.initialMic}
-      video={props.initialCamera}
+      audio={
+        props.initialMic
+          ? { ...ROOM_OPTIONS.audioCaptureDefaults, ...device(userChoices.audioDeviceId) }
+          : false
+      }
+      video={
+        props.initialCamera
+          ? { ...ROOM_OPTIONS.videoCaptureDefaults, ...device(userChoices.videoDeviceId) }
+          : false
+      }
       className="contents"
     >
       <RoomView {...props} />

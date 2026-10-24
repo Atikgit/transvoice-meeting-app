@@ -6,6 +6,23 @@ const push = vi.fn()
 const back = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push, back }), redirect: vi.fn() }))
 vi.mock('@/app/m/actions', () => ({ joinFromLobby: vi.fn(async () => ({})) }))
+const saved = { audio: vi.fn(), video: vi.fn() }
+vi.mock('@livekit/components-react', () => ({
+  usePersistentUserChoices: () => ({
+    userChoices: { audioDeviceId: '', videoDeviceId: '' },
+    saveAudioInputEnabled: saved.audio,
+    saveVideoInputEnabled: saved.video,
+    saveAudioInputDeviceId: vi.fn(),
+    saveVideoInputDeviceId: vi.fn(),
+  }),
+  useMediaDevices: ({ kind }: { kind: string }) =>
+    kind === 'audioinput'
+      ? [
+          { deviceId: 'mic-1', label: 'Built-in mic' },
+          { deviceId: 'mic-2', label: 'Headset' },
+        ]
+      : [],
+}))
 
 const { Lobby } = await import('@/components/meeting/lobby')
 
@@ -26,6 +43,15 @@ const lobby = (role: 'host' | 'guest') =>
   )
 
 describe('Lobby', () => {
+  it('lets you pick the microphone and remembers mute choices for the room', () => {
+    lobby('host')
+    expect(screen.getByRole('combobox', { name: 'Microphone' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Camera' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Microphone on' }))
+    expect(saved.audio).toHaveBeenCalledWith(false)
+    expect(screen.getByDisplayValue('off', { exact: true })).toHaveAttribute('name', 'mic')
+  })
+
   it('host: "Start Translated Meeting"', () => {
     lobby('host')
     expect(screen.getByRole('heading', { name: 'Start Translated Meeting' })).toBeInTheDocument()

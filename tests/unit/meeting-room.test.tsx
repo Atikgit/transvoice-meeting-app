@@ -16,9 +16,23 @@ const lk = {
   setMicrophoneEnabled: vi.fn(),
   setCameraEnabled: vi.fn(),
   rerender: () => {},
+  roomProps: {} as { audio?: unknown; video?: unknown; options?: unknown },
 }
 vi.mock('@livekit/components-react', () => ({
-  LiveKitRoom: ({ children }: { children: ReactNode }) => <>{children}</>,
+  LiveKitRoom: ({
+    children,
+    ...props
+  }: {
+    children: ReactNode
+    audio: unknown
+    video: unknown
+  }) => {
+    lk.roomProps = props
+    return <>{children}</>
+  },
+  usePersistentUserChoices: () => ({
+    userChoices: { audioDeviceId: 'mic-2', videoDeviceId: 'default' },
+  }),
   RoomAudioRenderer: () => null,
   useRoomInfo: () => ({ metadata: lk.metadata, name: 'tv-room' }),
   useConnectionState: () => lk.connection,
@@ -207,6 +221,34 @@ describe('MeetingRoom (LiveKit)', () => {
     expect(lk.setMicrophoneEnabled).toHaveBeenCalledWith(false)
     fireEvent.click(screen.getByRole('button', { name: 'Turn off camera' }))
     expect(lk.setCameraEnabled).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('Lobby choices in the room', () => {
+  it('publishes with the lobby microphone; camera off when chosen off', async () => {
+    render(
+      <MeetingRoom
+        meetingId="11111111-1111-4111-8111-111111111111"
+        sessionId={SESSION}
+        userId="u1"
+        role="guest"
+        roomName="m-room"
+        title="Translated meeting"
+        displayName="Atik"
+        initialState={READY}
+        initialCamera={false}
+        initialMic
+      />,
+    )
+    await screen.findByText('Waiting for host to start…')
+    expect(lk.roomProps.audio).toMatchObject({
+      deviceId: 'mic-2',
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    })
+    expect(lk.roomProps.video).toBe(false)
+    expect(lk.roomProps.options).toMatchObject({ adaptiveStream: true, dynacast: true })
   })
 })
 

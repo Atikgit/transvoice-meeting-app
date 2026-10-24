@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useRef, useState } from 'react'
+import { useMediaDevices, usePersistentUserChoices } from '@livekit/components-react'
 import { Camera, CameraOff, ChevronRight, Mic, MicOff } from 'lucide-react'
 import { joinFromLobby, type LobbyState } from '@/app/m/actions'
 import { BackButton } from '@/components/common/back-button'
@@ -32,16 +33,37 @@ export function Lobby({
   listenLang: string
 }) {
   const [state, action, pending] = useActionState<LobbyState, FormData>(joinFromLobby, {})
-  const [mic, setMic] = useState(true)
-  const [camera, setCamera] = useState(true)
+  // Mic / camera on-off and device choices carry into the room (LiveKit persistent choices).
+  const {
+    userChoices,
+    saveAudioInputEnabled,
+    saveVideoInputEnabled,
+    saveAudioInputDeviceId,
+    saveVideoInputDeviceId,
+  } = usePersistentUserChoices()
+  const [mic, setMicState] = useState(true)
+  const [camera, setCameraState] = useState(true)
+  const setMic = (on: boolean) => {
+    setMicState(on)
+    saveAudioInputEnabled(on)
+  }
+  const setCamera = (on: boolean) => {
+    setCameraState(on)
+    saveVideoInputEnabled(on)
+  }
+  const microphones = useMediaDevices({ kind: 'audioinput' })
+  const cameras = useMediaDevices({ kind: 'videoinput' })
+  const audioDeviceId = userChoices.audioDeviceId
+  const videoDeviceId = userChoices.videoDeviceId
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
     let stream: MediaStream | null = null
     let cancelled = false
     if (camera) {
+      const pick = (id: string) => (id && id !== 'default' ? { deviceId: { exact: id } } : true)
       navigator.mediaDevices
-        ?.getUserMedia({ video: true, audio: true })
+        ?.getUserMedia({ video: pick(videoDeviceId), audio: pick(audioDeviceId) })
         .then((s) => {
           if (cancelled) return s.getTracks().forEach((t) => t.stop())
           stream = s
@@ -53,7 +75,7 @@ export function Lobby({
       cancelled = true
       stream?.getTracks().forEach((t) => t.stop())
     }
-  }, [camera])
+  }, [camera, audioDeviceId, videoDeviceId])
 
   const host = role === 'host'
 
@@ -182,6 +204,42 @@ export function Lobby({
             {mic ? <Mic size={15} aria-hidden /> : <MicOff size={15} aria-hidden />}
             {mic ? 'Microphone on' : 'Microphone muted'}
           </button>
+          {cameras.length > 1 && (
+            <label className="col-span-2 block sm:col-span-1">
+              <span className="mb-1 block text-[10px] uppercase tracking-wider text-slate-500">
+                Camera
+              </span>
+              <select
+                value={videoDeviceId}
+                onChange={(e) => saveVideoInputDeviceId(e.target.value)}
+                className={fieldClass}
+              >
+                {cameras.map((d, i) => (
+                  <option key={d.deviceId || i} value={d.deviceId}>
+                    {d.label || `Camera ${i + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {microphones.length > 1 && (
+            <label className="col-span-2 block sm:col-span-1">
+              <span className="mb-1 block text-[10px] uppercase tracking-wider text-slate-500">
+                Microphone
+              </span>
+              <select
+                value={audioDeviceId}
+                onChange={(e) => saveAudioInputDeviceId(e.target.value)}
+                className={fieldClass}
+              >
+                {microphones.map((d, i) => (
+                  <option key={d.deviceId || i} value={d.deviceId}>
+                    {d.label || `Microphone ${i + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
       </div>
     </main>
