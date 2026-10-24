@@ -79,6 +79,15 @@ vi.mock('@/components/meeting/participant-tile', () => ({
   ),
 }))
 vi.mock('@/features/calls/useUserChannel', () => ({ useUserChannel: () => {} }))
+vi.mock('@/features/translation/useTranslatedAudio', () => ({
+  useTranslatedAudio: () => ({
+    captions: [],
+    playing: false,
+    unavailable: false,
+    latency: null,
+    addOwnTranscript: () => {},
+  }),
+}))
 vi.mock('@/features/translation/useLiveTranslation', () => ({
   useLiveTranslation: () => ({
     listening: false,
@@ -125,6 +134,7 @@ const room = (role: 'host' | 'guest', initialState: RoomState = READY) => {
       roomName="m-room"
       title="Translated meeting"
       displayName="Atik"
+      originalAudioMode="duck"
       initialState={initialState}
       initialCamera
       initialMic
@@ -140,6 +150,7 @@ const room = (role: 'host' | 'guest', initialState: RoomState = READY) => {
         roomName="m-room"
         title="Translated meeting"
         displayName="Atik"
+        originalAudioMode="duck"
         initialState={initialState}
         initialCamera
         initialMic
@@ -260,6 +271,7 @@ describe('Lobby choices in the room', () => {
         roomName="m-room"
         title="Translated meeting"
         displayName="Atik"
+        originalAudioMode="duck"
         initialState={READY}
         initialCamera={false}
         initialMic

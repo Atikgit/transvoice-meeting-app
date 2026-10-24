@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocalParticipant, useRemoteParticipants } from '@livekit/components-react'
 import { Track } from 'livekit-client'
 import { encodeWav } from '@/lib/translation/wav'
@@ -20,39 +20,90 @@ export async function uploadUtterance({
   utterance: Utterance
 }): Promise<Response> {
   const form = new FormData()
-  form.set('audio', new Blob([encodeWav(utterance.samples)], { type: 'audio/wav' }), 'utterance.wav')
+  form.set(
+    'audio',
+    new Blob([encodeWav(utterance.samples)], { type: 'audio/wav' }),
+    'utterance.wav',
+  )
   form.set('sessionId', sessionId)
   form.set('utteranceId', utteranceId)
-  form.set('clientTs', String(Date.now()))
+  // Wall-clock time the speaker stopped talking (listeners derive latency from it).
+  form.set('clientTs', String(Math.round(Date.now() - (performance.now() - utterance.endedAt))))
   return fetch('/api/translate', { method: 'POST', body: form })
 }
 
 /**
  * Live translation for the local participant: VAD on the LiveKit microphone, gated by
- * shouldListen(), each utterance uploaded as 16 kHz mono WAV.
+ * shouldListen(), each utterance uploaded as 16 kHz mono WAV. The server's answers decide
+ * what happens next: the beta gate stops it for the session, an empty payer balance pauses it
+ * for a minute, everything else is a transient notice.
  */
 export function useLiveTranslation({
   sessionId,
   status,
   playingTranslation = false,
+  enabled = true,
+  onTranscript,
 }: {
   sessionId: string
   status: 'ready' | 'live' | 'ended'
   playingTranslation?: boolean
+  /** False while translation is not available (beta gate): the VAD stays off. */
+  enabled?: boolean
+  /** The speaker's own transcript of an utterance. */
+  onTranscript?: (utteranceId: string, original: string) => void
 }) {
   const { localParticipant, isMicrophoneEnabled } = useLocalParticipant()
   const remotes = useRemoteParticipants()
   const [notice, setNotice] = useState<TranslationNotice>(null)
   const [pending, setPending] = useState(0)
+  const [blocked, setBlocked] = useState<TranslationNotice>(null)
+  const [paused, setPaused] = useState(false)
+  const transcriptRef = useRef(onTranscript)
+  useEffect(() => {
+    transcriptRef.current = onTranscript
+  }, [onTranscript])
 
   const micTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track
     ?.mediaStreamTrack
-  const listening = shouldListen({
-    status,
-    connectedParticipants: remotes.length + 1,
-    micEnabled: isMicrophoneEnabled,
-    playingTranslation,
-  })
+  const listening =
+    enabled &&
+    !blocked &&
+    !paused &&
+    shouldListen({
+      status,
+      connectedParticipants: remotes.length + 1,
+      micEnabled: isMicrophoneEnabled,
+      playingTranslation,
+    })
+
+  const handle = async (res: Response, utteranceId: string) => {
+    if (res.ok) {
+      const body = (await res.json().catch(() => ({}))) as {
+        original?: string | null
+        unavailable?: boolean
+      }
+      if (body.original) transcriptRef.current?.(utteranceId, body.original)
+      setNotice(
+        body.unavailable
+          ? { tone: 'error', text: 'Translation is temporarily unavailable.' }
+          : null,
+      )
+      return
+    }
+    const body = (await res.json().catch(() => ({}))) as { code?: string; error?: string }
+    if (body.code === 'BETA') {
+      setBlocked({ tone: 'info', text: body.error ?? 'Live translation is in private beta.' })
+    } else if (body.code === 'PAYER_NO_MINUTES') {
+      setNotice({ tone: 'error', text: body.error ?? 'Translation paused: no minutes left.' })
+      setPaused(true)
+      setTimeout(() => setPaused(false), 60_000) // re-check the balance after a minute
+    } else if (res.status === 429) {
+      setNotice({ tone: 'info', text: 'Speaking fast: some phrases were skipped.' })
+    } else if (res.status >= 500) {
+      setNotice({ tone: 'error', text: 'Translation is temporarily unavailable.' })
+    }
+  }
 
   const detector = useSpeechDetector({
     track: micTrack,
@@ -61,11 +112,7 @@ export function useLiveTranslation({
       const utteranceId = crypto.randomUUID()
       setPending((n) => n + 1)
       void uploadUtterance({ sessionId, utteranceId, utterance })
-        .then(async (res) => {
-          if (res.ok) return setNotice(null)
-          if (res.status === 429) setNotice({ tone: 'info', text: 'Speaking fast: some phrases were skipped.' })
-          else if (res.status >= 500) setNotice({ tone: 'error', text: 'Translation is temporarily unavailable.' })
-        })
+        .then((res) => handle(res, utteranceId))
         .catch(() => setNotice({ tone: 'error', text: 'Network problem: translation paused.' }))
         .finally(() => setPending((n) => n - 1))
     },
@@ -75,6 +122,7 @@ export function useLiveTranslation({
     listening,
     speaking: detector.speaking,
     translating: pending > 0,
-    notice: detector.error ? { tone: 'error' as const, text: detector.error } : notice,
+    blocked: Boolean(blocked),
+    notice: detector.error ? { tone: 'error' as const, text: detector.error } : (blocked ?? notice),
   }
 }

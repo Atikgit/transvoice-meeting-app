@@ -26,13 +26,17 @@ import { MeetingHeader } from '@/components/meeting/meeting-header'
 import { CallAgain } from '@/components/meeting/call-again'
 import { Control } from '@/components/meeting/control-bar'
 import { DeviceMenu } from '@/components/meeting/device-menu'
+import { LatencyBadge } from '@/components/meeting/latency-badge'
 import { MeetingLayout } from '@/components/meeting/meeting-layout'
 import { ParticipantTile } from '@/components/meeting/participant-tile'
 import { RoomNotice } from '@/components/meeting/room-notice'
 import { VideoTile } from '@/components/meeting/video-tile'
 import { useLiveKitToken } from '@/features/meeting/useLiveKitToken'
 import { useMeetingChat } from '@/features/meeting/useMeetingChat'
+import { captionText } from '@/features/translation/captions'
+import type { OriginalAudioMode } from '@/features/translation/playback'
 import { useLiveTranslation } from '@/features/translation/useLiveTranslation'
+import { useTranslatedAudio } from '@/features/translation/useTranslatedAudio'
 import { formatElapsed, useElapsedSeconds, useRoomState } from '@/features/meeting/useRoomState'
 import type { MeetingRole } from '@/lib/meetings/load'
 import type { RoomState } from '@/lib/meetings/room-state'
@@ -48,6 +52,8 @@ export interface MeetingRoomProps {
   /** Shown in the header. */
   title: string
   displayName: string
+  /** How the speaker's original voice is treated while their translation plays (Settings). */
+  originalAudioMode: OriginalAudioMode
   /** Session state when the page loaded (LiveKit room metadata takes over once connected). */
   initialState: RoomState
   /** Host's balance (minutes) and label. */
@@ -175,6 +181,7 @@ function RoomView({
   roomName,
   title,
   displayName,
+  originalAudioMode,
   initialState,
   balance = 0,
   minutesLabel,
@@ -203,7 +210,14 @@ function RoomView({
   const session = useRoomState(sessionId, initialState)
   const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
 
-  const translation = useLiveTranslation({ sessionId, status: session.state.status })
+  const audio = useTranslatedAudio({ originalAudioMode })
+  const translation = useLiveTranslation({
+    sessionId,
+    status: session.state.status,
+    playingTranslation: audio.playing, // echo safety: never listen while a clip plays
+    onTranscript: audio.addOwnTranscript,
+  })
+  const captions = captionText(audio.captions)
   const live = session.state.status === 'live'
   const ended = session.state.status === 'ended'
   const elapsed = useElapsedSeconds(live ? session.state.startedAt : null)
@@ -304,10 +318,13 @@ function RoomView({
       }
       caption={{
         translating: translation.translating,
-        originalText: '',
-        translatedText: '',
+        originalText: captions.original,
+        translatedText: captions.translated,
         placeholder:
           translation.notice?.text ??
+          (audio.unavailable
+            ? 'Translation is temporarily unavailable (captions only).'
+            : undefined) ??
           (live
             ? translation.speaking
               ? 'Listening…'
@@ -356,6 +373,7 @@ function RoomView({
         onLeave: () => router.push('/dashboard'),
       }}
     >
+      {process.env.NODE_ENV !== 'production' && <LatencyBadge sample={audio.latency} />}
       {modal === 'invite' && (
         <InviteModal
           meetingId={meetingId}

@@ -8,7 +8,12 @@ export interface MeetingContext {
   email: string | undefined
   meeting: { id: string; title: string | null; roomName: string }
   role: MeetingRole
-  profile: { fullName: string; spokenLang: string; listenLang: string }
+  profile: {
+    fullName: string
+    spokenLang: string
+    listenLang: string
+    originalAudioMode: 'off' | 'duck' | 'mute'
+  }
 }
 
 /**
@@ -28,7 +33,7 @@ export async function loadMeetingContext(meetingId: string): Promise<MeetingCont
       .maybeSingle(),
     supabase
       .from('profiles')
-      .select('full_name, spoken_lang, listen_lang')
+      .select('full_name, spoken_lang, listen_lang, original_audio_mode')
       .eq('id', user.id)
       .maybeSingle(),
   ])
@@ -43,6 +48,7 @@ export async function loadMeetingContext(meetingId: string): Promise<MeetingCont
       fullName: profile?.full_name || user.email?.split('@')[0] || '',
       spokenLang: profile?.spoken_lang ?? 'en-US',
       listenLang: profile?.listen_lang ?? 'en-US',
+      originalAudioMode: profile?.original_audio_mode ?? 'duck',
     },
   }
 }

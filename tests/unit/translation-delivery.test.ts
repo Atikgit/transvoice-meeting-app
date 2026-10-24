@@ -56,6 +56,7 @@ describe('deliverResult', () => {
       sessionId: 's1',
       utteranceId: 'u1',
       speakerId: 'speaker',
+      speechEndedAt: 1_761_300_000_000,
       result: speech('en-US', ['en-1', 'en-2']),
       send,
       cache: cacheRef.current,
@@ -70,6 +71,7 @@ describe('deliverResult', () => {
       lang: 'en-US',
       original: 'হ্যালো',
       translated: 'Hello',
+      speechEndedAt: 1_761_300_000_000,
     })
     const audio = json(1)
     expect(audio).toMatchObject({
@@ -88,6 +90,7 @@ describe('deliverResult', () => {
       sessionId: 's1',
       utteranceId: 'u1',
       speakerId: 'speaker',
+      speechEndedAt: 1_761_300_000_000,
       result: speech('en-US', ['a'], {
         originalText: long,
         translatedText: long,
@@ -105,6 +108,7 @@ describe('deliverResult', () => {
       sessionId: 's1',
       utteranceId: 'u1',
       speakerId: 'speaker',
+      speechEndedAt: 1_761_300_000_000,
       result: { lang: 'es-ES', listeners: ['es-1'], kind: 'failed', reason: 'circuit_open', ms: 0 },
       send,
       cache: cacheRef.current,
@@ -116,6 +120,7 @@ describe('deliverResult', () => {
       sessionId: 's1',
       utteranceId: 'u2',
       speakerId: 'speaker',
+      speechEndedAt: 1_761_300_000_000,
       result: { lang: 'es-ES', listeners: ['es-1'], kind: 'silence', ms: 100 },
       send,
       cache: cacheRef.current,

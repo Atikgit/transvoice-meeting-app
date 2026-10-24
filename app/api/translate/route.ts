@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
         sessionId: upload.sessionId,
         utteranceId: upload.utteranceId,
         speakerId: user.id,
+        speechEndedAt: upload.clientTs,
         result,
       }),
   })

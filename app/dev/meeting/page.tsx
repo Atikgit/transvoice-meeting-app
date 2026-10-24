@@ -28,6 +28,7 @@ export default async function DevMeeting({
       roomName="dev-meeting"
       title="Translated meeting"
       displayName={str(q.name, role === 'host' ? 'Host' : 'Guest')}
+      originalAudioMode={q.audio === 'mute' ? 'mute' : q.audio === 'off' ? 'off' : 'duck'}
       initialState={{ status: 'ready', startedAt: null, hostId }}
       initialCamera
       initialMic

@@ -33,6 +33,7 @@ export async function deliverResult({
   sessionId,
   utteranceId,
   speakerId,
+  speechEndedAt,
   result,
   send = sendReliable,
   cache = audioCache(),
@@ -41,6 +42,7 @@ export async function deliverResult({
   sessionId: string
   utteranceId: string
   speakerId: string
+  speechEndedAt: number
   result: LanguageResult
   send?: Send
   cache?: AudioCache
@@ -63,6 +65,7 @@ export async function deliverResult({
     lang: result.lang,
     original: result.originalText,
     translated: result.translatedText,
+    speechEndedAt,
   })
   const captionSent = send(sessionId, encodeMessage(caption), {
     destinationIdentities,
@@ -86,7 +89,7 @@ export async function deliverResult({
       speakerId,
       lang: result.lang,
       url: `/api/tts/${id}`,
-      readyAt: now(),
+      speechEndedAt,
     }
     await captionSent
     await send(sessionId, encodeMessage(audio), { destinationIdentities, topic: TOPICS.audio })

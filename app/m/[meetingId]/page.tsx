@@ -61,6 +61,7 @@ export default async function MeetingPage({
       roomName={context.meeting.roomName}
       title={context.meeting.title ?? 'Translated meeting'}
       displayName={context.profile.fullName}
+      originalAudioMode={context.profile.originalAudioMode}
       initialState={initialState}
       balance={balance ? availableMinutes(balance) : 0}
       minutesLabel={balance ? minutesLabel(balance) : undefined}
