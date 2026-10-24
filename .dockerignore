@@ -13,3 +13,6 @@ Dockerfile
 docker-compose.yml
 Caddyfile
 geoip
+
+playwright.config.ts
+vitest.config.mts
