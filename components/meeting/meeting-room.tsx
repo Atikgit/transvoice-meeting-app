@@ -11,12 +11,19 @@ import {
   useRemoteParticipants,
   useTracks,
 } from '@livekit/components-react'
-import { ConnectionState, Track, VideoPresets, type RoomOptions } from 'livekit-client'
+import {
+  ConnectionState,
+  DisconnectReason,
+  Track,
+  VideoPresets,
+  type RoomOptions,
+} from 'livekit-client'
 import { MonitorOff, MonitorUp } from 'lucide-react'
 import { PricingModal } from '@/components/billing/pricing-modal'
 import { InviteModal } from '@/components/invite/invite-modal'
 import { ChatPanel } from '@/components/meeting/chat-panel'
 import { MeetingHeader } from '@/components/meeting/meeting-header'
+import { CallAgain } from '@/components/meeting/call-again'
 import { Control } from '@/components/meeting/control-bar'
 import { DeviceMenu } from '@/components/meeting/device-menu'
 import { MeetingLayout } from '@/components/meeting/meeting-layout'
@@ -59,6 +66,14 @@ export const ROOM_OPTIONS: RoomOptions = {
   videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
 }
 
+/** Disconnects that are not a lost connection. */
+const EXPECTED_DISCONNECTS = new Set<DisconnectReason>([
+  DisconnectReason.CLIENT_INITIATED,
+  DisconnectReason.ROOM_DELETED,
+  DisconnectReason.PARTICIPANT_REMOVED,
+  DisconnectReason.DUPLICATE_IDENTITY,
+])
+
 /** Screen capture exists on desktop browsers only. */
 function canShareScreen(): boolean {
   return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia)
@@ -71,9 +86,24 @@ function canShareScreen(): boolean {
 export function MeetingRoom(props: MeetingRoomProps) {
   const [attempt, setAttempt] = useState(0)
   const token = useLiveKitToken(props.sessionId, attempt)
+  const [lost, setLost] = useState(false)
   // Devices chosen in the lobby (LiveKit persistent choices); on/off comes from the lobby form.
   const { userChoices } = usePersistentUserChoices({ preventSave: true })
   const device = (id: string) => (id && id !== 'default' ? { deviceId: id } : {})
+
+  // LiveKit gave up reconnecting (not a deliberate leave or a server-side end).
+  if (lost) {
+    return (
+      <RoomShell {...props}>
+        <div className="space-y-4">
+          <RoomNotice tone="error" action={{ label: 'Back to dashboard', href: '/dashboard' }}>
+            Connection lost. The meeting could not reconnect.
+          </RoomNotice>
+          <CallAgain meetingId={props.meetingId} userId={props.userId} />
+        </div>
+      </RoomShell>
+    )
+  }
 
   if (token.status !== 'ready') {
     return (
@@ -102,6 +132,9 @@ export function MeetingRoom(props: MeetingRoomProps) {
       token={token.token}
       connect
       options={ROOM_OPTIONS}
+      onDisconnected={(reason) => {
+        if (reason !== undefined && !EXPECTED_DISCONNECTS.has(reason)) setLost(true)
+      }}
       audio={
         props.initialMic
           ? { ...ROOM_OPTIONS.audioCaptureDefaults, ...device(userChoices.audioDeviceId) }
@@ -209,7 +242,18 @@ function RoomView({
               {session.problem.error}
             </RoomNotice>
           )}
-          {ended && (
+          {connection === ConnectionState.Reconnecting && (
+            <RoomNotice tone="info" floating>
+              Reconnecting… your call continues as soon as the connection is back.
+            </RoomNotice>
+          )}
+          {ended && session.state.endReason === 'reconnect_timeout' && (
+            <div className="absolute inset-x-4 top-4 z-20 mx-auto max-w-xl space-y-3 rounded-lg border border-rose-500/30 bg-[#2a1520] p-4 text-center text-sm text-rose-200 shadow-lg">
+              <p role="alert">The connection was lost and the meeting ended.</p>
+              <CallAgain meetingId={meetingId} userId={userId} />
+            </div>
+          )}
+          {ended && session.state.endReason !== 'reconnect_timeout' && (
             <RoomNotice
               tone="info"
               floating

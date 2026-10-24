@@ -16,7 +16,12 @@ const lk = {
   setMicrophoneEnabled: vi.fn(),
   setCameraEnabled: vi.fn(),
   rerender: () => {},
-  roomProps: {} as { audio?: unknown; video?: unknown; options?: unknown },
+  roomProps: {} as {
+    audio?: unknown
+    video?: unknown
+    options?: unknown
+    onDisconnected?: (reason?: number) => void
+  },
 }
 vi.mock('@livekit/components-react', () => ({
   LiveKitRoom: ({
@@ -26,6 +31,7 @@ vi.mock('@livekit/components-react', () => ({
     children: ReactNode
     audio: unknown
     video: unknown
+    onDisconnected?: (reason?: number) => void
   }) => {
     lk.roomProps = props
     return <>{children}</>
@@ -52,6 +58,14 @@ vi.mock('livekit-client', () => ({
   ConnectionState: { Reconnecting: 'reconnecting', Connected: 'connected' },
   Track: { Source: { Camera: 'camera', ScreenShare: 'screen_share', Microphone: 'microphone' } },
   VideoPresets: { h720: { resolution: { width: 1280, height: 720 } } },
+  DisconnectReason: {
+    UNKNOWN_REASON: 0,
+    CLIENT_INITIATED: 1,
+    DUPLICATE_IDENTITY: 2,
+    SERVER_SHUTDOWN: 3,
+    PARTICIPANT_REMOVED: 4,
+    ROOM_DELETED: 5,
+  },
 }))
 vi.mock('@/components/meeting/participant-tile', () => ({
   ParticipantTile: ({
@@ -64,6 +78,7 @@ vi.mock('@/components/meeting/participant-tile', () => ({
     </div>
   ),
 }))
+vi.mock('@/features/calls/useUserChannel', () => ({ useUserChannel: () => {} }))
 vi.mock('@/components/meeting/device-menu', () => ({ DeviceMenu: () => <button>Devices</button> }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('@/app/invite/actions', () => ({ createInvitation: vi.fn() }))
@@ -196,7 +211,7 @@ describe('MeetingRoom (LiveKit)', () => {
   it('shows Reconnecting… while LiveKit reconnects', async () => {
     lk.connection = 'reconnecting'
     room('guest', LIVE)
-    expect(await screen.findByText('Reconnecting…')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('room-status')).toHaveTextContent('Reconnecting…'))
   })
 
   it('explains a refused token and offers the way back', async () => {
@@ -249,6 +264,46 @@ describe('Lobby choices in the room', () => {
     })
     expect(lk.roomProps.video).toBe(false)
     expect(lk.roomProps.options).toMatchObject({ adaptiveStream: true, dynacast: true })
+  })
+})
+
+describe('Reconnect (Rule 5)', () => {
+  it('shows a Reconnecting banner while LiveKit reconnects', async () => {
+    lk.connection = 'reconnecting'
+    room('guest', LIVE)
+    expect(await screen.findByText(/Reconnecting… your call continues/)).toBeInTheDocument()
+  })
+
+  it('a lost connection offers Call again (through /api/calls)', async () => {
+    room('guest', LIVE)
+    await screen.findByText(/^Live \d/)
+    act(() => lk.roomProps.onDisconnected?.(3)) // SERVER_SHUTDOWN / network gone
+    expect(
+      screen.getByText('Connection lost. The meeting could not reconnect.'),
+    ).toBeInTheDocument()
+    respond('/api/calls', 200, { mode: 'join', redirect: '/m/x/lobby' })
+    fireEvent.click(screen.getByRole('button', { name: /Call again/ }))
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/calls',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    )
+  })
+
+  it('leaving on purpose is not a lost connection', async () => {
+    room('guest', LIVE)
+    await screen.findByText(/^Live \d/)
+    act(() => lk.roomProps.onDisconnected?.(1)) // CLIENT_INITIATED
+    expect(screen.queryByText(/Connection lost/)).toBeNull()
+  })
+
+  it('a session ended by the grace timeout shows Call again', async () => {
+    room('guest', LIVE)
+    await screen.findByText(/^Live \d/)
+    metadataChanged({ ...LIVE, status: 'ended', endReason: 'reconnect_timeout' })
+    expect(screen.getByText('The connection was lost and the meeting ended.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Call again/ })).toBeInTheDocument()
   })
 })
 
