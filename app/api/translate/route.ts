@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { loadTranslationContext } from '@/lib/translation/context'
+import { groupListeners, translateForListeners } from '@/lib/translation/fanout'
 import { parseTranslateUpload } from '@/lib/translation/request'
 import { getSessionUser } from '@/lib/supabase/server'
 
@@ -27,5 +28,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ code: loaded.code, error: loaded.error }, { status: loaded.status })
   }
 
-  return NextResponse.json({ utteranceId: upload.utteranceId, accepted: true }, { status: 202 })
+  const { context } = loaded
+  const groups = groupListeners(context.participants, context.speaker.spokenLang)
+  // Same-language listeners only: nothing to translate (original audio at full volume).
+  if (groups.size === 0) {
+    return NextResponse.json({ utteranceId: upload.utteranceId, languages: [] })
+  }
+
+  const results = await translateForListeners({
+    audioBase64: Buffer.from(upload.audio).toString('base64'),
+    spokenLang: context.speaker.spokenLang,
+    voiceGender: context.speaker.voiceGender,
+    groups,
+    sessionId: upload.sessionId,
+    speakerId: user.id,
+  })
+  const speech = results.find((r) => r.kind === 'speech')
+  const failed = results.filter((r) => r.kind === 'failed')
+
+  return NextResponse.json({
+    utteranceId: upload.utteranceId,
+    // The speaker sees their own original transcript.
+    original: speech?.kind === 'speech' ? speech.originalText : null,
+    silence: results.every((r) => r.kind === 'silence'),
+    languages: results.map((r) => ({
+      lang: r.lang,
+      result: r.kind === 'failed' ? r.reason : r.kind,
+    })),
+    unavailable: failed.length === results.length,
+  })
 }

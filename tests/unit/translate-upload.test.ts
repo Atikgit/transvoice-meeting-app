@@ -118,10 +118,14 @@ describe('parseTranslateUpload', () => {
 })
 
 describe('POST /api/translate admission', () => {
-  it('202 for a connected participant of a live session', async () => {
+  it('translates for a connected participant of a live session', async () => {
     const res = await post(upload(SESSION()))
-    expect(res.status).toBe(202)
-    expect(await res.json()).toEqual({ utteranceId: UTTERANCE, accepted: true })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      utteranceId: UTTERANCE,
+      original: expect.any(String),
+      languages: [{ lang: 'en-US', result: 'speech' }],
+    })
   })
 
   it('401 signed out', async () => {
@@ -148,7 +152,7 @@ describe('POST /api/translate admission', () => {
     const session = SESSION()
     const statuses: number[] = []
     for (let i = 0; i < 31; i++) statuses.push((await post(upload(session))).status)
-    expect(statuses.slice(0, 30).every((s) => s === 202)).toBe(true)
+    expect(statuses.slice(0, 30).every((s) => s === 200)).toBe(true)
     expect(statuses[30]).toBe(429)
   })
 })
