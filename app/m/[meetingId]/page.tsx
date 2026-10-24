@@ -1,28 +1,15 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { MeetingRoom } from '@/components/meeting/meeting-room'
-import type { SessionState } from '@/features/meeting/types'
+import { RoomNotice } from '@/components/meeting/room-notice'
 import { currentBalance } from '@/lib/auth/account'
 import { availableMinutes, minutesLabel } from '@/lib/billing/balance'
+import { ensureRoom } from '@/lib/livekit/rooms'
 import { loadMeetingContext } from '@/lib/meetings/load'
+import type { RoomState } from '@/lib/meetings/room-state'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export const metadata: Metadata = { title: 'Meeting' }
-
-/** The meeting's live session, if any (guests cannot read call_sessions before they join). */
-async function liveSession(meetingId: string): Promise<SessionState> {
-  const { data } = await createAdminClient()
-    .from('call_sessions')
-    .select('id, started_at')
-    .eq('meeting_id', meetingId)
-    .eq('status', 'live')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  return data?.started_at
-    ? { status: 'live', sessionId: data.id, startedAt: data.started_at }
-    : { status: 'ready' }
-}
 
 export default async function MeetingPage({
   params,
@@ -34,21 +21,47 @@ export default async function MeetingPage({
   const [{ meetingId }, query] = await Promise.all([params, searchParams])
   const context = await loadMeetingContext(meetingId)
   if (!context) notFound()
-  const [session, balance] = await Promise.all([
-    liveSession(context.meeting.id),
-    context.role === 'host' ? currentBalance(context.userId) : null,
-  ])
+
+  // The meeting's open session (created "ready" if needed); rights are checked in SQL.
+  const { data, error } = await createAdminClient().rpc('open_call_session', {
+    p_meeting: context.meeting.id,
+    p_user: context.userId,
+  })
+  const session = data?.[0]
+  if (error || !session) {
+    if (!error?.message.includes('NOT_ALLOWED'))
+      console.error('open_call_session failed:', error?.message)
+    return (
+      <main className="flex h-dvh items-center justify-center bg-[#0b0e16] p-6">
+        <RoomNotice tone="error" action={{ label: 'Back to dashboard', href: '/dashboard' }}>
+          You can no longer join calls in this meeting.
+        </RoomNotice>
+      </main>
+    )
+  }
+
+  const initialState: RoomState = {
+    status: session.status === 'live' ? 'live' : 'ready',
+    startedAt: session.started_at,
+    hostId: session.host_id,
+  }
+  // Room metadata is the clients' source of the session state. If LiveKit is unreachable the
+  // client shows the connection error when it tries to join.
+  await ensureRoom(session.session_id, initialState).catch((e: unknown) =>
+    console.error('LiveKit ensureRoom failed:', e instanceof Error ? e.message : e),
+  )
+  const balance = context.role === 'host' ? await currentBalance(context.userId) : null
 
   return (
     <MeetingRoom
       meetingId={context.meeting.id}
+      sessionId={session.session_id}
       userId={context.userId}
       role={context.role}
       roomName={context.meeting.roomName}
       title={context.meeting.title ?? 'Translated meeting'}
       displayName={context.profile.fullName}
-      listenLang={context.profile.listenLang}
-      initialSession={session}
+      initialState={initialState}
       balance={balance ? availableMinutes(balance) : 0}
       minutesLabel={balance ? minutesLabel(balance) : undefined}
       initialCamera={query.camera !== 'off'}

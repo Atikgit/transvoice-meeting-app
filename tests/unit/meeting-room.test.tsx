@@ -1,121 +1,196 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionState } from '@/features/meeting/types'
+import type { RoomState } from '@/lib/meetings/room-state'
 
-const actions = {
-  startMeetingSession: vi.fn(),
-  joinMeetingSession: vi.fn(),
-  endMeetingSession: vi.fn(),
+// Controllable stand-ins for the LiveKit room.
+const lk = {
+  metadata: undefined as string | undefined,
+  connection: 'connected',
+  remotes: [] as { identity: string; name: string }[],
+  setMicrophoneEnabled: vi.fn(),
+  setCameraEnabled: vi.fn(),
+  rerender: () => {},
 }
-const translator = vi.fn()
-const broadcastSessionState = vi.fn()
-let channelOptions: { onSessionState?: (s: SessionState) => void } = {}
-
-vi.mock('@/app/m/actions', () => actions)
-vi.mock('@/app/invite/actions', () => ({ createInvitation: vi.fn() }))
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
-vi.mock('@/features/meeting/useLocalMedia', () => ({ useLocalMedia: () => null }))
-vi.mock('@/features/translation/useLegacyChunkTranslator', () => ({
-  useLegacyChunkTranslator: (options: { enabled: boolean }) => translator(options.enabled),
+vi.mock('@livekit/components-react', () => ({
+  LiveKitRoom: ({ children }: { children: ReactNode }) => <>{children}</>,
+  RoomAudioRenderer: () => null,
+  useRoomInfo: () => ({ metadata: lk.metadata, name: 'tv-room' }),
+  useConnectionState: () => lk.connection,
+  useRemoteParticipants: () => lk.remotes,
+  useLocalParticipant: () => ({
+    localParticipant: {
+      setMicrophoneEnabled: lk.setMicrophoneEnabled,
+      setCameraEnabled: lk.setCameraEnabled,
+    },
+    isMicrophoneEnabled: true,
+    isCameraEnabled: true,
+  }),
 }))
-vi.mock('@/features/meeting/useLegacyRoomChannel', () => ({
-  useLegacyRoomChannel: (options: typeof channelOptions) => {
-    channelOptions = options
-    return {
-      partnerConnected: true,
-      partnerName: 'Partner',
-      messages: [{ id: '0', sender: 'System', text: 'hi', time: 'Now' }],
-      sendChat: vi.fn(),
-      broadcastTranslation: vi.fn(),
-      broadcastSessionState,
-    }
-  },
+vi.mock('livekit-client', () => ({
+  ConnectionState: { Reconnecting: 'reconnecting', Connected: 'connected' },
+}))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
+vi.mock('@/app/invite/actions', () => ({ createInvitation: vi.fn() }))
+vi.mock('@/features/meeting/useMeetingChat', () => ({
+  useMeetingChat: () => ({ messages: [], send: vi.fn() }),
 }))
 
 const { MeetingRoom } = await import('@/components/meeting/meeting-room')
 
-const room = (role: 'host' | 'guest', initialSession: SessionState = { status: 'ready' }) =>
-  render(
+const SESSION = '22222222-2222-4222-8222-222222222222'
+const READY: RoomState = { status: 'ready', startedAt: null, hostId: 'host-1' }
+const LIVE: RoomState = {
+  status: 'live',
+  startedAt: new Date().toISOString(),
+  hostId: 'host-1',
+}
+
+let fetchMock: ReturnType<typeof vi.fn>
+function respond(path: string, status: number, body: unknown) {
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.startsWith('/api/livekit/token')) {
+      return new Response(JSON.stringify({ token: 't', url: 'wss://lk.test' }), { status: 200 })
+    }
+    if (url === path) return new Response(JSON.stringify(body), { status })
+    return new Response('{}', { status: 404 })
+  })
+}
+
+const room = (role: 'host' | 'guest', initialState: RoomState = READY) => {
+  const utils = render(
     <MeetingRoom
       meetingId="11111111-1111-4111-8111-111111111111"
+      sessionId={SESSION}
       userId="u1"
       role={role}
       roomName="m-room"
       title="Translated meeting"
       displayName="Atik"
-      listenLang="en-US"
-      initialSession={initialSession}
+      initialState={initialState}
       initialCamera
       initialMic
     />,
   )
+  lk.rerender = () =>
+    utils.rerender(
+      <MeetingRoom
+        meetingId="11111111-1111-4111-8111-111111111111"
+        sessionId={SESSION}
+        userId="u1"
+        role={role}
+        roomName="m-room"
+        title="Translated meeting"
+        displayName="Atik"
+        initialState={initialState}
+        initialCamera
+        initialMic
+      />,
+    )
+  return utils
+}
 
-const LIVE: SessionState = {
-  status: 'live',
-  sessionId: '22222222-2222-4222-8222-222222222222',
-  startedAt: new Date().toISOString(),
+/** The server changes the room metadata (RoomMetadataChanged). */
+function metadataChanged(state: RoomState) {
+  lk.metadata = JSON.stringify(state)
+  act(() => lk.rerender())
 }
 
 beforeEach(() => {
-  vi.clearAllMocks()
-  actions.startMeetingSession.mockResolvedValue({ ok: true, ...LIVE })
-  actions.joinMeetingSession.mockResolvedValue({ ok: true })
-  actions.endMeetingSession.mockResolvedValue({ ok: true })
+  lk.metadata = undefined
+  lk.connection = 'connected'
+  lk.remotes = [{ identity: 'g1', name: 'Guest' }]
+  fetchMock = vi.fn()
+  vi.stubGlobal('fetch', fetchMock)
+  respond('', 404, {})
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
-describe('MeetingRoom lifecycle', () => {
-  it('opens ready: translation idle and timer stopped', () => {
+describe('MeetingRoom (LiveKit)', () => {
+  it('asks for a token for its session, then opens Ready', async () => {
     room('host')
-    expect(translator).toHaveBeenLastCalledWith(false)
-    expect(screen.getByText('Ready')).toBeInTheDocument()
-    expect(screen.queryByText(/^Live \d/)).toBeNull()
+    expect(await screen.findByText('Ready')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(`/api/livekit/token?sessionId=${SESSION}`, {
+      cache: 'no-store',
+    })
+    expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument()
   })
 
-  it('host Start: goes live, starts translation, broadcasts; then End meeting', async () => {
+  it('host Start calls the server; the room goes live from the metadata', async () => {
+    respond(`/api/calls/${SESSION}/start`, 200, LIVE)
     room('host')
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Start$/ })))
-    expect(actions.startMeetingSession).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111')
-    expect(translator).toHaveBeenLastCalledWith(true)
-    expect(screen.getByText(/^Live \d\d:\d\d$/)).toBeInTheDocument()
-    expect(broadcastSessionState).toHaveBeenCalledWith(LIVE)
-
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: /End meeting/ })))
-    expect(actions.endMeetingSession).toHaveBeenCalledWith(LIVE.sessionId)
-    expect(broadcastSessionState).toHaveBeenLastCalledWith({ status: 'ready' })
-    expect(translator).toHaveBeenLastCalledWith(false)
+    fireEvent.click(await screen.findByRole('button', { name: 'Start' }))
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(`/api/calls/${SESSION}/start`, { method: 'POST' }),
+    )
+    expect(await screen.findByText(/^Live \d\d:\d\d$/)).toBeInTheDocument()
+    metadataChanged(LIVE)
+    expect(screen.getByRole('button', { name: 'End meeting' })).toBeInTheDocument()
   })
 
-  it('host without minutes sees "Get minutes"', async () => {
-    actions.startMeetingSession.mockResolvedValue({
-      ok: false,
+  it('shows "Get minutes" when the host has no minutes', async () => {
+    respond(`/api/calls/${SESSION}/start`, 402, {
       code: 'NO_MINUTES',
       error: 'You have no minutes left.',
     })
     room('host')
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: /^Start$/ })))
-    expect(screen.getByRole('alert')).toHaveTextContent('You have no minutes left.')
+    fireEvent.click(await screen.findByRole('button', { name: 'Start' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('You have no minutes left.')
     expect(screen.getByRole('button', { name: 'Get minutes' })).toBeInTheDocument()
-    expect(translator).toHaveBeenLastCalledWith(false)
   })
 
-  it('guest waits for the host, then joins the live session when it starts', async () => {
+  it('guest waits for the host, follows the metadata to live, then to ended', async () => {
     room('guest')
-    expect(screen.getByText('Waiting for host to start…')).toBeInTheDocument()
-    expect(translator).toHaveBeenLastCalledWith(false)
-
-    await act(async () => channelOptions.onSessionState?.(LIVE))
-    expect(actions.joinMeetingSession).toHaveBeenCalledWith(LIVE.sessionId, LIVE.startedAt)
-    expect(translator).toHaveBeenLastCalledWith(true)
+    expect(await screen.findByText('Waiting for host to start…')).toBeInTheDocument()
+    metadataChanged(LIVE)
     expect(screen.queryByText('Waiting for host to start…')).toBeNull()
-
-    await act(async () => channelOptions.onSessionState?.({ status: 'ready' }))
+    expect(screen.getByText(/^Live \d\d:\d\d$/)).toBeInTheDocument()
+    metadataChanged({ ...LIVE, status: 'ended', endReason: 'host_ended' })
     expect(screen.getByText('The host ended the meeting.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeInTheDocument()
   })
 
-  it('a guest arriving during a live meeting joins it right away', async () => {
-    await act(async () => room('guest', LIVE))
-    expect(actions.joinMeetingSession).toHaveBeenCalledOnce()
+  it('shows Reconnecting… while LiveKit reconnects', async () => {
+    lk.connection = 'reconnecting'
+    room('guest', LIVE)
+    expect(await screen.findByText('Reconnecting…')).toBeInTheDocument()
+  })
+
+  it('explains a refused token and offers the way back', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ code: 'NOT_ALLOWED', error: 'You are not invited to this meeting.' }),
+        {
+          status: 403,
+        },
+      ),
+    )
+    room('guest')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'You are not invited to this meeting.',
+    )
+    expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeInTheDocument()
+  })
+
+  it('mic and camera buttons drive the LiveKit local participant', async () => {
+    room('host')
+    fireEvent.click(await screen.findByRole('button', { name: 'Mute microphone' }))
+    expect(lk.setMicrophoneEnabled).toHaveBeenCalledWith(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off camera' }))
+    expect(lk.setCameraEnabled).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('parseRoomState', () => {
+  it('reads valid metadata and falls back on anything else', async () => {
+    const { parseRoomState } = await import('@/lib/meetings/room-state')
+    expect(parseRoomState(JSON.stringify(LIVE), READY)).toEqual({ ...LIVE, endReason: undefined })
+    expect(parseRoomState('not json', READY)).toBe(READY)
+    expect(parseRoomState(JSON.stringify({ status: 'hacked' }), READY)).toBe(READY)
+    expect(parseRoomState(undefined, READY)).toBe(READY)
   })
 })

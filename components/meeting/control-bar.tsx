@@ -85,6 +85,7 @@ export function ControlBar({
   unreadCount,
   role,
   live,
+  ended = false,
   busy = false,
   onToggleMic,
   onToggleCamera,
@@ -100,6 +101,8 @@ export function ControlBar({
   role: MeetingRole
   /** The host started the session. */
   live: boolean
+  /** The session is over: no Start / End / waiting. */
+  ended?: boolean
   /** Start / End in progress. */
   busy?: boolean
   onToggleMic: () => void
@@ -146,7 +149,7 @@ export function ControlBar({
           badge={unreadCount}
         />
 
-        {role === 'host' ? (
+        {ended ? null : role === 'host' ? (
           live ? (
             <Control
               label="End meeting"

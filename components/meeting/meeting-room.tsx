@@ -2,40 +2,40 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+  LiveKitRoom,
+  RoomAudioRenderer,
+  useConnectionState,
+  useLocalParticipant,
+  useRemoteParticipants,
+} from '@livekit/components-react'
+import { ConnectionState } from 'livekit-client'
 import { PricingModal } from '@/components/billing/pricing-modal'
 import { InviteModal } from '@/components/invite/invite-modal'
-import { appendCaption, CaptionBar } from '@/components/meeting/caption-bar'
 import { ChatPanel } from '@/components/meeting/chat-panel'
-import { ControlBar } from '@/components/meeting/control-bar'
 import { MeetingHeader } from '@/components/meeting/meeting-header'
-import { VideoGrid } from '@/components/meeting/video-grid'
+import { MeetingLayout } from '@/components/meeting/meeting-layout'
+import { RoomNotice } from '@/components/meeting/room-notice'
 import { VideoTile } from '@/components/meeting/video-tile'
-import type { SessionState, TranslationCaption } from '@/features/meeting/types'
-import { useLegacyRoomChannel } from '@/features/meeting/useLegacyRoomChannel'
-import { useLocalMedia } from '@/features/meeting/useLocalMedia'
-import {
-  formatElapsed,
-  useElapsedSeconds,
-  useMeetingSession,
-} from '@/features/meeting/useMeetingSession'
-import { playTtsAudio } from '@/features/translation/playTtsAudio'
-import { useLegacyChunkTranslator } from '@/features/translation/useLegacyChunkTranslator'
-import { BRAND } from '@/lib/brand'
+import { useLiveKitToken } from '@/features/meeting/useLiveKitToken'
+import { useMeetingChat } from '@/features/meeting/useMeetingChat'
+import { formatElapsed, useElapsedSeconds, useRoomState } from '@/features/meeting/useRoomState'
 import type { MeetingRole } from '@/lib/meetings/load'
+import type { RoomState } from '@/lib/meetings/room-state'
 
 export interface MeetingRoomProps {
   meetingId: string
+  /** The open call session (LiveKit room tv-<sessionId>). */
+  sessionId: string
   userId: string
   role: MeetingRole
-  /** Realtime channel name (meetings.room_name). */
+  /** Chat channel name (meetings.room_name). */
   roomName: string
   /** Shown in the header. */
   title: string
   displayName: string
-  /** Language this participant hears (profiles.listen_lang). */
-  listenLang: string
-  /** Session state when the page loaded. */
-  initialSession: SessionState
+  /** Session state when the page loaded (LiveKit room metadata takes over once connected). */
+  initialState: RoomState
   /** Host's balance (minutes) and label. */
   balance?: number
   minutesLabel?: string
@@ -45,169 +45,196 @@ export interface MeetingRoomProps {
 }
 
 /**
- * /m/[meetingId]: opens "ready" (camera preview, mic not sent to translation, timer stopped).
- * The host's Start makes it live; guests wait for it.
+ * /m/[meetingId]: joins the session's LiveKit room. Tracks publish on join, but the session is
+ * "ready" until the host presses Start (state lives in room metadata, set by the server).
  */
-export function MeetingRoom({
+export function MeetingRoom(props: MeetingRoomProps) {
+  const [attempt, setAttempt] = useState(0)
+  const token = useLiveKitToken(props.sessionId, attempt)
+
+  if (token.status !== 'ready') {
+    return (
+      <RoomShell {...props}>
+        {token.status === 'loading' ? (
+          <RoomNotice tone="info">Connecting to the meeting…</RoomNotice>
+        ) : (
+          <RoomNotice
+            tone="error"
+            action={
+              token.httpStatus >= 500 || token.httpStatus === 0
+                ? { label: 'Try again', onClick: () => setAttempt((n) => n + 1) }
+                : { label: 'Back to dashboard', href: '/dashboard' }
+            }
+          >
+            {token.error}
+          </RoomNotice>
+        )}
+      </RoomShell>
+    )
+  }
+
+  return (
+    <LiveKitRoom
+      serverUrl={token.url}
+      token={token.token}
+      connect
+      audio={props.initialMic}
+      video={props.initialCamera}
+      className="contents"
+    >
+      <RoomView {...props} />
+      <RoomAudioRenderer />
+    </LiveKitRoom>
+  )
+}
+
+/** Layout without a LiveKit connection (connecting / error). */
+function RoomShell({
+  title,
+  children,
+}: Pick<MeetingRoomProps, 'title'> & { children: React.ReactNode }) {
+  return (
+    <main className="grid h-dvh grid-rows-[auto_1fr] overflow-hidden bg-[#0b0e16] text-slate-100">
+      <MeetingHeader title={title} status="waiting" statusLabel="Connecting…" />
+      <section className="flex items-center justify-center p-6">{children}</section>
+    </main>
+  )
+}
+
+function RoomView({
   meetingId,
+  sessionId,
   userId,
   role,
   roomName,
   title,
   displayName,
-  listenLang,
-  initialSession,
+  initialState,
   balance = 0,
   minutesLabel,
-  initialCamera,
-  initialMic,
 }: MeetingRoomProps) {
   const router = useRouter()
-  const [mic, setMic] = useState(initialMic)
-  const [camera, setCamera] = useState(initialCamera)
-  const [chat, setChat] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
   const [modal, setModal] = useState<'invite' | 'pricing' | null>(null)
-  const [translating, setTranslating] = useState(false)
-  const [originalText, setOriginalText] = useState('')
-  const [translatedText, setTranslatedText] = useState('')
 
-  const myDisplayName = displayName || 'You'
-  const localStream = useLocalMedia({ camera, mic })
-  const session = useMeetingSession({ meetingId, role, initial: initialSession })
+  const connection = useConnectionState()
+  const remotes = useRemoteParticipants()
+  const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant()
+  const session = useRoomState(sessionId, initialState)
+  const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
+
   const live = session.state.status === 'live'
-  const elapsed = useElapsedSeconds(
-    live && 'startedAt' in session.state ? session.state.startedAt : null,
-  )
+  const ended = session.state.status === 'ended'
+  const elapsed = useElapsedSeconds(live ? session.state.startedAt : null)
+  const partner = remotes[0]
+  const partnerConnected = Boolean(partner)
 
-  const showCaption = (caption: TranslationCaption) => {
-    setOriginalText((text) => appendCaption(text, caption.original))
-    setTranslatedText((text) => appendCaption(text, caption.translated))
-    if (caption.audio) playTtsAudio(caption.audio)
-  }
-
-  const channel = useLegacyRoomChannel({
-    roomId: roomName,
-    myDisplayName,
-    onTranslation: showCaption,
-    onSessionState: session.applyRemote,
-    // Late joiners: the host repeats the current state.
-    onPeerJoined: () => {
-      if (role === 'host') channel.broadcastSessionState(session.state)
-    },
-  })
-
-  // Translation runs only while the session is live (and the mic is on).
-  useLegacyChunkTranslator({
-    enabled: live && mic,
-    stream: localStream,
-    tgtLang: listenLang,
-    onTranslatingChange: setTranslating,
-    onResult: (caption) => {
-      showCaption(caption)
-      channel.broadcastTranslation(caption)
-    },
-  })
-
-  const start = async () => {
-    const next = await session.start()
-    if (next) channel.broadcastSessionState(next)
-  }
-  const end = async () => {
-    const next = await session.end()
-    if (next) channel.broadcastSessionState(next)
-  }
-
-  const statusLabel = live
-    ? `Live ${formatElapsed(elapsed)}`
-    : channel.partnerConnected
-      ? 'Ready'
-      : 'Waiting for partner…'
+  const statusLabel =
+    connection === ConnectionState.Reconnecting
+      ? 'Reconnecting…'
+      : live
+        ? `Live ${formatElapsed(elapsed)}`
+        : ended
+          ? 'Ended'
+          : partnerConnected
+            ? 'Ready'
+            : 'Waiting for partner…'
 
   return (
-    <main className="grid h-dvh grid-rows-[auto_1fr_auto_auto] overflow-hidden bg-[#0b0e16] text-slate-100">
-      <h1 className="sr-only">{BRAND.name} meeting</h1>
-      <MeetingHeader
-        title={title}
-        status={live ? 'live' : channel.partnerConnected ? 'ready' : 'waiting'}
-        statusLabel={statusLabel}
-        minutesLabel={minutesLabel && minutesLabel !== '—' ? minutesLabel : undefined}
-      />
-
-      <section aria-label="Participants" className="relative min-h-0 px-4 pt-4 lg:px-6">
-        {(session.problem || session.notice) && (
-          <p
-            role={session.problem ? 'alert' : 'status'}
-            className={`absolute inset-x-4 top-4 z-20 mx-auto max-w-xl rounded-lg border p-3 text-center text-sm shadow-lg lg:inset-x-6 ${session.problem ? 'border-rose-500/30 bg-[#2a1520] text-rose-200' : 'border-cyan-300/30 bg-[#12222c] text-cyan-100'}`}
-          >
-            {session.problem?.error ?? session.notice}
-            {session.problem?.code === 'NO_MINUTES' && (
-              <button onClick={() => setModal('pricing')} className="ml-1 font-semibold underline">
-                Get minutes
-              </button>
-            )}
-          </p>
-        )}
-
-        <VideoGrid pip>
-          {[
-            <VideoTile
-              key="partner"
-              name={channel.partnerConnected ? channel.partnerName : 'Waiting for partner...'}
-              initials={channel.partnerName.slice(0, 2).toUpperCase()}
-              color="bg-teal-900/60"
-              active={channel.partnerConnected}
-              cameraOn={channel.partnerConnected}
-              isWaiting={!channel.partnerConnected}
-            />,
-            <VideoTile
-              key="self"
-              name={`${myDisplayName} (You)`}
-              initials="You"
-              color="bg-indigo-900/60"
-              active={mic}
-              cameraOn={camera}
-              isLocal={true}
-              stream={localStream}
-              pipOnMobile
-            />,
-          ]}
-        </VideoGrid>
-
-        {chat && (
-          <div className="absolute inset-0 z-30 md:inset-y-0 md:right-4 md:left-auto md:w-[340px] lg:right-6">
-            <ChatPanel
-              messages={channel.messages}
-              myDisplayName={myDisplayName}
-              partnerConnected={channel.partnerConnected}
-              onSend={channel.sendChat}
-              onClose={() => setChat(false)}
-            />
-          </div>
-        )}
-      </section>
-
-      <CaptionBar
-        translating={translating}
-        originalText={originalText}
-        translatedText={translatedText}
-        placeholder={live ? 'Listening…' : 'Translation starts when the meeting starts.'}
-      />
-
-      <ControlBar
-        mic={mic}
-        camera={camera}
-        unreadCount={channel.messages.length - 1}
-        role={role}
-        live={live}
-        busy={session.pending}
-        onToggleMic={() => setMic(!mic)}
-        onToggleCamera={() => setCamera(!camera)}
-        onInvite={() => setModal('invite')}
-        onToggleChat={() => setChat(!chat)}
-        onStart={start}
-        onEnd={end}
-        onLeave={() => router.push('/dashboard')}
-      />
+    <MeetingLayout
+      header={{
+        title,
+        status: live ? 'live' : partnerConnected ? 'ready' : 'waiting',
+        statusLabel,
+        minutesLabel: minutesLabel && minutesLabel !== '—' ? minutesLabel : undefined,
+      }}
+      notices={
+        <>
+          {session.problem && (
+            <RoomNotice
+              tone="error"
+              floating
+              action={
+                session.problem.code === 'NO_MINUTES'
+                  ? { label: 'Get minutes', onClick: () => setModal('pricing') }
+                  : undefined
+              }
+            >
+              {session.problem.error}
+            </RoomNotice>
+          )}
+          {ended && (
+            <RoomNotice
+              tone="info"
+              floating
+              action={
+                role === 'host'
+                  ? { label: 'Start a new session', onClick: () => router.refresh() }
+                  : { label: 'Back to dashboard', href: '/dashboard' }
+              }
+            >
+              {role === 'host' ? 'You ended the meeting.' : 'The host ended the meeting.'}
+            </RoomNotice>
+          )}
+        </>
+      }
+      tiles={[
+        <VideoTile
+          key="partner"
+          name={partner ? partner.name || 'Partner' : 'Waiting for partner...'}
+          initials={(partner?.name || 'Partner').slice(0, 2).toUpperCase()}
+          color="bg-teal-900/60"
+          active={partnerConnected}
+          cameraOn={false}
+          isWaiting={!partnerConnected}
+        />,
+        <VideoTile
+          key="self"
+          name={`${displayName || 'You'} (You)`}
+          initials="You"
+          color="bg-indigo-900/60"
+          active={isMicrophoneEnabled}
+          cameraOn={false}
+          isLocal
+          pipOnMobile
+        />,
+      ]}
+      chat={
+        chatOpen && (
+          <ChatPanel
+            messages={chat.messages}
+            myDisplayName={displayName || 'You'}
+            partnerConnected={partnerConnected}
+            onSend={chat.send}
+            onClose={() => setChatOpen(false)}
+          />
+        )
+      }
+      caption={{
+        translating: false,
+        originalText: '',
+        translatedText: '',
+        placeholder: live
+          ? 'Live translation arrives in the next update.'
+          : 'Translation starts when the meeting starts.',
+      }}
+      controls={{
+        mic: isMicrophoneEnabled,
+        camera: isCameraEnabled,
+        unreadCount: chat.messages.length,
+        role,
+        live,
+        ended,
+        busy: session.pending,
+        onToggleMic: () => void localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled),
+        onToggleCamera: () => void localParticipant.setCameraEnabled(!isCameraEnabled),
+        onInvite: () => setModal('invite'),
+        onToggleChat: () => setChatOpen(!chatOpen),
+        onStart: session.start,
+        onEnd: session.end,
+        onLeave: () => router.push('/dashboard'),
+      }}
+    >
       {modal === 'invite' && (
         <InviteModal
           meetingId={meetingId}
@@ -218,6 +245,6 @@ export function MeetingRoom({
       {modal === 'pricing' && (
         <PricingModal userId={userId} balance={balance} onClose={() => setModal(null)} />
       )}
-    </main>
+    </MeetingLayout>
   )
 }

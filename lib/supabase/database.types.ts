@@ -148,7 +148,12 @@ export type Database = {
       }
       open_call_session: {
         Args: { p_meeting: string; p_user: string }
-        Returns: { session_id: string; status: CallStatus; started_at: string | null; host_id: string }[]
+        Returns: {
+          session_id: string
+          status: CallStatus
+          started_at: string | null
+          host_id: string
+        }[]
       }
       admit_participant: {
         Args: { p_session: string; p_user: string }
