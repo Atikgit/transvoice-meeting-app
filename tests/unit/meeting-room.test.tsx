@@ -211,7 +211,9 @@ describe('MeetingRoom (LiveKit)', () => {
   it('shows Reconnecting… while LiveKit reconnects', async () => {
     lk.connection = 'reconnecting'
     room('guest', LIVE)
-    await waitFor(() => expect(screen.getByTestId('room-status')).toHaveTextContent('Reconnecting…'))
+    await waitFor(() =>
+      expect(screen.getByTestId('room-status')).toHaveTextContent('Reconnecting…'),
+    )
   })
 
   it('explains a refused token and offers the way back', async () => {

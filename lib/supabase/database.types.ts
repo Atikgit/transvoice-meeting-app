@@ -139,6 +139,16 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      record_livekit_event: {
+        Args: {
+          p_event_id: string
+          p_event: string
+          p_session: string
+          p_user: string | null
+          p_at: string
+        }
+        Returns: 'ok' | 'duplicate' | 'ignored'
+      }
       create_call: {
         Args: { p_meeting: string; p_caller: string }
         Returns: {
