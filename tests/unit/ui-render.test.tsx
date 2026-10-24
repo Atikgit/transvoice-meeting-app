@@ -8,6 +8,7 @@ import { UserManual } from '@/components/dashboard/user-manual'
 import { appendCaption, CaptionBar } from '@/components/meeting/caption-bar'
 import { ControlBar } from '@/components/meeting/control-bar'
 import { MeetingHeader } from '@/components/meeting/meeting-header'
+import { VideoTile } from '@/components/meeting/video-tile'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
@@ -184,5 +185,32 @@ describe('Meeting header', () => {
     expect(screen.getByText('Encrypted session')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Live 01:23')
     expect(container.textContent).not.toContain('—')
+  })
+})
+
+describe('Video tile indicators', () => {
+  it('shows mute, connection quality, speaking ring and the camera-off avatar', () => {
+    const { container } = render(
+      <VideoTile
+        name="Rahim"
+        initials="RA"
+        color="bg-teal-900/60"
+        speaking
+        micMuted
+        quality="poor"
+        label="Camera off"
+      />,
+    )
+    expect(screen.getByLabelText('Microphone muted')).toBeInTheDocument()
+    expect(screen.getByLabelText('Poor connection')).toBeInTheDocument()
+    expect(screen.getByText('RA')).toBeInTheDocument()
+    expect(screen.getByText('Camera off')).toBeInTheDocument()
+    expect(container.querySelector('[data-speaking]')).not.toBeNull()
+  })
+
+  it('renders the video instead of the avatar when there is one', () => {
+    render(<VideoTile name="Rahim" initials="RA" color="x" video={<video data-testid="v" />} />)
+    expect(screen.getByTestId('v')).toBeInTheDocument()
+    expect(screen.queryByText('RA')).toBeNull()
   })
 })

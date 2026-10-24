@@ -21,7 +21,6 @@ export function RoomPreview({ role, live }: { role: 'host' | 'guest'; live: bool
           name="Waiting for partner..."
           initials="PA"
           color="bg-teal-900/60"
-          cameraOn={false}
           isWaiting
         />,
         <VideoTile
@@ -29,9 +28,7 @@ export function RoomPreview({ role, live }: { role: 'host' | 'guest'; live: bool
           name="Preview User (You)"
           initials="You"
           color="bg-indigo-900/60"
-          active
-          cameraOn={false}
-          isLocal
+          label="Camera off"
           pipOnMobile
         />,
       ]}

@@ -9,6 +9,10 @@ const lk = {
   metadata: undefined as string | undefined,
   connection: 'connected',
   remotes: [] as { identity: string; name: string }[],
+  tracks: [] as {
+    source: string
+    participant: { identity: string; isLocal: boolean; name: string }
+  }[],
   setMicrophoneEnabled: vi.fn(),
   setCameraEnabled: vi.fn(),
   rerender: () => {},
@@ -19,6 +23,7 @@ vi.mock('@livekit/components-react', () => ({
   useRoomInfo: () => ({ metadata: lk.metadata, name: 'tv-room' }),
   useConnectionState: () => lk.connection,
   useRemoteParticipants: () => lk.remotes,
+  useTracks: () => lk.tracks,
   useLocalParticipant: () => ({
     localParticipant: {
       setMicrophoneEnabled: lk.setMicrophoneEnabled,
@@ -26,11 +31,26 @@ vi.mock('@livekit/components-react', () => ({
     },
     isMicrophoneEnabled: true,
     isCameraEnabled: true,
+    isScreenShareEnabled: false,
   }),
 }))
 vi.mock('livekit-client', () => ({
   ConnectionState: { Reconnecting: 'reconnecting', Connected: 'connected' },
+  Track: { Source: { Camera: 'camera', ScreenShare: 'screen_share', Microphone: 'microphone' } },
+  VideoPresets: { h720: { resolution: { width: 1280, height: 720 } } },
 }))
+vi.mock('@/components/meeting/participant-tile', () => ({
+  ParticipantTile: ({
+    trackRef,
+  }: {
+    trackRef: { participant: { name: string }; source: string }
+  }) => (
+    <div data-testid="participant-tile">
+      {trackRef.participant.name}:{trackRef.source}
+    </div>
+  ),
+}))
+vi.mock('@/components/meeting/device-menu', () => ({ DeviceMenu: () => <button>Devices</button> }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('@/app/invite/actions', () => ({ createInvitation: vi.fn() }))
 vi.mock('@/features/meeting/useMeetingChat', () => ({
@@ -101,6 +121,11 @@ beforeEach(() => {
   lk.metadata = undefined
   lk.connection = 'connected'
   lk.remotes = [{ identity: 'g1', name: 'Guest' }]
+  lk.tracks = [
+    { source: 'camera', participant: { identity: 'u1', isLocal: true, name: 'Atik' } },
+    { source: 'screen_share', participant: { identity: 'g1', isLocal: false, name: 'Guest' } },
+    { source: 'camera', participant: { identity: 'g1', isLocal: false, name: 'Guest' } },
+  ]
   fetchMock = vi.fn()
   vi.stubGlobal('fetch', fetchMock)
   respond('', 404, {})
@@ -182,6 +207,26 @@ describe('MeetingRoom (LiveKit)', () => {
     expect(lk.setMicrophoneEnabled).toHaveBeenCalledWith(false)
     fireEvent.click(screen.getByRole('button', { name: 'Turn off camera' }))
     expect(lk.setCameraEnabled).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('MeetingRoom tiles', () => {
+  it('orders screen share, remote camera, then your own camera; devices menu present', async () => {
+    room('host')
+    await screen.findByText('Ready')
+    expect(screen.getAllByTestId('participant-tile').map((t) => t.textContent)).toEqual([
+      'Guest:screen_share',
+      'Guest:camera',
+      'Atik:camera',
+    ])
+    expect(screen.getByRole('button', { name: 'Devices' })).toBeInTheDocument()
+  })
+
+  it('shows a waiting tile while alone', async () => {
+    lk.remotes = []
+    lk.tracks = [{ source: 'camera', participant: { identity: 'u1', isLocal: true, name: 'Atik' } }]
+    room('host')
+    expect(await screen.findByText('Waiting for partner to join...')).toBeInTheDocument()
   })
 })
 

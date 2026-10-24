@@ -24,7 +24,7 @@ const TONES: Record<Tone, string> = {
 }
 
 /** One control: same height everywhere; the text label is hidden below 768px (icon only). */
-function Control({
+export function Control({
   label,
   text,
   icon,
@@ -94,6 +94,7 @@ export function ControlBar({
   onStart,
   onEnd,
   onLeave,
+  extra,
 }: {
   mic: boolean
   camera: boolean
@@ -112,6 +113,8 @@ export function ControlBar({
   onStart: () => void
   onEnd: () => void
   onLeave: () => void
+  /** Extra controls after the camera (screen share, devices). */
+  extra?: ReactNode
 }) {
   return (
     <nav
@@ -136,6 +139,7 @@ export function ControlBar({
           onClick={onToggleCamera}
           iconOnly
         />
+        {extra}
         <Control
           label="Invite Partner"
           icon={<UserPlus size={17} aria-hidden />}

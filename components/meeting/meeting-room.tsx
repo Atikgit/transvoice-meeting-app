@@ -8,13 +8,18 @@ import {
   useConnectionState,
   useLocalParticipant,
   useRemoteParticipants,
+  useTracks,
 } from '@livekit/components-react'
-import { ConnectionState } from 'livekit-client'
+import { ConnectionState, Track, VideoPresets, type RoomOptions } from 'livekit-client'
+import { MonitorOff, MonitorUp } from 'lucide-react'
 import { PricingModal } from '@/components/billing/pricing-modal'
 import { InviteModal } from '@/components/invite/invite-modal'
 import { ChatPanel } from '@/components/meeting/chat-panel'
 import { MeetingHeader } from '@/components/meeting/meeting-header'
+import { Control } from '@/components/meeting/control-bar'
+import { DeviceMenu } from '@/components/meeting/device-menu'
 import { MeetingLayout } from '@/components/meeting/meeting-layout'
+import { ParticipantTile } from '@/components/meeting/participant-tile'
 import { RoomNotice } from '@/components/meeting/room-notice'
 import { VideoTile } from '@/components/meeting/video-tile'
 import { useLiveKitToken } from '@/features/meeting/useLiveKitToken'
@@ -42,6 +47,20 @@ export interface MeetingRoomProps {
   /** Camera / mic choice from the lobby. */
   initialCamera: boolean
   initialMic: boolean
+}
+
+/** Media settings for every room (§8): simulcast + dynacast + adaptive stream, clean audio. */
+export const ROOM_OPTIONS: RoomOptions = {
+  adaptiveStream: true,
+  dynacast: true,
+  publishDefaults: { simulcast: true },
+  audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
+}
+
+/** Screen capture exists on desktop browsers only. */
+function canShareScreen(): boolean {
+  return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia)
 }
 
 /**
@@ -78,6 +97,7 @@ export function MeetingRoom(props: MeetingRoomProps) {
       serverUrl={token.url}
       token={token.token}
       connect
+      options={ROOM_OPTIONS}
       audio={props.initialMic}
       video={props.initialCamera}
       className="contents"
@@ -119,7 +139,21 @@ function RoomView({
 
   const connection = useConnectionState()
   const remotes = useRemoteParticipants()
-  const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant()
+  const { localParticipant, isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } =
+    useLocalParticipant()
+  // Screen shares first, then remote cameras, your own camera last (mobile picture-in-picture).
+  const tracks = useTracks(
+    [
+      { source: Track.Source.Camera, withPlaceholder: true },
+      { source: Track.Source.ScreenShare, withPlaceholder: false },
+    ],
+    { onlySubscribed: false },
+  )
+  const ordered = [
+    ...tracks.filter((t) => t.source === Track.Source.ScreenShare),
+    ...tracks.filter((t) => t.source === Track.Source.Camera && !t.participant.isLocal),
+    ...tracks.filter((t) => t.source === Track.Source.Camera && t.participant.isLocal),
+  ]
   const session = useRoomState(sessionId, initialState)
   const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
 
@@ -179,25 +213,25 @@ function RoomView({
         </>
       }
       tiles={[
-        <VideoTile
-          key="partner"
-          name={partner ? partner.name || 'Partner' : 'Waiting for partner...'}
-          initials={(partner?.name || 'Partner').slice(0, 2).toUpperCase()}
-          color="bg-teal-900/60"
-          active={partnerConnected}
-          cameraOn={false}
-          isWaiting={!partnerConnected}
-        />,
-        <VideoTile
-          key="self"
-          name={`${displayName || 'You'} (You)`}
-          initials="You"
-          color="bg-indigo-900/60"
-          active={isMicrophoneEnabled}
-          cameraOn={false}
-          isLocal
-          pipOnMobile
-        />,
+        ...(partnerConnected
+          ? []
+          : [
+              <VideoTile
+                key="waiting"
+                name="Waiting for partner..."
+                initials="?"
+                color="bg-teal-900/60"
+                isWaiting
+              />,
+            ]),
+        ...ordered.map((trackRef, index) => (
+          <ParticipantTile
+            key={`${trackRef.participant.identity}-${trackRef.source}`}
+            trackRef={trackRef}
+            colorIndex={index}
+            pipOnMobile={trackRef.participant.isLocal && index === ordered.length - 1}
+          />
+        )),
       ]}
       chat={
         chatOpen && (
@@ -228,6 +262,31 @@ function RoomView({
         busy: session.pending,
         onToggleMic: () => void localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled),
         onToggleCamera: () => void localParticipant.setCameraEnabled(!isCameraEnabled),
+        extra: (
+          <>
+            {canShareScreen() && (
+              <Control
+                label={isScreenShareEnabled ? 'Stop sharing screen' : 'Share screen'}
+                icon={
+                  isScreenShareEnabled ? (
+                    <MonitorOff size={17} aria-hidden />
+                  ) : (
+                    <MonitorUp size={17} aria-hidden />
+                  )
+                }
+                tone={isScreenShareEnabled ? 'on' : 'neutral'}
+                pressed={isScreenShareEnabled}
+                iconOnly
+                onClick={() =>
+                  void localParticipant
+                    .setScreenShareEnabled(!isScreenShareEnabled, { audio: true })
+                    .catch(() => {})
+                }
+              />
+            )}
+            <DeviceMenu />
+          </>
+        ),
         onInvite: () => setModal('invite'),
         onToggleChat: () => setChatOpen(!chatOpen),
         onStart: session.start,
