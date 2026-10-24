@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { createMeeting } from '@/app/m/actions'
 import { PricingModal } from '@/components/billing/pricing-modal'
+import { ConnectionsCard, type ConnectionItem } from '@/components/calls/connections-card'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
 import { JoinLinkModal } from '@/components/dashboard/join-link-modal'
 import { InviteModal } from '@/components/invite/invite-modal'
@@ -13,11 +14,13 @@ export function DashboardHome({
   greeting,
   balance,
   canInvite,
+  connections = [],
 }: {
   userId: string
   greeting: string
   balance: number
   canInvite: boolean
+  connections?: ConnectionItem[]
 }) {
   const [pricing, setPricing] = useState(false)
   const [inviting, setInviting] = useState(false)
@@ -43,7 +46,14 @@ export function DashboardHome({
         onPricing={() => setPricing(true)}
         canInvite={canInvite}
         onInvite={() => setInviting(true)}
-      />
+      >
+        <ConnectionsCard
+          userId={userId}
+          connections={connections}
+          canSpend={canInvite}
+          onSubscribe={() => setPricing(true)}
+        />
+      </DashboardOverview>
       {error && (
         <p role="alert" className="mx-auto max-w-6xl px-5 text-sm text-rose-300 lg:px-10">
           {error}

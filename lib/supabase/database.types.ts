@@ -129,6 +129,7 @@ export type Database = {
           started_at: string | null
           ended_at: string | null
           end_reason: string | null
+          callee_id: string | null
           created_at: string
         }
         Insert: never
@@ -138,6 +139,34 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      create_call: {
+        Args: { p_meeting: string; p_caller: string }
+        Returns: {
+          mode: 'direct' | 'join' | 'ringing'
+          meeting_id: string
+          session_id: string | null
+          callee_id: string | null
+          expires_at: string | null
+        }[]
+      }
+      answer_call: {
+        Args: { p_session: string; p_user: string; p_accept: boolean }
+        Returns: { meeting_id: string; outcome: 'accepted' | 'declined' | 'expired' | 'closed' }[]
+      }
+      cancel_call: {
+        Args: { p_session: string; p_user: string }
+        Returns: string | null
+      }
+      incoming_calls: {
+        Args: { p_user: string }
+        Returns: {
+          session_id: string
+          meeting_id: string
+          caller_id: string
+          caller_name: string
+          expires_at: string
+        }[]
+      }
       call_rights: {
         Args: { p_meeting: string; p_user: string }
         Returns: 'host' | 'sponsored' | 'member' | null

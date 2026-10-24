@@ -19,22 +19,43 @@ let db: PGlite
 let signedIn: { id: string; email: string } | null = null
 
 function fromAsUser(table: string) {
-  return {
-    select: (columns: string) => ({
-      eq: (column: string, value: string) => ({
-        maybeSingle: async () => {
-          const rows = await as(db, 'authenticated', signedIn?.id ?? null, async (tx) => {
-            const result = await tx.query(
-              `select ${columns} from public.${table} where ${column} = $1`,
-              [value],
-            )
-            return result.rows
-          })
-          return { data: rows[0] ?? null, error: null }
-        },
-      }),
-    }),
+  const where: string[] = []
+  const values: unknown[] = []
+  let tail = ''
+  let columns = '*'
+  const run = async () =>
+    as(db, 'authenticated', signedIn?.id ?? null, async (tx) => {
+      const sql = `select ${columns} from public.${table}${where.length ? ` where ${where.join(' and ')}` : ''}${tail}`
+      return (await tx.query(sql, values)).rows
+    })
+  const builder = {
+    select: (cols: string) => ((columns = cols), builder),
+    eq: (column: string, value: unknown) => (
+      values.push(value),
+      where.push(`${column} = $${values.length}`),
+      builder
+    ),
+    in: (column: string, list: unknown[]) => (
+      values.push(list),
+      where.push(`${column} = any($${values.length})`),
+      builder
+    ),
+    is: (column: string, value: null) => (
+      where.push(`${column} is ${value === null ? 'null' : 'not null'}`),
+      builder
+    ),
+    order: (column: string, { ascending }: { ascending: boolean }) => (
+      (tail += ` order by ${column} ${ascending ? 'asc' : 'desc'}`),
+      builder
+    ),
+    limit: (n: number) => ((tail += ` limit ${n}`), builder),
+    maybeSingle: async () => ({ data: (await run())[0] ?? null, error: null }),
+    then: (
+      resolve: (value: { data: unknown[]; error: null }) => void,
+      reject: (e: unknown) => void,
+    ) => run().then((rows) => resolve({ data: rows, error: null }), reject),
   }
+  return builder
 }
 
 vi.mock('@/lib/supabase/server', () => ({

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
+import { IncomingCallListener } from '@/components/calls/incoming-call'
 import { AppHeader } from '@/components/dashboard/app-header'
 import { currentBalance } from '@/lib/auth/account'
 import { minutesLabel } from '@/lib/billing/balance'
@@ -18,6 +19,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     <div className="min-h-screen bg-[#0b0e16] text-slate-100">
       <AppHeader minutesLabel={minutesLabel(balance)} />
       {children}
+      <IncomingCallListener userId={user.id} />
     </div>
   )
 }

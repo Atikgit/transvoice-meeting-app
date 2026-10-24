@@ -12,6 +12,7 @@ const LIMITS = {
   resendConfirmation: { tokens: 5, window: '1 h' },
   invitation: { tokens: 20, window: '1 h' },
   meeting: { tokens: 30, window: '1 h' },
+  call: { tokens: 10, window: '1 m' },
 } satisfies Record<string, { tokens: number; window: Duration }>
 
 export type RateLimitName = keyof typeof LIMITS

@@ -13,6 +13,7 @@ export function DashboardOverview({
   onPricing,
   onJoin,
   onInvite,
+  children,
 }: {
   greeting: string
   balance: number
@@ -24,6 +25,8 @@ export function DashboardOverview({
   onPricing: () => void
   onJoin: () => void
   onInvite: () => void
+  /** Extra sections between the stat cards and the user manual (connections). */
+  children?: React.ReactNode
 }) {
   return (
     <div className="mx-auto max-w-6xl px-5 py-10 lg:px-10">
@@ -101,6 +104,7 @@ export function DashboardOverview({
         </div>
       </div>
 
+      {children}
       <UserManual />
     </div>
   )
