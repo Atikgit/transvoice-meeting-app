@@ -21,6 +21,7 @@
     "db:types": "supabase gen types typescript --linked --schema public > lib/supabase/database.generated.ts && prettier --write lib/supabase/database.generated.ts",
     "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/gen-icons.ts",
     "auth:templates": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/push-auth-templates.ts",
+    "latency:report": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/latency-report.ts",
     "vad:assets": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/copy-vad-assets.ts"
   },
   "dependencies": {
