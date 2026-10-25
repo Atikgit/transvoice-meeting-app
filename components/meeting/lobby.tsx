@@ -6,6 +6,8 @@ import { Camera, CameraOff, ChevronRight, Mic, MicOff } from 'lucide-react'
 import { joinFromLobby, type LobbyState } from '@/app/m/actions'
 import { BackButton } from '@/components/common/back-button'
 import { Logo } from '@/components/common/logo'
+import { unlockAudio } from '@/features/translation/web-audio'
+import { describeMediaProblem, type MediaProblem } from '@/lib/meetings/media-errors'
 import type { MeetingRole } from '@/lib/meetings/load'
 import {
   LANGUAGES_AND_VOICES,
@@ -56,6 +58,8 @@ export function Lobby({
   const audioDeviceId = userChoices.audioDeviceId
   const videoDeviceId = userChoices.videoDeviceId
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [previewProblem, setPreviewProblem] = useState<MediaProblem | null>(null)
+  const [previewAttempt, setPreviewAttempt] = useState(0)
 
   useEffect(() => {
     let stream: MediaStream | null = null
@@ -66,16 +70,19 @@ export function Lobby({
         ?.getUserMedia({ video: pick(videoDeviceId), audio: pick(audioDeviceId) })
         .then((s) => {
           if (cancelled) return s.getTracks().forEach((t) => t.stop())
+          setPreviewProblem(null)
           stream = s
           if (videoRef.current) videoRef.current.srcObject = s
         })
-        .catch((err) => console.warn('Camera preview unavailable:', err))
+        .catch((err) => {
+          if (!cancelled) setPreviewProblem(describeMediaProblem(err, 'camera or microphone'))
+        })
     }
     return () => {
       cancelled = true
       stream?.getTracks().forEach((t) => t.stop())
     }
-  }, [camera, audioDeviceId, videoDeviceId])
+  }, [camera, audioDeviceId, videoDeviceId, previewAttempt])
 
   const host = role === 'host'
 
@@ -155,6 +162,8 @@ export function Lobby({
           <button
             type="submit"
             disabled={pending}
+            // Inside the click: unlocks audio on iOS Safari / Android Chrome for the room.
+            onClick={() => void unlockAudio()}
             className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:opacity-50"
           >
             {pending ? 'Opening room…' : host ? 'Continue to room' : 'Join call now'}
@@ -175,6 +184,25 @@ export function Lobby({
             ) : (
               <div className="flex size-14 items-center justify-center rounded-full bg-cyan-700 text-lg font-semibold text-white">
                 You
+              </div>
+            )}
+            {previewProblem && (
+              <div
+                role="alert"
+                className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#2a1520]/95 p-4 text-center text-xs text-rose-200"
+              >
+                <p>{previewProblem.message}</p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    previewProblem.recovery === 'reload'
+                      ? window.location.reload()
+                      : setPreviewAttempt((n) => n + 1)
+                  }
+                  className="font-semibold underline underline-offset-2"
+                >
+                  {previewProblem.recovery === 'reload' ? 'Reload' : 'Try again'}
+                </button>
               </div>
             )}
             <span className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-slate-950/60 px-2 py-1 text-[10px] text-slate-200">

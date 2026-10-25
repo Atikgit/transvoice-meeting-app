@@ -8,11 +8,14 @@ export function RoomNotice({
   tone,
   children,
   action,
+  secondaryAction,
   floating = false,
 }: {
   tone: 'info' | 'error'
   children: ReactNode
   action?: NoticeAction
+  /** A second way out, e.g. "Subscribe" next to "Message host". */
+  secondaryAction?: NoticeAction
   /** Overlay at the top of the video area instead of inline. */
   floating?: boolean
 }) {
@@ -27,16 +30,19 @@ export function RoomNotice({
       className={`${floating ? 'absolute inset-x-4 top-4 z-20 mx-auto lg:inset-x-6' : ''} max-w-xl rounded-lg border p-3 text-center text-sm shadow-lg ${color}`}
     >
       {children}
-      {action &&
-        ('href' in action ? (
-          <Link href={action.href} className={actionClass}>
-            {action.label}
-          </Link>
-        ) : (
-          <button type="button" onClick={action.onClick} className={actionClass}>
-            {action.label}
-          </button>
-        ))}
+      {[action, secondaryAction].map(
+        (item) =>
+          item &&
+          ('href' in item ? (
+            <Link key={item.label} href={item.href} className={actionClass}>
+              {item.label}
+            </Link>
+          ) : (
+            <button key={item.label} type="button" onClick={item.onClick} className={actionClass}>
+              {item.label}
+            </button>
+          )),
+      )}
     </p>
   )
 }

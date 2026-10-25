@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   LiveKitRoom,
   RoomAudioRenderer,
   useConnectionState,
   useLocalParticipant,
+  useRoomContext,
   usePersistentUserChoices,
   useRemoteParticipants,
   useTracks,
@@ -32,7 +33,16 @@ import { MeetingLayout } from '@/components/meeting/meeting-layout'
 import { ParticipantTile } from '@/components/meeting/participant-tile'
 import { RoomNotice } from '@/components/meeting/room-notice'
 import { VideoTile } from '@/components/meeting/video-tile'
+import { routeToLoudspeaker } from '@/features/meeting/audio-output'
+import { useAudioPlayback } from '@/features/meeting/useAudioPlayback'
 import { useLiveKitToken } from '@/features/meeting/useLiveKitToken'
+import { useWakeLock } from '@/features/meeting/useWakeLock'
+import {
+  deviceFromKind,
+  describeMediaProblem,
+  type MediaProblem,
+} from '@/lib/meetings/media-errors'
+import { sharedAudioContext, unlockAudio } from '@/features/translation/web-audio'
 import { useMeetingChat } from '@/features/meeting/useMeetingChat'
 import { captionText } from '@/features/translation/captions'
 import type { OriginalAudioMode } from '@/features/translation/playback'
@@ -101,11 +111,30 @@ export function MeetingRoom(props: MeetingRoomProps) {
   const [attempt, setAttempt] = useState(0)
   const token = useLiveKitToken(props.sessionId, attempt)
   const [lost, setLost] = useState(false)
+  // The first connection never completed (server unreachable, or no answer within 15 s).
+  const [connectFailed, setConnectFailed] = useState(false)
+  const connectedOnce = useRef(false)
+  const [mediaProblem, setMediaProblem] = useState<MediaProblem | null>(null)
+  const retryConnection = () => {
+    connectedOnce.current = false
+    setConnectFailed(false)
+    setAttempt((n) => n + 1)
+  }
   // Devices chosen in the lobby (LiveKit persistent choices); on/off comes from the lobby form.
   const { userChoices } = usePersistentUserChoices({ preventSave: true })
   const device = (id: string) => (id && id !== 'default' ? { deviceId: id } : {})
 
-  // LiveKit gave up reconnecting (not a deliberate leave or a server-side end).
+  if (connectFailed) {
+    return (
+      <RoomShell {...props} statusLabel="Not connected">
+        <RoomNotice tone="error" action={{ label: 'Retry', onClick: retryConnection }}>
+          Can&apos;t reach the meeting server. Check your connection and try again.
+        </RoomNotice>
+      </RoomShell>
+    )
+  }
+
+  // LiveKit gave up reconnecting after it had been connected (not a deliberate leave).
   if (lost) {
     return (
       <RoomShell {...props}>
@@ -147,8 +176,16 @@ export function MeetingRoom(props: MeetingRoomProps) {
       connect
       options={ROOM_OPTIONS}
       onDisconnected={(reason) => {
-        if (reason !== undefined && !EXPECTED_DISCONNECTS.has(reason)) setLost(true)
+        if (reason === undefined || EXPECTED_DISCONNECTS.has(reason)) return
+        if (connectedOnce.current) setLost(true)
+        else setConnectFailed(true)
       }}
+      onError={() => {
+        if (!connectedOnce.current) setConnectFailed(true)
+      }}
+      onMediaDeviceFailure={(failure, kind) =>
+        setMediaProblem(describeMediaProblem(failure, deviceFromKind(kind)))
+      }
       audio={
         props.initialMic
           ? { ...ROOM_OPTIONS.audioCaptureDefaults, ...device(userChoices.audioDeviceId) }
@@ -161,20 +198,50 @@ export function MeetingRoom(props: MeetingRoomProps) {
       }
       className="contents"
     >
-      <RoomView {...props} />
+      <FirstConnectionWatch connectedRef={connectedOnce} onTimeout={() => setConnectFailed(true)} />
+      <RoomView
+        {...props}
+        mediaProblem={mediaProblem}
+        onMediaProblemHandled={() => setMediaProblem(null)}
+      />
       <RoomAudioRenderer />
     </LiveKitRoom>
   )
 }
 
+/** How long the first connection may take before we say the server cannot be reached. */
+export const FIRST_CONNECT_TIMEOUT_MS = 15_000
+
+/** Marks the first successful connection; fires onTimeout if it has not happened in time. */
+function FirstConnectionWatch({
+  connectedRef,
+  onTimeout,
+}: {
+  connectedRef: { current: boolean }
+  onTimeout: () => void
+}) {
+  const connection = useConnectionState()
+  useEffect(() => {
+    if (connection === ConnectionState.Connected) {
+      connectedRef.current = true
+      return
+    }
+    if (connectedRef.current) return // dropped later: LiveKit reconnects, the grace rules apply
+    const timer = setTimeout(onTimeout, FIRST_CONNECT_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [connection, connectedRef, onTimeout])
+  return null
+}
+
 /** Layout without a LiveKit connection (connecting / error). */
 function RoomShell({
   title,
+  statusLabel = 'Connecting…',
   children,
-}: Pick<MeetingRoomProps, 'title'> & { children: React.ReactNode }) {
+}: Pick<MeetingRoomProps, 'title'> & { statusLabel?: string; children: React.ReactNode }) {
   return (
     <main className="grid h-dvh grid-rows-[auto_1fr] overflow-hidden bg-[#0b0e16] text-slate-100">
-      <MeetingHeader title={title} status="waiting" statusLabel="Connecting…" />
+      <MeetingHeader title={title} status="waiting" statusLabel={statusLabel} />
       <section className="flex items-center justify-center p-6">{children}</section>
     </main>
   )
@@ -195,11 +262,17 @@ function RoomView({
   initialState,
   balance = 0,
   minutesLabel,
-}: MeetingRoomProps) {
+  mediaProblem,
+  onMediaProblemHandled,
+}: MeetingRoomProps & {
+  mediaProblem: MediaProblem | null
+  onMediaProblemHandled: () => void
+}) {
   const router = useRouter()
   const [chatOpen, setChatOpen] = useState(false)
   const [modal, setModal] = useState<'invite' | 'pricing' | null>(null)
 
+  const room = useRoomContext()
   const connection = useConnectionState()
   const remotes = useRemoteParticipants()
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } =
@@ -232,19 +305,30 @@ function RoomView({
   const live = session.state.status === 'live'
   const ended = session.state.status === 'ended'
   const elapsed = useElapsedSeconds(live ? session.state.startedAt : null)
+  const playback = useAudioPlayback()
+  useWakeLock(live)
+  useEffect(() => {
+    // Phones play call audio through the earpiece by default; use the loudspeaker where allowed.
+    if (connection === ConnectionState.Connected)
+      void routeToLoudspeaker(room, sharedAudioContext())
+  }, [connection, room])
   const partner = remotes[0]
   const partnerConnected = Boolean(partner)
 
+  // First connection says "Connecting…" (the room is not ready yet); "Reconnecting…" is only for
+  // a connection that existed and dropped.
   const statusLabel =
-    connection === ConnectionState.Reconnecting
-      ? 'Reconnecting…'
-      : live
-        ? `Live ${formatElapsed(elapsed)}`
-        : ended
-          ? 'Ended'
-          : partnerConnected
-            ? 'Ready'
-            : 'Waiting for partner…'
+    connection === ConnectionState.Connecting
+      ? 'Connecting…'
+      : connection === ConnectionState.Reconnecting
+        ? 'Reconnecting…'
+        : live
+          ? `Live ${formatElapsed(elapsed)}`
+          : ended
+            ? 'Ended'
+            : partnerConnected
+              ? 'Ready'
+              : 'Waiting for partner…'
 
   return (
     <MeetingLayout
@@ -267,6 +351,56 @@ function RoomView({
               }
             >
               {session.problem.error}
+            </RoomNotice>
+          )}
+          {mediaProblem && (
+            <RoomNotice
+              tone="error"
+              floating
+              action={
+                mediaProblem.recovery === 'reload'
+                  ? { label: 'Reload', onClick: () => window.location.reload() }
+                  : {
+                      label: 'Try again',
+                      onClick: () => {
+                        onMediaProblemHandled()
+                        void (
+                          mediaProblem.device === 'camera'
+                            ? localParticipant.setCameraEnabled(true)
+                            : localParticipant.setMicrophoneEnabled(true)
+                        ).catch(() => {}) // a new failure arrives through onMediaDeviceFailure
+                      },
+                    }
+              }
+            >
+              {mediaProblem.message}
+            </RoomNotice>
+          )}
+          {playback.blocked && connection === ConnectionState.Connected && (
+            <RoomNotice
+              tone="info"
+              floating
+              action={{ label: 'Tap to enable audio', onClick: () => void playback.enable() }}
+            >
+              Your browser is blocking sound.
+            </RoomNotice>
+          )}
+          {translation.notice?.code === 'PAYER_NO_MINUTES' && (
+            <RoomNotice
+              tone="error"
+              floating
+              action={
+                translation.notice.payerIsSpeaker
+                  ? { label: 'Subscribe', onClick: () => setModal('pricing') }
+                  : { label: 'Message host', onClick: () => setChatOpen(true) }
+              }
+              secondaryAction={
+                translation.notice.payerIsSpeaker
+                  ? undefined
+                  : { label: 'Subscribe', onClick: () => setModal('pricing') }
+              }
+            >
+              {translation.notice.text}
             </RoomNotice>
           )}
           {connection === ConnectionState.Reconnecting && (
@@ -338,7 +472,7 @@ function RoomView({
           (translationEnabled ? undefined : BETA_MESSAGE) ??
           translation.notice?.text ??
           (audio.unavailable
-            ? 'Translation is temporarily unavailable (captions only).'
+            ? 'Translation is temporarily unavailable. It resumes by itself.'
             : undefined) ??
           (live
             ? translation.speaking
@@ -383,7 +517,12 @@ function RoomView({
         ),
         onInvite: () => setModal('invite'),
         onToggleChat: () => setChatOpen(!chatOpen),
-        onStart: session.start,
+        onStart: () => {
+          // Inside the click: unlocks audio on iOS Safari / Android Chrome.
+          void unlockAudio()
+          void room.startAudio().catch(() => {})
+          session.start()
+        },
         onEnd: session.end,
         onLeave: () => router.push('/dashboard'),
       }}

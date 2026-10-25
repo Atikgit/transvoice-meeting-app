@@ -60,3 +60,15 @@ export function playBuffer(buffer: AudioBuffer): Promise<void> {
     source.start()
   })
 }
+
+/** Is the shared AudioContext running (false before the first user gesture on iOS / Android)? */
+export function audioIsRunning(): boolean {
+  return context?.state === 'running'
+}
+
+/** Calls back when the shared context starts or stops running. */
+export function onAudioStateChange(callback: () => void): () => void {
+  const ctx = audioContext()
+  ctx?.addEventListener('statechange', callback)
+  return () => ctx?.removeEventListener('statechange', callback)
+}

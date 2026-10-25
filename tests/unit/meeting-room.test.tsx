@@ -13,15 +13,21 @@ const lk = {
     source: string
     participant: { identity: string; isLocal: boolean; name: string }
   }[],
-  setMicrophoneEnabled: vi.fn(),
-  setCameraEnabled: vi.fn(),
+  setMicrophoneEnabled: vi.fn(async () => {}),
+  setCameraEnabled: vi.fn(async () => {}),
   rerender: () => {},
   roomProps: {} as {
     audio?: unknown
     video?: unknown
     options?: unknown
     onDisconnected?: (reason?: number) => void
+    onError?: (error: Error) => void
+    onMediaDeviceFailure?: (failure?: string, kind?: string) => void
   },
+  audioBlocked: false,
+  enableAudio: vi.fn(),
+  translationNotice: null as null | Record<string, unknown>,
+  startAudio: vi.fn(async () => {}),
 }
 vi.mock('@livekit/components-react', () => ({
   LiveKitRoom: ({
@@ -36,6 +42,12 @@ vi.mock('@livekit/components-react', () => ({
     lk.roomProps = props
     return <>{children}</>
   },
+  useRoomContext: () => ({
+    startAudio: lk.startAudio,
+    canPlaybackAudio: true,
+    on: vi.fn(),
+    off: vi.fn(),
+  }),
   usePersistentUserChoices: () => ({
     userChoices: { audioDeviceId: 'mic-2', videoDeviceId: 'default' },
   }),
@@ -54,8 +66,17 @@ vi.mock('@livekit/components-react', () => ({
     isScreenShareEnabled: false,
   }),
 }))
+vi.mock('@/features/meeting/useAudioPlayback', () => ({
+  useAudioPlayback: () => ({ blocked: lk.audioBlocked, enable: lk.enableAudio }),
+}))
 vi.mock('livekit-client', () => ({
-  ConnectionState: { Reconnecting: 'reconnecting', Connected: 'connected' },
+  Room: { getLocalDevices: vi.fn(async () => []) },
+  RoomEvent: {},
+  ConnectionState: {
+    Connecting: 'connecting',
+    Reconnecting: 'reconnecting',
+    Connected: 'connected',
+  },
   Track: { Source: { Camera: 'camera', ScreenShare: 'screen_share', Microphone: 'microphone' } },
   VideoPresets: { h720: { resolution: { width: 1280, height: 720 } } },
   DisconnectReason: {
@@ -93,7 +114,7 @@ vi.mock('@/features/translation/useLiveTranslation', () => ({
     listening: false,
     speaking: false,
     translating: false,
-    notice: null,
+    notice: lk.translationNotice,
   }),
 }))
 vi.mock('@/components/meeting/device-menu', () => ({ DeviceMenu: () => <button>Devices</button> }))
@@ -174,6 +195,10 @@ function metadataChanged(state: RoomState) {
 beforeEach(() => {
   lk.metadata = undefined
   lk.connection = 'connected'
+  lk.audioBlocked = false
+  lk.roomProps = {}
+  lk.translationNotice = null
+  lk.enableAudio.mockClear()
   lk.remotes = [{ identity: 'g1', name: 'Guest' }]
   lk.tracks = [
     { source: 'camera', participant: { identity: 'u1', isLocal: true, name: 'Atik' } },
@@ -194,6 +219,7 @@ describe('MeetingRoom (LiveKit)', () => {
     room('host')
     expect(await screen.findByText('Ready')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(`/api/livekit/token?sessionId=${SESSION}`, {
+      signal: expect.any(AbortSignal),
       cache: 'no-store',
     })
     expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument()
@@ -231,6 +257,13 @@ describe('MeetingRoom (LiveKit)', () => {
     metadataChanged({ ...LIVE, status: 'ended', endReason: 'host_ended' })
     expect(screen.getByText('The host ended the meeting.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeInTheDocument()
+  })
+
+  it('says Connecting… (not Reconnecting…) on the first connection', async () => {
+    lk.connection = 'connecting'
+    room('guest')
+    await waitFor(() => expect(screen.getByTestId('room-status')).toHaveTextContent('Connecting…'))
+    expect(screen.queryByText(/Reconnecting/)).toBeNull()
   })
 
   it('shows Reconnecting… while LiveKit reconnects', async () => {
@@ -335,6 +368,125 @@ describe('Reconnect (Rule 5)', () => {
     metadataChanged({ ...LIVE, status: 'ended', endReason: 'reconnect_timeout' })
     expect(screen.getByText('The connection was lost and the meeting ended.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Call again/ })).toBeInTheDocument()
+  })
+})
+
+describe('First connection', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('says Connecting… and, after 15 s without a connection, offers Retry (not Call again)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    lk.connection = 'connecting'
+    room('host')
+    // The LiveKit room mounts once the token has arrived; the 15 s clock starts there.
+    await vi.waitFor(() => expect(lk.roomProps.onError).toBeDefined())
+    expect(screen.getByTestId('room-status')).toHaveTextContent('Connecting…')
+    expect(screen.queryByText(/Can't reach the meeting server/)).toBeNull()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000)
+    })
+    expect(screen.getByText(/Can't reach the meeting server/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Call again/ })).toBeNull()
+
+    const tokenCalls = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/livekit/token')).length
+    expect(tokenCalls()).toBe(1)
+    lk.connection = 'connected'
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('Ready')).toBeInTheDocument()
+    expect(tokenCalls()).toBe(2) // a fresh token, not the old one
+  })
+
+  it('a connection that fails outright shows the same Retry, not "Connection lost"', async () => {
+    lk.connection = 'connecting'
+    room('host')
+    await screen.findByTestId('room-status')
+    act(() => lk.roomProps.onError?.(new Error('could not establish signal connection')))
+    expect(screen.getByText(/Can't reach the meeting server/)).toBeInTheDocument()
+    expect(screen.queryByText(/Connection lost/)).toBeNull()
+  })
+
+  it('does not time out once connected', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    room('host')
+    await vi.waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000)
+    })
+    expect(screen.queryByText(/Can't reach the meeting server/)).toBeNull()
+  })
+})
+
+describe('Error states', () => {
+  it('permission denied explains how to allow it in the browser and offers Reload', async () => {
+    room('host')
+    await screen.findByText('Ready')
+    act(() => lk.roomProps.onMediaDeviceFailure?.('PermissionDenied', 'audioinput'))
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(/blocking the microphone/)
+    expect(alert).toHaveTextContent(/lock icon/)
+    expect(alert).toHaveTextContent(/Settings → Safari/)
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument()
+  })
+
+  it('a microphone in use by another app (NotReadableError) can be retried', async () => {
+    room('host')
+    await screen.findByText('Ready')
+    act(() => lk.roomProps.onMediaDeviceFailure?.('DeviceInUse', 'audioinput'))
+    expect(screen.getByRole('alert')).toHaveTextContent(/used by another app/)
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(lk.setMicrophoneEnabled).toHaveBeenCalledWith(true)
+    expect(screen.queryByText(/used by another app/)).toBeNull()
+  })
+
+  it('a blocked camera retries the camera, not the microphone', async () => {
+    room('host')
+    await screen.findByText('Ready')
+    act(() => lk.roomProps.onMediaDeviceFailure?.('NotFound', 'videoinput'))
+    expect(screen.getByRole('alert')).toHaveTextContent(/No camera found/)
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(lk.setCameraEnabled).toHaveBeenCalledWith(true)
+  })
+
+  it('when the host has no minutes, a guest can Message host or Subscribe', async () => {
+    lk.translationNotice = {
+      tone: 'error',
+      text: "The host's minutes have run out. Translation is paused; chat still works.",
+      code: 'PAYER_NO_MINUTES',
+      payerIsSpeaker: false,
+    }
+    room('guest', LIVE)
+    expect(await screen.findAllByText(/host's minutes have run out/)).not.toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Subscribe' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Message host' }))
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeInTheDocument()
+  })
+
+  it('the paying speaker only gets Subscribe', async () => {
+    lk.translationNotice = {
+      tone: 'error',
+      text: 'You have no minutes left.',
+      code: 'PAYER_NO_MINUTES',
+      payerIsSpeaker: true,
+    }
+    room('host', LIVE)
+    expect(await screen.findByRole('button', { name: 'Subscribe' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Message host' })).toBeNull()
+  })
+
+  it('shows "Tap to enable audio" while the browser blocks playback, and enables on tap', async () => {
+    lk.audioBlocked = true
+    room('guest', LIVE)
+    fireEvent.click(await screen.findByRole('button', { name: 'Tap to enable audio' }))
+    expect(lk.enableAudio).toHaveBeenCalled()
+  })
+
+  it('Start unlocks audio inside the click', async () => {
+    respond('/api/calls/start', 200, {})
+    room('host')
+    await screen.findByText('Ready')
+    fireEvent.click(screen.getByRole('button', { name: /^Start$/ }))
+    expect(lk.startAudio).toHaveBeenCalled()
   })
 })
 
