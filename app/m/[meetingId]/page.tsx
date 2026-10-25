@@ -8,7 +8,7 @@ import { ensureRoom } from '@/lib/livekit/rooms'
 import { serverEnv } from '@/lib/env'
 import { loadMeetingContext } from '@/lib/meetings/load'
 import { logRoom } from '@/lib/meetings/log'
-import { betaAllows, isAllowlistedUser } from '@/lib/translation/gate'
+import { betaAllows } from '@/lib/translation/gate'
 import type { RoomState } from '@/lib/meetings/room-state'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -92,11 +92,9 @@ export default async function MeetingPage({
       balance={balance ? availableMinutes(balance) : 0}
       minutesLabel={balance ? minutesLabel(balance) : undefined}
       vadEndSilenceMs={serverEnv().VAD_END_SILENCE_MS}
-      debug={
-        query.debug === '1' &&
-        (process.env.NODE_ENV !== 'production' ||
-          isAllowlistedUser(context.email, serverEnv().TRANSLATION_BETA_ALLOWLIST))
-      }
+      // Any signed-in participant of the meeting may open the overlay: it shows only their own
+      // browser's state and what the server stores about this session.
+      debug={query.debug === '1'}
       initialCamera={query.camera !== 'off'}
       initialMic={query.mic !== 'off'}
     />

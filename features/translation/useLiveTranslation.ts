@@ -7,7 +7,7 @@ import { DRAIN_RETRY_MS } from '@/lib/draining'
 import { reportLatency } from './latency-beacon'
 import { encodeWav } from '@/lib/translation/wav'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
-import { setTranslationDebug } from './debug-store'
+import { rememberUtterance, setTranslationDebug } from './debug-store'
 import { shouldListen } from './vad-gate'
 
 export type TranslationNotice = {
@@ -179,6 +179,7 @@ export function useLiveTranslation({
       const utteranceId = crypto.randomUUID()
       const sentAt = performance.now()
       setPending((n) => n + 1)
+      rememberUtterance(utterance.samples)
       setTranslationDebug({
         lastUtterance: {
           ms: (utterance.samples.length / 16_000) * 1000,

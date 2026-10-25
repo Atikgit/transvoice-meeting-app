@@ -27,11 +27,6 @@ export function betaAllows(hostEmail: string | null | undefined, raw: string | u
   return open || (Boolean(hostEmail) && emails.includes(hostEmail!.trim().toLowerCase()))
 }
 
-/** Is this very user on the allowlist (a `*` allowlist does not count)? For the debug overlay. */
-export function isAllowlistedUser(email: string | null | undefined, raw: string | undefined) {
-  return Boolean(email) && parseAllowlist(raw).emails.includes(email!.trim().toLowerCase())
-}
-
 export type GateDecision =
   | { ok: true }
   | {

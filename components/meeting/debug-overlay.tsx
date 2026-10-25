@@ -1,28 +1,67 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useConnectionState } from '@livekit/components-react'
-import { enableTranslationDebug, useTranslationDebug } from '@/features/translation/debug-store'
+import { useConnectionState, useLocalParticipant } from '@livekit/components-react'
+import { Track } from 'livekit-client'
+import {
+  enableTranslationDebug,
+  lastUtteranceSamples,
+  useTranslationDebug,
+} from '@/features/translation/debug-store'
+import { useMicLevel } from '@/features/translation/useMicLevel'
+import { uploadUtterance } from '@/features/translation/useLiveTranslation'
+import type { TranslationStatus } from '@/features/translation/useTranslationStatus'
 import { audioContextState } from '@/features/translation/web-audio'
 
 const ago = (at: number | undefined, now: number) =>
   at === undefined ? '—' : `${Math.max(0, Math.round((now - at) / 1000))} s ago`
 
+/** The files the browser needs for voice detection; each must answer 200 from this origin. */
+const VAD_FILES = [
+  '/vad/silero_vad_v5.onnx',
+  '/vad/ort-wasm-simd-threaded.wasm',
+  '/vad/ort-wasm-simd-threaded.mjs',
+  '/vad/vad.worklet.bundle.min.js',
+] as const
+
+/** A 1.5 s, 220 Hz tone at 16 kHz: proves the whole path, but the API will hear no speech in it. */
+function toneSamples(): Float32Array {
+  const samples = new Float32Array(24_000)
+  for (let i = 0; i < samples.length; i++)
+    samples[i] = 0.3 * Math.sin((2 * Math.PI * 220 * i) / 16_000)
+  return samples
+}
+
 /**
- * `?debug=1` on the room URL (allow-listed users, or any user in development): where live
- * translation currently stops. Everything shown is local state: no text, audio or ids.
+ * `?debug=1` on the room URL (any signed-in participant): where live translation currently stops.
+ * Shows local state, what the server stores and decides (GET /api/translate/status) and lets you
+ * send a test clip through the real /api/translate and read its exact answer. No text or audio is
+ * shown except what the server returns for that test.
  */
 export function DebugOverlay({
+  sessionId,
   spokenLang,
   listenLang,
+  status,
 }: {
+  sessionId: string
   spokenLang: string
   listenLang: string
+  status: TranslationStatus | null
 }) {
   const connection = useConnectionState()
+  const { localParticipant } = useLocalParticipant()
   const d = useTranslationDebug()
   const [now, setNow] = useState(() => Date.now())
   const [audio, setAudio] = useState(audioContextState())
+  const [assets, setAssets] = useState<string>('checking…')
+  const [blocked, setBlocked] = useState<string[]>([])
+  const [test, setTest] = useState<string>('')
+  const [testing, setTesting] = useState(false)
+
+  const micTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+    ?.mediaStreamTrack
+  const level = useMicLevel(micTrack, true)
 
   useEffect(() => {
     enableTranslationDebug(true)
@@ -30,11 +69,51 @@ export function DebugOverlay({
       setNow(Date.now())
       setAudio(audioContextState())
     }, 500)
+    // Anything the Content-Security-Policy refuses (scripts, wasm, workers, media) shows up here.
+    const onViolation = (event: SecurityPolicyViolationEvent) =>
+      setBlocked((list) =>
+        [...list, `${event.effectiveDirective} ✗ ${event.blockedURI || 'inline'}`].slice(-3),
+      )
+    document.addEventListener('securitypolicyviolation', onViolation)
+    void Promise.all(
+      VAD_FILES.map((url) =>
+        fetch(url, { method: 'HEAD', cache: 'no-store' }).then(
+          (res) => (res.ok ? null : `${url.split('/').pop()} ${res.status}`),
+          () => `${url.split('/').pop()} unreachable`,
+        ),
+      ),
+    ).then((problems) => {
+      const bad = problems.filter(Boolean)
+      setAssets(bad.length ? bad.join(', ') : `${VAD_FILES.length}/${VAD_FILES.length} ok`)
+    })
     return () => {
       clearInterval(timer)
+      document.removeEventListener('securitypolicyviolation', onViolation)
       enableTranslationDebug(false)
     }
   }, [])
+
+  const sendTestClip = async () => {
+    setTesting(true)
+    const remembered = lastUtteranceSamples()
+    const samples = remembered ?? toneSamples()
+    const started = performance.now()
+    try {
+      const res = await uploadUtterance({
+        sessionId,
+        utteranceId: crypto.randomUUID(),
+        utterance: { samples, endedAt: performance.now() },
+      })
+      const text = (await res.text()).slice(0, 360)
+      setTest(
+        `${remembered ? 'your last sentence' : 'a tone'} → ${res.status} in ${Math.round(performance.now() - started)} ms: ${text}`,
+      )
+    } catch (error) {
+      setTest(`network error: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setTesting(false)
+    }
+  }
 
   const gateOpen =
     d.gate.status === 'live' &&
@@ -53,13 +132,56 @@ export function DebugOverlay({
           : d.vad === 'loading'
             ? 'loading model…'
             : d.vad
+  const me = status?.me ?? { spokenLang, listenLang }
+  const allowed = status
+    ? status.decision.allowed
+      ? `yes (${status.allowlist === 'everyone' ? 'open to everyone' : 'allow-listed host'})`
+      : `NO: ${status.decision.reason}`
+    : '—'
   const rows: [string, string][] = [
     ['VAD', vad],
+    ['vad files', assets],
+    ['blocked by CSP', blocked.length ? blocked.join(' | ') : 'none'],
+    [
+      'mic level',
+      level === null
+        ? d.gate.micEnabled
+          ? 'no signal source'
+          : 'MUTED'
+        : `${level} dB ${'▮'.repeat(Math.max(0, Math.min(10, Math.round((level + 70) / 5))))}`,
+    ],
     [
       'gate',
       `${gateOpen ? 'OPEN' : 'closed'} (session ${d.gate.status}, ${d.gate.remotes + 1} connected, mic ${d.gate.micEnabled ? 'on' : 'MUTED'}${d.gate.playingTranslation ? ', playing' : ''}${d.gate.translationEnabled ? '' : ', translation OFF for this meeting'})`,
     ],
     ['livekit', `${connection}, ${d.gate.remotes} remote participant(s)`],
+    ['translation allowed', allowed],
+    [
+      'service',
+      status
+        ? `enabled ${status.translationEnabled ? 'yes' : 'NO'}, API key ${status.api === 'ok' ? 'accepted' : status.api === 'rejected' ? 'REJECTED (401)' : 'unreachable'}`
+        : '—',
+    ],
+    ['me (server)', `speak ${me.spokenLang}, hear ${me.listenLang}`],
+    [
+      'others (server)',
+      status
+        ? status.others
+            .map(
+              (o) =>
+                `${o.name}: speak ${o.spokenLang}, hear ${o.listenLang}${o.connected ? '' : ' (offline)'}`,
+            )
+            .join('; ') || 'nobody else'
+        : '—',
+    ],
+    [
+      'my sentences go to',
+      status
+        ? status.fanout.targets.length
+          ? status.fanout.targets.map((t) => `${t.lang} ×${t.listeners}`).join(', ')
+          : `nobody (${status.fanout.reason.replace('_', ' ')})`
+        : '—',
+    ],
     [
       'last utterance',
       d.lastUtterance
@@ -81,26 +203,38 @@ export function DebugOverlay({
     ],
     ['playback queue', String(d.queue)],
     ['AudioContext', audio],
-    ['me', `speak ${spokenLang}, hear ${listenLang}`],
-    [
-      'listeners',
-      d.listenerLanguages ? d.listenerLanguages.join(', ') || 'none (same language)' : '—',
-    ],
   ]
   return (
     <aside
       aria-label="Translation debug"
       data-testid="debug-overlay"
-      className="pointer-events-none fixed bottom-24 left-2 z-50 max-w-[calc(100vw-1rem)] rounded-lg border border-cyan-300/30 bg-slate-950/90 p-2 font-mono text-[10px] leading-4 text-slate-200"
+      className="fixed bottom-24 left-2 z-50 max-h-[70dvh] max-w-[calc(100vw-1rem)] overflow-auto rounded-lg border border-cyan-300/30 bg-slate-950/90 p-2 font-mono text-[10px] leading-4 text-slate-200"
     >
-      <dl className="grid grid-cols-[auto_1fr] gap-x-2">
+      <dl className="pointer-events-none grid grid-cols-[auto_1fr] gap-x-2">
         {rows.map(([name, value]) => (
           <div key={name} className="contents">
             <dt className="text-cyan-300">{name}</dt>
-            <dd>{value}</dd>
+            <dd className="break-words">{value}</dd>
           </div>
         ))}
       </dl>
+      <button
+        type="button"
+        onClick={() => void sendTestClip()}
+        disabled={testing}
+        className="mt-1.5 rounded border border-cyan-300/40 px-2 py-0.5 text-cyan-200 disabled:opacity-50"
+      >
+        {testing ? 'Sending…' : 'Send test clip'}
+      </button>
+      <span className="ml-2 text-slate-500">
+        sends your last sentence (or a tone) through /api/translate; your partner receives the
+        result
+      </span>
+      {test && (
+        <p data-testid="debug-test-result" className="mt-1 break-words text-amber-200">
+          {test}
+        </p>
+      )}
     </aside>
   )
 }

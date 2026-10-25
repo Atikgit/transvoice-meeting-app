@@ -49,7 +49,10 @@ const listeners = new Set<() => void>()
 
 export function enableTranslationDebug(on: boolean) {
   enabled = on
-  if (!on) state = INITIAL
+  if (!on) {
+    state = INITIAL
+    lastSamples = null
+  }
 }
 
 export function setTranslationDebug(patch: Partial<TranslationDebug>) {
@@ -67,4 +70,13 @@ export function useTranslationDebug(): TranslationDebug {
     () => state,
     () => INITIAL,
   )
+}
+
+/** The last utterance the VAD cut (kept in memory only while the overlay is mounted), for "Send test clip". */
+let lastSamples: Float32Array | null = null
+export function rememberUtterance(samples: Float32Array) {
+  if (enabled) lastSamples = samples
+}
+export function lastUtteranceSamples(): Float32Array | null {
+  return lastSamples
 }

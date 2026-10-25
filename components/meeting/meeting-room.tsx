@@ -82,7 +82,7 @@ export interface MeetingRoomProps {
   minutesLabel?: string
   /** VAD_END_SILENCE_MS from the server environment (300–700, default 400). */
   vadEndSilenceMs?: number
-  /** ?debug=1 by an allow-listed user (or in development): show the translation overlay. */
+  /** ?debug=1: show the translation overlay (any signed-in participant). */
   debug?: boolean
   /** Camera / mic choice from the lobby. */
   initialCamera: boolean
@@ -554,7 +554,14 @@ function RoomView({
       }}
     >
       {process.env.NODE_ENV !== 'production' && <LatencyBadge sample={audio.latency} />}
-      {debug && <DebugOverlay spokenLang={spokenLang} listenLang={listenLang} />}
+      {debug && (
+        <DebugOverlay
+          sessionId={sessionId}
+          spokenLang={spokenLang}
+          listenLang={listenLang}
+          status={languages.status}
+        />
+      )}
       {modal === 'invite' && (
         <InviteModal
           meetingId={meetingId}
