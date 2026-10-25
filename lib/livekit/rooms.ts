@@ -1,7 +1,7 @@
 import 'server-only'
 import { serverEnv } from '@/lib/env'
 import { roomNameFor, roomService } from '@/lib/livekit/server'
-import type { RoomState } from '@/lib/meetings/room-state'
+import { shouldWriteMetadata, type RoomState } from '@/lib/meetings/room-state'
 
 /** MVP room size (Rule 7). */
 const MAX_PARTICIPANTS = 8
@@ -9,20 +9,24 @@ const MAX_PARTICIPANTS = 8
 const EMPTY_TIMEOUT_SEC = 300
 
 /**
- * Creates the session's LiveKit room if needed and sets its metadata. createRoom returns the
- * existing room unchanged, so the metadata is always written with updateRoomMetadata.
+ * Creates the session's LiveKit room if needed and makes sure its metadata is at least `state`.
+ * createRoom returns an existing room unchanged (with its metadata), and the metadata is only
+ * rewritten to move the session forward: opening the room page must never turn a live room
+ * back into "ready" (a render that read the database just before Start would do that).
  */
 export async function ensureRoom(sessionId: string, state: RoomState): Promise<void> {
   const name = roomNameFor(sessionId)
   const metadata = JSON.stringify(state)
-  await roomService().createRoom({
+  const room = await roomService().createRoom({
     name,
     emptyTimeout: EMPTY_TIMEOUT_SEC,
     departureTimeout: serverEnv().RECONNECT_GRACE_SEC,
     maxParticipants: MAX_PARTICIPANTS,
     metadata,
   })
-  await roomService().updateRoomMetadata(name, metadata)
+  if (shouldWriteMetadata(room.metadata, state)) {
+    await roomService().updateRoomMetadata(name, metadata)
+  }
 }
 
 /** Publishes a new state; clients get RoomMetadataChanged. */

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { useRoomInfo } from '@livekit/components-react'
-import { parseRoomState, type RoomState } from '@/lib/meetings/room-state'
+import { mostAdvanced, parseRoomState, type RoomState } from '@/lib/meetings/room-state'
 
 export interface CallProblem {
   code?: string
@@ -22,13 +22,47 @@ async function post(
   }
 }
 
+/** While the room still says "ready", ask the server how whether it has gone live, this often. */
+export const STATE_POLL_MS = 4000
+
+async function fetchState(sessionId: string, fallback: RoomState): Promise<RoomState | null> {
+  try {
+    const res = await fetch(`/api/calls/${sessionId}/state`, { cache: 'no-store' })
+    return res.ok ? parseRoomState(JSON.stringify(await res.json()), fallback) : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * The session state from LiveKit room metadata (set only by the server; updates arrive as
  * RoomMetadataChanged), plus the host's Start / End calls.
  */
 export function useRoomState(sessionId: string, initial: RoomState) {
   const { metadata } = useRoomInfo()
-  const remote = parseRoomState(metadata, initial)
+  const fromMetadata = parseRoomState(metadata, initial)
+  // Safety net: the database's answer, fetched on mount and while the room still says "ready".
+  // The most advanced of the two wins (ready → live → ended), so a stale or missing metadata
+  // update can never leave a guest on "Waiting for host to start…" in a live session.
+  const [polled, setPolled] = useState<RoomState | null>(null)
+  const remote = mostAdvanced(fromMetadata, polled)
+  const waiting = remote.status === 'ready'
+  useEffect(() => {
+    let cancelled = false
+    const check = async () => {
+      const state = await fetchState(sessionId, initial)
+      if (!cancelled && state) setPolled(state)
+    }
+    void check()
+    if (!waiting) return () => void (cancelled = true)
+    const timer = setInterval(() => void check(), STATE_POLL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+    // `initial` only supplies the host id fallback and never changes for a session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, waiting])
   // The host's own Start/End answer arrives before the metadata event: use it until the
   // metadata changes (whatever the server publishes next wins).
   const [optimistic, setOptimistic] = useState<{ state: RoomState; basis?: string } | null>(null)

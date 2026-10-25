@@ -371,6 +371,61 @@ describe('Reconnect (Rule 5)', () => {
   })
 })
 
+describe('Joining a session that is already live', () => {
+  it('shows Live and the timer at once when the room metadata is live on connect', async () => {
+    lk.metadata = JSON.stringify(LIVE)
+    room('guest', READY) // the page rendered a moment before the host pressed Start
+    expect(await screen.findByText(/^Live \d\d:\d\d$/)).toBeInTheDocument()
+    expect(screen.queryByText('Waiting for host to start…')).toBeNull()
+  })
+
+  it('catches up from the server when the metadata update never arrives', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url.startsWith('/api/livekit/token'))
+          return new Response(JSON.stringify({ token: 't', url: 'wss://lk.test' }))
+        if (url === `/api/calls/${SESSION}/state`) return new Response(JSON.stringify(LIVE))
+        return new Response('{}', { status: 404 })
+      })
+      room('guest', READY) // metadata stays "ready"/absent
+      await vi.waitFor(() => expect(screen.getByText(/^Live \d\d:\d\d$/)).toBeInTheDocument())
+      expect(screen.queryByText('Waiting for host to start…')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps asking while still ready, and stops once live', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let answers = 0
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url.startsWith('/api/livekit/token'))
+          return new Response(JSON.stringify({ token: 't', url: 'wss://lk.test' }))
+        if (url === `/api/calls/${SESSION}/state`) {
+          answers++
+          return new Response(JSON.stringify(answers < 3 ? READY : LIVE))
+        }
+        return new Response('{}', { status: 404 })
+      })
+      room('guest', READY)
+      await vi.waitFor(() => expect(answers).toBe(1))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9000)
+      })
+      expect(await screen.findByText(/^Live \d\d:\d\d$/)).toBeInTheDocument()
+      const seen = answers
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20_000)
+      })
+      expect(answers).toBe(seen)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('First connection', () => {
   afterEach(() => vi.useRealTimers())
 
