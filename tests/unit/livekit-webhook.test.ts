@@ -8,6 +8,8 @@ const rpc = vi.fn()
 const scheduleGraceCheck = vi.fn()
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ rpc }) }))
 vi.mock('@/lib/livekit/grace', () => ({ scheduleGraceCheck }))
+const invalidateConnected = vi.fn()
+vi.mock('@/lib/livekit/connected', () => ({ invalidateConnected }))
 
 const { POST } = await import('@/app/api/livekit/webhook/route')
 
@@ -60,6 +62,14 @@ describe('POST /api/livekit/webhook', () => {
       p_at: new Date(1_761_300_000 * 1000).toISOString(),
     })
     expect(scheduleGraceCheck).not.toHaveBeenCalled()
+  })
+
+  it('a join or leave makes the next translation ask LiveKit who is connected again', async () => {
+    await deliver(joined('EV_J'))
+    expect(invalidateConnected).toHaveBeenCalledWith(SESSION)
+    invalidateConnected.mockClear()
+    await deliver(joined('EV_L', 'participant_left'))
+    expect(invalidateConnected).toHaveBeenCalledWith(SESSION)
   })
 
   it('participant_left starts the reconnect grace check', async () => {

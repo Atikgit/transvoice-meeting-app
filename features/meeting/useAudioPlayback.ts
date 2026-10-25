@@ -33,13 +33,17 @@ export function useAudioPlayback() {
     room.on(RoomEvent.AudioPlaybackStatusChanged, onStatus)
     const offContext = onAudioStateChange(() => setContextRunning(audioIsRunning()))
     const offGesture = unlockAudioOnFirstGesture()
+    // Any first interaction (tap, click, key) starts LiveKit's audio too: a guest who joins a room
+    // that is already live never presses Start.
     const onGesture = () => void room.startAudio().catch(() => {})
-    window.addEventListener('pointerdown', onGesture, { once: true, passive: true })
+    const gestures = ['pointerdown', 'touchend', 'keydown'] as const
+    for (const type of gestures)
+      window.addEventListener(type, onGesture, { once: true, passive: true })
     return () => {
       room.off(RoomEvent.AudioPlaybackStatusChanged, onStatus)
       offContext()
       offGesture()
-      window.removeEventListener('pointerdown', onGesture)
+      for (const type of gestures) window.removeEventListener(type, onGesture)
     }
   }, [room])
 

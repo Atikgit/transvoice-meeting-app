@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { WebhookReceiver } from 'livekit-server-sdk'
 import { serverEnv } from '@/lib/env'
+import { invalidateConnected } from '@/lib/livekit/connected'
 import { scheduleGraceCheck } from '@/lib/livekit/grace'
 import { sessionIdFromRoom } from '@/lib/livekit/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -32,6 +33,9 @@ export async function POST(request: NextRequest) {
   if (!HANDLED.has(event.event) || !sessionId) return NextResponse.json({ result: 'ignored' })
   if (!event.id) return NextResponse.json({ error: 'Event id missing.' }, { status: 400 })
 
+  if (event.event === 'participant_joined' || event.event === 'participant_left') {
+    invalidateConnected(sessionId) // the next utterance asks LiveKit again
+  }
   const identity = event.participant?.identity
   const userId = identity && UUID.test(identity) ? identity : null
   const at = new Date(Number(event.createdAt ?? 0) * 1000 || Date.now()).toISOString()
