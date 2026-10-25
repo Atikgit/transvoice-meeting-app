@@ -28,6 +28,7 @@ import { CallAgain } from '@/components/meeting/call-again'
 import { Control } from '@/components/meeting/control-bar'
 import { DeviceMenu } from '@/components/meeting/device-menu'
 import { LanguageMenu } from '@/components/meeting/language-menu'
+import { DebugOverlay } from '@/components/meeting/debug-overlay'
 import { LatencyBadge } from '@/components/meeting/latency-badge'
 import { MeetingLayout } from '@/components/meeting/meeting-layout'
 import { ParticipantTile } from '@/components/meeting/participant-tile'
@@ -76,6 +77,8 @@ export interface MeetingRoomProps {
   /** Host's balance (minutes) and label. */
   balance?: number
   minutesLabel?: string
+  /** ?debug=1 by an allow-listed user (or in development): show the translation overlay. */
+  debug?: boolean
   /** Camera / mic choice from the lobby. */
   initialCamera: boolean
   initialMic: boolean
@@ -264,6 +267,7 @@ function RoomView({
   minutesLabel,
   mediaProblem,
   onMediaProblemHandled,
+  debug = false,
 }: MeetingRoomProps & {
   mediaProblem: MediaProblem | null
   onMediaProblemHandled: () => void
@@ -528,6 +532,7 @@ function RoomView({
       }}
     >
       {process.env.NODE_ENV !== 'production' && <LatencyBadge sample={audio.latency} />}
+      {debug && <DebugOverlay spokenLang={spokenLang} listenLang={listenLang} />}
       {modal === 'invite' && (
         <InviteModal
           meetingId={meetingId}

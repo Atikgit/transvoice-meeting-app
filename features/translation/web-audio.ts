@@ -72,3 +72,8 @@ export function onAudioStateChange(callback: () => void): () => void {
   ctx?.addEventListener('statechange', callback)
   return () => ctx?.removeEventListener('statechange', callback)
 }
+
+/** 'none' before the context exists (or where Web Audio is missing), else its state. */
+export function audioContextState(): string {
+  return context?.state ?? 'none'
+}

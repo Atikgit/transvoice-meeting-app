@@ -6,6 +6,7 @@ import { Track } from 'livekit-client'
 import { DRAIN_RETRY_MS } from '@/lib/draining'
 import { encodeWav } from '@/lib/translation/wav'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
+import { setTranslationDebug } from './debug-store'
 import { shouldListen } from './vad-gate'
 
 export type TranslationNotice = {
@@ -99,12 +100,26 @@ export function useLiveTranslation({
       playingTranslation,
     })
 
+  useEffect(() => {
+    setTranslationDebug({
+      gate: {
+        status,
+        remotes: remotes.length,
+        micEnabled: isMicrophoneEnabled,
+        playingTranslation,
+        translationEnabled: enabled,
+      },
+    })
+  }, [status, remotes.length, isMicrophoneEnabled, playingTranslation, enabled])
+
   const handle = async (res: Response, utteranceId: string) => {
     if (res.ok) {
       const body = (await res.json().catch(() => ({}))) as {
         original?: string | null
         unavailable?: boolean
+        languages?: { lang: string }[]
       }
+      setTranslationDebug({ listenerLanguages: (body.languages ?? []).map((l) => l.lang) })
       if (body.original) transcriptRef.current?.(utteranceId, body.original)
       setNotice(
         body.unavailable
@@ -144,10 +159,36 @@ export function useLiveTranslation({
     listening,
     onUtterance: (utterance) => {
       const utteranceId = crypto.randomUUID()
+      const sentAt = performance.now()
       setPending((n) => n + 1)
+      setTranslationDebug({
+        lastUtterance: {
+          ms: (utterance.samples.length / 16_000) * 1000,
+          bytes: 44 + utterance.samples.length * 2,
+          at: Date.now(),
+        },
+      })
       void uploadUtterance({ sessionId, utteranceId, utterance })
-        .then((res) => handle(res, utteranceId))
-        .catch(() => setNotice({ tone: 'error', text: 'Network problem: translation paused.' }))
+        .then((res) => {
+          setTranslationDebug({
+            lastTranslate: {
+              status: res.status,
+              ms: Math.round(performance.now() - sentAt),
+              at: Date.now(),
+            },
+          })
+          return handle(res, utteranceId)
+        })
+        .catch(() => {
+          setTranslationDebug({
+            lastTranslate: {
+              status: 'network',
+              ms: Math.round(performance.now() - sentAt),
+              at: Date.now(),
+            },
+          })
+          setNotice({ tone: 'error', text: 'Network problem: translation paused.' })
+        })
         .finally(() => setPending((n) => n - 1))
     },
   })

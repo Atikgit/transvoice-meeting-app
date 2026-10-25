@@ -5,6 +5,7 @@ import { useRoomContext } from '@livekit/components-react'
 import { RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client'
 import { parseDataMessage, TOPICS } from '@/lib/translation/messages'
 import { addCaption, type CaptionEntry } from './captions'
+import { setTranslationDebug } from './debug-store'
 import { LatencyTracker, type LatencySample } from './metrics'
 import { PlaybackQueues, type Clip, type OriginalAudioMode } from './playback'
 import { fetchAndDecode, playBuffer, unlockAudioOnFirstGesture } from './web-audio'
@@ -34,7 +35,32 @@ export function useTranslatedAudio({
   useEffect(() => {
     const queues = new PlaybackQueues<AudioBuffer>({
       now: () => performance.now(),
-      prepare: (clip) => fetchAndDecode(clip.url),
+      prepare: async (clip) => {
+        const started = performance.now()
+        try {
+          const buffer = await fetchAndDecode(clip.url)
+          setTranslationDebug({
+            lastAudio: {
+              via: 'url',
+              status: 'ok',
+              ms: Math.round(performance.now() - started),
+              at: Date.now(),
+            },
+          })
+          return buffer
+        } catch (error) {
+          const status = /responded (\d+)/.exec(String((error as Error)?.message))?.[1]
+          setTranslationDebug({
+            lastAudio: {
+              via: 'url',
+              status: status ? Number(status) : 'error',
+              ms: Math.round(performance.now() - started),
+              at: Date.now(),
+            },
+          })
+          throw error
+        }
+      },
       play: (buffer) => playBuffer(buffer),
       mode: () => modeRef.current,
       setOriginalVolume: (speakerId, volume) => {
@@ -43,7 +69,10 @@ export function useTranslatedAudio({
           ?.getTrackPublication(Track.Source.Microphone)?.track as RemoteAudioTrack | undefined
         track?.setVolume(volume)
       },
-      onPlayingChange: setPlaying,
+      onPlayingChange: (value) => {
+        setPlaying(value)
+        setTranslationDebug({ queue: queues.size() })
+      },
       onStart: (clip) => {
         const endedAt = speechEnds.current.get(clip.utteranceId)
         if (endedAt !== undefined) {
@@ -61,6 +90,7 @@ export function useTranslatedAudio({
       if (parsed.topic === TOPICS.caption) {
         const m = parsed.message
         speechEnds.current.set(m.utteranceId, m.speechEndedAt)
+        setTranslationDebug({ lastCaption: { lang: m.lang, at: Date.now() } })
         tracker.current.captionShown(m.utteranceId, m.speechEndedAt, Date.now())
         setLatency(tracker.current.latest())
         setUnavailable(false)
@@ -82,6 +112,7 @@ export function useTranslatedAudio({
           receivedAt: performance.now(),
         }
         queues.enqueue(clip)
+        setTranslationDebug({ queue: queues.size() })
       } else if (parsed.topic === TOPICS.notice) {
         setUnavailable(parsed.message.kind === 'translation_unavailable')
       }

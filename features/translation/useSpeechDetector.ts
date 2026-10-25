@@ -3,6 +3,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { MicVAD } from '@ricky0123/vad-web'
 import { VAD_ASSET_PATH, VAD_SETTINGS } from './vad-gate'
+import { setTranslationDebug } from './debug-store'
 import { sharedAudioContext } from './web-audio'
 
 /** Destroys a VAD without throwing (its start-up may still be in flight). */
@@ -48,6 +49,7 @@ export function useSpeechDetector({
     let cancelled = false
     let splitTimer: ReturnType<typeof setTimeout> | undefined
     const stream = new MediaStream([track])
+    setTranslationDebug({ vad: 'loading', vadError: undefined })
 
     void (async () => {
       try {
@@ -70,6 +72,7 @@ export function useSpeechDetector({
           resumeStream: async () => stream,
           onSpeechStart: () => {
             setSpeaking(true)
+            setTranslationDebug({ vadSpeaking: true })
             // Force a cut at the maximum utterance length, then keep listening.
             clearTimeout(splitTimer)
             splitTimer = setTimeout(async () => {
@@ -84,11 +87,13 @@ export function useSpeechDetector({
           onSpeechEnd: (samples) => {
             clearTimeout(splitTimer)
             setSpeaking(false)
+            setTranslationDebug({ vadSpeaking: false })
             emit({ samples, endedAt: performance.now() })
           },
           onVADMisfire: () => {
             clearTimeout(splitTimer)
             setSpeaking(false)
+            setTranslationDebug({ vadSpeaking: false })
           },
         })
         // Build the audio graph now (model + worklet preloaded before the meeting starts) and
@@ -99,9 +104,11 @@ export function useSpeechDetector({
         vadRef.current = vad
         setReady(true)
         setError(null)
+        setTranslationDebug({ vad: 'ready' })
       } catch (e) {
         console.error('Voice activity detection failed to start:', e)
         setError('Live translation is unavailable in this browser.')
+        setTranslationDebug({ vad: 'error', vadError: e instanceof Error ? e.message : String(e) })
       }
     })()
 
@@ -111,6 +118,7 @@ export function useSpeechDetector({
       if (vadRef.current) void retire(vadRef.current)
       vadRef.current = null
       setReady(false)
+      setTranslationDebug({ vad: 'off', vadListening: false, vadSpeaking: false })
     }
   }, [track])
 
@@ -120,12 +128,18 @@ export function useSpeechDetector({
     const vad = vadRef.current
     if (!vad || !ready) return
     if (listening) {
-      void vad.start().catch((e: unknown) => {
-        console.error('Voice activity detection could not start:', e)
-        setError('Live translation is unavailable in this browser.')
-      })
+      void vad
+        .start()
+        .then(() => setTranslationDebug({ vadListening: true }))
+        .catch((e: unknown) => {
+          console.error('Voice activity detection could not start:', e)
+          setError('Live translation is unavailable in this browser.')
+        })
     } else if (vad.listening) {
-      void vad.pause().catch(() => {})
+      void vad
+        .pause()
+        .then(() => setTranslationDebug({ vadListening: false }))
+        .catch(() => {})
     }
   }, [listening, ready])
 

@@ -49,6 +49,13 @@ export class PlaybackQueues<Prepared> {
     void this.drain(clip.speakerId)
   }
 
+  /** Clips waiting or playing, over all speakers. */
+  size(): number {
+    let n = 0
+    for (const queue of this.queues.values()) n += queue.length
+    return n + this.running.size
+  }
+
   /** Stops waiting clips (leaving the meeting) and restores every original volume. */
   clear(): void {
     for (const [speakerId, queue] of this.queues) {

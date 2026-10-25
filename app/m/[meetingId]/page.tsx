@@ -8,7 +8,7 @@ import { ensureRoom } from '@/lib/livekit/rooms'
 import { serverEnv } from '@/lib/env'
 import { loadMeetingContext } from '@/lib/meetings/load'
 import { logRoom } from '@/lib/meetings/log'
-import { betaAllows } from '@/lib/translation/gate'
+import { betaAllows, isAllowlistedUser } from '@/lib/translation/gate'
 import type { RoomState } from '@/lib/meetings/room-state'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -83,6 +83,11 @@ export default async function MeetingPage({
       initialState={initialState}
       balance={balance ? availableMinutes(balance) : 0}
       minutesLabel={balance ? minutesLabel(balance) : undefined}
+      debug={
+        query.debug === '1' &&
+        (process.env.NODE_ENV !== 'production' ||
+          isAllowlistedUser(context.email, serverEnv().TRANSLATION_BETA_ALLOWLIST))
+      }
       initialCamera={query.camera !== 'off'}
       initialMic={query.mic !== 'off'}
     />
