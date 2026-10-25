@@ -22,11 +22,9 @@ describe('Dashboard overview', () => {
       <DashboardOverview
         greeting="Welcome back, Atik"
         balance={15}
-        canInvite
         onMeeting={noop}
         onPricing={noop}
         onJoin={noop}
-        onInvite={noop}
       />,
     )
     expect(screen.getByRole('heading', { name: 'Welcome back, Atik' })).toBeInTheDocument()
@@ -109,36 +107,38 @@ describe('Meeting pieces', () => {
   })
 })
 
-describe('Dashboard invite button', () => {
-  const overview = (canInvite: boolean, onInvite = vi.fn(), onPricing = vi.fn()) => {
+describe('Dashboard actions', () => {
+  it('has Join with link and Start meeting, and no Invite Partner (that lives in the room)', () => {
     render(
       <DashboardOverview
         greeting="Hi"
-        balance={canInvite ? 15 : 0}
-        canInvite={canInvite}
+        balance={15}
+        onMeeting={noop}
+        onJoin={noop}
+        onPricing={noop}
+      />,
+    )
+    expect(screen.getByRole('button', { name: /Join with link/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Start meeting/ })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /Invite Partner|Get minutes to invite/ }),
+    ).toBeNull()
+    expect(screen.queryByText(/always opens a new/)).toBeNull()
+  })
+
+  it('works the same at 0 minutes: the minutes card still offers the plans', () => {
+    const onPricing = vi.fn()
+    render(
+      <DashboardOverview
+        greeting="Hi"
+        balance={0}
         onMeeting={noop}
         onJoin={noop}
         onPricing={onPricing}
-        onInvite={onInvite}
       />,
     )
-    return { onInvite, onPricing }
-  }
-
-  it('sits next to Join with link and Start meeting', () => {
-    const { onInvite } = overview(true)
-    fireEvent.click(screen.getByRole('button', { name: /Invite Partner/ }))
-    expect(onInvite).toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: /Join with link/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Start meeting/ })).toBeInTheDocument()
-  })
-
-  it('becomes "Get minutes to invite" → pricing at 0 minutes', () => {
-    const { onInvite, onPricing } = overview(false)
-    expect(screen.queryByRole('button', { name: /Invite Partner/ })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /Get minutes to invite/ }))
+    fireEvent.click(screen.getByRole('button', { name: /View plans/ }))
     expect(onPricing).toHaveBeenCalled()
-    expect(onInvite).not.toHaveBeenCalled()
   })
 })
 
@@ -220,29 +220,5 @@ describe('Video tile indicators', () => {
     render(<VideoTile name="Rahim" initials="RA" color="x" video={<video data-testid="v" />} />)
     expect(screen.getByTestId('v')).toBeInTheDocument()
     expect(screen.queryByText('RA')).toBeNull()
-  })
-})
-
-describe('Dashboard: Start meeting vs Invite Partner', () => {
-  it('says Start meeting opens a NEW meeting and that Invite Partner uses the current one', async () => {
-    const { DashboardOverview } = await import('@/components/dashboard/dashboard-overview')
-    render(
-      <DashboardOverview
-        greeting="Hi"
-        balance={10}
-        canInvite
-        onMeeting={() => {}}
-        startingMeeting={false}
-        onJoin={() => {}}
-        onInvite={() => {}}
-        onPricing={() => {}}
-      />,
-    )
-    expect(screen.getByRole('button', { name: /Start meeting/ })).toHaveAttribute(
-      'title',
-      'Opens a new meeting',
-    )
-    expect(screen.getByText(/always opens a new/)).toBeInTheDocument()
-    expect(screen.getByText(/uses that same/)).toBeInTheDocument()
   })
 })

@@ -6,24 +6,23 @@ import { PricingModal } from '@/components/billing/pricing-modal'
 import { ConnectionsCard, type ConnectionItem } from '@/components/calls/connections-card'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
 import { JoinLinkModal } from '@/components/dashboard/join-link-modal'
-import { InviteModal } from '@/components/invite/invite-modal'
 
 /** Client part of /dashboard: meeting actions and their modals. */
 export function DashboardHome({
   userId,
   greeting,
   balance,
-  canInvite,
+  canSpend,
   connections = [],
 }: {
   userId: string
   greeting: string
   balance: number
-  canInvite: boolean
+  /** The user has minutes to spend (ConnectionsCard: Call vs Subscribe). */
+  canSpend: boolean
   connections?: ConnectionItem[]
 }) {
   const [pricing, setPricing] = useState(false)
-  const [inviting, setInviting] = useState(false)
   const [joining, setJoining] = useState(false)
   const [creating, startCreating] = useTransition()
   const [error, setError] = useState<string>()
@@ -44,13 +43,11 @@ export function DashboardHome({
         startingMeeting={creating}
         onJoin={() => setJoining(true)}
         onPricing={() => setPricing(true)}
-        canInvite={canInvite}
-        onInvite={() => setInviting(true)}
       >
         <ConnectionsCard
           userId={userId}
           connections={connections}
-          canSpend={canInvite}
+          canSpend={canSpend}
           onSubscribe={() => setPricing(true)}
         />
       </DashboardOverview>
@@ -60,15 +57,6 @@ export function DashboardHome({
         </p>
       )}
       {joining && <JoinLinkModal onClose={() => setJoining(false)} />}
-      {inviting && (
-        <InviteModal
-          onClose={() => setInviting(false)}
-          onNoMinutes={() => {
-            setInviting(false)
-            setPricing(true)
-          }}
-        />
-      )}
       {pricing && (
         <PricingModal userId={userId} balance={balance} onClose={() => setPricing(false)} />
       )}

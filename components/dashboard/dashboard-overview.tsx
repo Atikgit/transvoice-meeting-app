@@ -1,4 +1,4 @@
-import { Link2, Lock, UserPlus, Video, Zap } from 'lucide-react'
+import { Link2, Video, Zap } from 'lucide-react'
 import { Button } from '@/components/common/button'
 import { UserManual } from '@/components/dashboard/user-manual'
 import { LANGUAGE_COUNT_LABEL, LANGUAGES_AND_VOICES } from '@/lib/transvoice/languages'
@@ -7,24 +7,19 @@ import { LANGUAGE_COUNT_LABEL, LANGUAGES_AND_VOICES } from '@/lib/transvoice/lan
 export function DashboardOverview({
   greeting,
   balance,
-  canInvite,
   onMeeting,
   startingMeeting = false,
   onPricing,
   onJoin,
-  onInvite,
   children,
 }: {
   greeting: string
   balance: number
-  /** False at 0 available minutes: inviting is replaced by "Get minutes to invite" (Rule 1). */
-  canInvite: boolean
   onMeeting: () => void
   /** The meeting is being created (button busy). */
   startingMeeting?: boolean
   onPricing: () => void
   onJoin: () => void
-  onInvite: () => void
   /** Extra sections between the stat cards and the user manual (connections). */
   children?: React.ReactNode
 }) {
@@ -45,22 +40,6 @@ export function DashboardOverview({
             <Link2 size={15} />
             Join with link
           </Button>
-          {canInvite ? (
-            <Button variant="outline" onClick={onInvite}>
-              <UserPlus size={15} />
-              Invite Partner
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={onPricing}
-              className="text-slate-400"
-              title="You need available minutes to invite a partner"
-            >
-              <Lock size={15} />
-              Get minutes to invite
-            </Button>
-          )}
           <Button
             onClick={onMeeting}
             disabled={startingMeeting}
@@ -72,14 +51,6 @@ export function DashboardOverview({
           </Button>
         </div>
       </div>
-
-      <p className="mt-3 text-xs text-slate-500 md:text-right">
-        <strong className="font-medium text-slate-400">Start meeting</strong> always opens a new
-        meeting. To bring your partner into the meeting you are in,{' '}
-        <strong className="font-medium text-slate-400">Invite Partner</strong> uses that same
-        meeting.
-      </p>
-
       <div className="mt-10 grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
           <p className="text-xs text-slate-500">Translation minutes</p>

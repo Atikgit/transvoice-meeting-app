@@ -57,7 +57,7 @@ export default async function DashboardPage() {
       userId={user.id}
       greeting={`Welcome back, ${name}`}
       balance={account ? availableMinutes(account) : 0}
-      canInvite={canSpendMinutes(account)}
+      canSpend={canSpendMinutes(account)}
       connections={connections}
     />
   )
