@@ -251,3 +251,53 @@ Two devices (laptop + phone; repeat with an iPhone if available):
     finishes in under 30 s (10 s drain at most), logs `{"event":"shutdown","signal":"SIGTERM"}`;
     exit code 143 is normal. The next utterance during the restart is retried once after 2 s.
 13. Ringing: call someone and let it ring 30 s → "did not answer"; the session is `missed`.
+
+## Fix — host and guest in different rooms (branch `fix-room-session`)
+
+**Symptom:** the host is "Live 01:48", the guest opened the invite link but sits on "Waiting for
+host to start…" and "Waiting for partner…"; both are alone in their LiveKit rooms.
+
+**Root cause.** A room is `tv-<call_session id>` and a meeting has at most one open
+(`ready`/`live`) session, so two people in the _same meeting_ always share a room. The two were in
+different _meetings_: dashboard **Invite Partner** (no meeting id) called `create_invitation`,
+which inserted a **new meeting for every link**. A host who pressed **Start meeting** (meeting A,
+live) and then made a link from the dashboard (meeting B) gave the guest a link to B. The guest's
+room page opened B's session ("ready", never started) while the host was live in A. The sweeper
+was not the cause (it cannot end a live session whose host is in the room) but had two hazards,
+fixed below.
+
+**What changed**
+
+| Area                | Change                                                                                                                                                                                                                                                                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_invitation` | Without a meeting id it reuses the host's **current meeting** (one with an open session, or created in the last 6 h with no session yet); only creates a new meeting if there is none. Returns `reused`. The modal says which meeting the link opens and links the host to it |
+| `open_call_session` | Locks the meeting row, so concurrent openers (host, two guests, double click) all get the one open session; returns `created`. The unique index `call_sessions_one_open_per_meeting` stays as the backstop                                                                    |
+| Room name / token   | Unchanged by design: `tv-<session id>`, and `/api/livekit/token` only admits to an open session of a meeting the user may join. Tested: host and guest tokens carry the same room                                                                                             |
+| Room state          | `ensureRoom` never writes an older state over a newer one (a page render that read `ready` just before Start used to be able to reset a live room). The room also asks `GET /api/calls/[id]/state` on mount and every 4 s while it says "ready"                               |
+| Sweeper / grace     | A failed LiveKit lookup no longer counts as "nobody is there" (only a 404 does); a `ready` session is judged after 5 min, a live one after `RECONNECT_GRACE_SEC`                                                                                                              |
+| Logs                | `{"event":"room","action":"session_created"\|"session_reused"\|"token_issued","meetingId","sessionId","room","role","status"}`: ids only                                                                                                                                      |
+| Join with link      | Accepts a full invite URL, the bare code, or a link pasted inside a message                                                                                                                                                                                                   |
+| Dashboard           | States that **Start meeting** always opens a **new** meeting and that **Invite Partner** uses the meeting you are in                                                                                                                                                          |
+
+**Deploy**
+
+```sh
+git checkout main && git merge fix-room-session        # or deploy the branch
+pnpm dlx supabase db push        # 20261025000200_single_open_session, 20261025000300_sweeper_idle_since
+pnpm db:types                    # replaces the two hand-edited signatures in database.generated.ts
+docker compose up -d --build
+```
+
+The migrations drop and recreate `open_call_session`, `create_invitation` and
+`stale_open_sessions` (new return columns), so run `db push` **before** the new container starts;
+the old container keeps working until you rebuild, but an old container with the new database
+reads `create_invitation` rows without `reused` (harmless).
+
+**Check after deploy**
+
+1. Host: dashboard → **Start meeting** → room → **Start** (Live). Host: dashboard in another tab →
+   **Invite Partner** → the dialog says "opens the meeting you are already in" → copy the link.
+2. Guest (other browser/device): open the link → Accept → Join. The guest shows **Live** and the
+   timer at once and sees the host's video.
+3. `docker logs transvoice_meeting_app 2>&1 | grep '"event":"room"'`: one `session_created`, then
+   `session_reused` for the guest, and two `token_issued` lines with the **same `room`**.
