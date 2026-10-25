@@ -13,8 +13,13 @@ export interface TranslateLog {
   contextMs: number
   languages: {
     lang: string
+    /** "bn-BD>en-US": what was translated into what (language codes only). */
+    pair: string
     outcome: 'speech' | 'silence' | 'failed'
     reason?: string
+    /** HTTP status of a failed API call, null when there was no answer. */
+    status?: number | null
+    detail?: string
     /** TransVoice API round trip (incl. retry). */
     apiMs: number
     /** API result → caption sent. */

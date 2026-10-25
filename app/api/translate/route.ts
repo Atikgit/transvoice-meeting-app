@@ -102,8 +102,11 @@ export async function POST(request: NextRequest) {
       const d = delivered.get(r.lang)
       return {
         lang: r.lang,
+        pair: `${context.speaker.spokenLang}>${r.lang}`,
         outcome: r.kind,
         reason: r.kind === 'failed' ? r.reason : undefined,
+        status: r.kind === 'failed' ? r.status : undefined,
+        detail: r.kind === 'failed' ? r.detail : undefined,
         apiMs: r.ms,
         captionMs: d?.captionMs,
         // deliverResult reports -1 when there was no audio to send.

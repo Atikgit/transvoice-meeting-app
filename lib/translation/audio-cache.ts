@@ -98,20 +98,23 @@ export class RedisAudioCache implements AudioCache {
   }
 }
 
-let cache: AudioCache | undefined
+// On globalThis: /api/translate writes clips and /api/tts/[id] reads them. If Next.js ever
+// loaded this module once per route bundle, a module-level variable would give each route its
+// own empty memory cache and every clip URL would answer 404.
+const holder = globalThis as unknown as { __tvAudioCache?: AudioCache }
 export function audioCache(): AudioCache {
-  if (!cache) {
+  if (!holder.__tvAudioCache) {
     const url = serverEnv().REDIS_URL
-    cache = url
+    holder.__tvAudioCache = url
       ? new RedisAudioCache(new Redis(url, { maxRetriesPerRequest: 2, enableOfflineQueue: false }))
       : new MemoryAudioCache()
   }
-  return cache
+  return holder.__tvAudioCache
 }
 
 /** Graceful shutdown: closes the Redis connection, if one was opened. */
 export async function closeAudioCache() {
-  const current = cache
-  cache = undefined
+  const current = holder.__tvAudioCache
+  holder.__tvAudioCache = undefined
   if (current instanceof RedisAudioCache) await current.close()
 }

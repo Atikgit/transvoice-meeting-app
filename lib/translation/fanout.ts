@@ -46,6 +46,10 @@ export type LanguageResult =
       listeners: string[]
       kind: 'failed'
       reason: 'error' | 'timeout' | 'circuit_open'
+      /** HTTP status of the API's answer (401 = wrong key, 404 = wrong URL…), null = no answer. */
+      status?: number | null
+      /** Short error text without any content (e.g. "fetch failed"), for the log. */
+      detail?: string
       ms: number
     }
 
@@ -110,7 +114,16 @@ export async function translateForListeners({
     } catch (error) {
       breaker.failure()
       const timeout = error instanceof TransVoiceApiError && /timeout|aborted/i.test(error.message)
-      return { lang, listeners, kind: 'failed', reason: timeout ? 'timeout' : 'error', ms: ms() }
+      return {
+        lang,
+        listeners,
+        kind: 'failed',
+        reason: timeout ? 'timeout' : 'error',
+        ...(error instanceof TransVoiceApiError
+          ? { status: error.status, detail: error.message.slice(0, 120) }
+          : { detail: error instanceof Error ? error.message.slice(0, 120) : 'unknown' }),
+        ms: ms(),
+      }
     }
   }
 

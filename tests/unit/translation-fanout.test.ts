@@ -201,3 +201,28 @@ describe('CircuitBreaker', () => {
     expect(breaker.state).toBe('closed')
   })
 })
+
+describe('failure details for the log', () => {
+  it('keeps the HTTP status of a failed API call (401 = wrong key) and no content', async () => {
+    const { TransVoiceApiError } = await import('@/lib/transvoice/client')
+    const { CircuitBreaker } = await import('@/lib/translation/breaker')
+    const results = await translateForListeners({
+      audioBase64: 'AAAA',
+      spokenLang: 'bn-BD',
+      voiceGender: 'female',
+      groups: new Map([['en-US', ['guest-1']]]),
+      sessionId: 's',
+      speakerId: 'u',
+      breaker: new CircuitBreaker(),
+      translate: async () => {
+        throw new TransVoiceApiError('TransVoice API responded 401', 401, false)
+      },
+    })
+    expect(results[0]).toMatchObject({
+      kind: 'failed',
+      reason: 'error',
+      status: 401,
+      detail: 'TransVoice API responded 401',
+    })
+  })
+})
