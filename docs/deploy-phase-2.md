@@ -51,10 +51,11 @@ For the two-browser e2e test against a non-production LiveKit server:
 
 ### 5. Manual test (two devices)
 
-1. Laptop (host): dashboard → **Invite Partner** → copy link.
+1. Laptop (host): dashboard → **Start meeting** → lobby → room → **Invite Partner** (the big button
+   in the empty room, or the one in the control bar) → copy link.
 2. Phone (guest): open link → sign up / sign in → Accept → lobby (pick camera/mic) → Join.
    The phone shows "Waiting for host to start…".
-3. Laptop: **Start meeting** → lobby → room. Both see each other's video; the speaking person
+3. Laptop (already in the room): both see each other's video; the speaking person
    gets a cyan ring; mute shows the mic-off icon on the other side.
 4. Laptop: **Start** → both show "Live 00:0x". Try screen share and Devices (laptop).
 5. Phone: toggle airplane mode for ~10 s → "Reconnecting…", then recovers. Leave it off for
@@ -221,7 +222,7 @@ Server:
 
 Two devices (laptop + phone; repeat with an iPhone if available):
 
-3. Laptop: dashboard → Invite Partner → copy link. Phone: open link, sign in, Join. The Join tap
+3. Laptop: Start meeting → in the room, Invite Partner → copy link. Phone: open link, sign in, Join. The Join tap
    unlocks audio; the room opens without a "Tap to enable audio" bar. On iPhone Safari, if the bar
    shows, tap it once and it goes away.
 4. Laptop **Start** → both "Live". Video and voice both ways; mute shows on the other side.
@@ -257,7 +258,7 @@ Two devices (laptop + phone; repeat with an iPhone if available):
 **Symptom:** the host is "Live 01:48", the guest opened the invite link but sits on "Waiting for
 host to start…" and "Waiting for partner…"; both are alone in their LiveKit rooms.
 
-**Root cause.** A room is `tv-<call_session id>` and a meeting has at most one open
+**Root cause (historical: the dashboard button that caused it was removed in `ux-single-invite`).** A room is `tv-<call_session id>` and a meeting has at most one open
 (`ready`/`live`) session, so two people in the _same meeting_ always share a room. The two were in
 different _meetings_: dashboard **Invite Partner** (no meeting id) called `create_invitation`,
 which inserted a **new meeting for every link**. A host who pressed **Start meeting** (meeting A,
@@ -295,8 +296,9 @@ reads `create_invitation` rows without `reused` (harmless).
 
 **Check after deploy**
 
-1. Host: dashboard → **Start meeting** → room → **Start** (Live). Host: dashboard in another tab →
-   **Invite Partner** → the dialog says "opens the meeting you are already in" → copy the link.
+1. Host: dashboard → **Start meeting** → room → **Start** (Live) → **Invite Partner** in the room →
+   copy the link. (The dashboard no longer has an Invite Partner button; see "Invite Partner only
+   in the room" in deploy-phase-3.md.)
 2. Guest (other browser/device): open the link → Accept → Join. The guest shows **Live** and the
    timer at once and sees the host's video.
 3. `docker logs transvoice_meeting_app 2>&1 | grep '"event":"room"'`: one `session_created`, then

@@ -48,7 +48,7 @@ beforeEach(async () => {
 }, 30_000)
 
 describe('host and guest get a token for the same LiveKit room', () => {
-  it('guest accepts an invite made from the dashboard while the host is live: same room', async () => {
+  it('guest accepts the in-room invite while the host is live: same room', async () => {
     const host = await createUser(db, 'host@example.com', { fullName: 'Host' })
     const guest = await createUser(db, 'guest@example.com', { fullName: 'Guest' })
 
@@ -62,7 +62,7 @@ describe('host and guest get a token for the same LiveKit room', () => {
     await rpc('start_call_session', { p_session: sessionId, p_user: host })
     const hostToken = await token(host, sessionId)
 
-    // Host: dashboard → Invite Partner (no meeting id). Guest: opens /invite/<token>, accepts.
+    // Host: Invite Partner inside the room (always for this meeting). Guest: opens /invite/<token>, accepts.
     const raw = randomBytes(32).toString('base64url')
     const hash = createHash('sha256').update(raw).digest('hex')
     const invitation = (
@@ -70,7 +70,7 @@ describe('host and guest get a token for the same LiveKit room', () => {
         p_user: host,
         p_token_hash: hash,
         p_window: '7 days',
-        p_meeting: undefined,
+        p_meeting: meeting,
       })
     ).data as { meeting_id: string; reused: boolean }[]
     expect(invitation[0]).toMatchObject({ meeting_id: meeting, reused: true })

@@ -197,3 +197,28 @@ docker logs transvoice_meeting_app 2>&1 | grep -E 'transvoice_warmup|translate_d
    `vad files 4/4 ok`, `blocked by CSP none`, `mic level` moves when you talk, `gate OPEN`.
 4. Speak, pause 1 s. If nothing arrives: **Send test clip** prints the exact status and body; the log shows
    `translate_decision` and, for each language, `status`/`detail` of a failed API call.
+
+## Invite Partner only in the room (branch `ux-single-invite`)
+
+The dashboard no longer has an **Invite Partner** button (nor its helper text). Inviting happens
+inside the room, for the meeting you are in: the control bar button, and a big **Invite Partner**
+button in the empty room (host). Dashboard keeps **Join with link**, **Start meeting** and
+**Your connections → Open room / Call**.
+
+- `createInvitation` (server action) now **requires a `meetingId`**: a missing or malformed one is
+  refused (`MEETING_REQUIRED`) before auth or any database call, and a meeting you are not part of
+  is `NOT_ALLOWED`. An invitation can never create a meeting.
+- `create_invitation` (SQL) still accepts a null meeting for compatibility; nothing in the app calls it
+  that way (tests cover both sides).
+- The dashboard User Manual step 2 reads: "Click Start meeting, then press Invite Partner inside
+  the room and share the link (WhatsApp, LinkedIn, email)."
+
+**Deploy:** no migration, no new variables.
+
+```sh
+docker compose --env-file .env.production up -d --build
+```
+
+**Check:** dashboard shows only _Join with link_ and _Start meeting_; Start meeting → room: the empty
+room shows a big **Invite Partner** button; the link it creates opens this same meeting for the guest.
+Old browser tabs that still show the dashboard button get an error when they use it (the action changed).

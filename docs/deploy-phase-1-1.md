@@ -70,7 +70,7 @@ cd /root/transvoice-meeting-app && git checkout main && git pull origin main && 
 ## 5. Smoke test
 
 - `/` redirects to `/dashboard` (or `/login`). `/dev/room` returns 404.
-- Dashboard: **Invite Partner** next to Join with link / Start meeting → choose 7 d → link with
+- **Start meeting** → in the room, **Invite Partner** → choose 7 d → link with
   Copy / WhatsApp / LinkedIn / Email. Open it in a private window: sign up → confirm email (on
   your phone, to test cross-device) → back on the invite → Accept → lobby.
 - **Start meeting** → lobby ("Start Translated Meeting", name and languages prefilled, Back
