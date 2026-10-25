@@ -32,7 +32,6 @@ beforeEach(() => {
         meeting_id: MEETING,
         invitation_id: 'i1',
         expires_at: '2026-10-30T10:00:00Z',
-        reused: true,
       },
     ],
     error: null,
@@ -42,7 +41,7 @@ afterEach(cleanup)
 
 describe('createInvitation', () => {
   it('sends only the token hash to the database and returns the raw token once', async () => {
-    const result = await createInvitation({ window: '24h' })
+    const result = await createInvitation({ window: '24h', meetingId: MEETING })
     expect(result.ok).toBe(true)
     if (!result.ok) return
     const token = result.url.replace('https://meet.transvoice.ai/invite/', '')
@@ -51,19 +50,19 @@ describe('createInvitation', () => {
       p_user: 'host-1',
       p_token_hash: createHash('sha256').update(token).digest('hex'),
       p_window: '24 hours',
-      p_meeting: undefined,
+      p_meeting: MEETING,
     })
     expect(result.meetingId).toBe(MEETING)
   })
 
   it('maps "no minutes" and "unverified" to clear errors', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'NO_MINUTES' } })
-    expect(await createInvitation({ window: '7d' })).toMatchObject({
+    expect(await createInvitation({ window: '7d', meetingId: MEETING })).toMatchObject({
       ok: false,
       code: 'NO_MINUTES',
     })
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'EMAIL_NOT_VERIFIED' } })
-    expect(await createInvitation({ window: '7d' })).toMatchObject({
+    expect(await createInvitation({ window: '7d', meetingId: MEETING })).toMatchObject({
       ok: false,
       code: 'EMAIL_NOT_VERIFIED',
     })
@@ -71,10 +70,47 @@ describe('createInvitation', () => {
 
   it('rejects unknown windows and signed-out users', async () => {
     // @ts-expect-error invalid on purpose
-    expect(await createInvitation({ window: '2d' })).toMatchObject({ ok: false })
+    expect(await createInvitation({ window: '2d', meetingId: MEETING })).toMatchObject({
+      ok: false,
+    })
     getSessionUser.mockResolvedValueOnce(null)
-    expect(await createInvitation({ window: '7d' })).toMatchObject({ code: 'SIGNED_OUT' })
+    expect(await createInvitation({ window: '7d', meetingId: MEETING })).toMatchObject({
+      code: 'SIGNED_OUT',
+    })
     expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe('an invitation never creates a meeting', () => {
+  const missing: unknown[] = [undefined, '', 'not-a-uuid', 123, null]
+
+  it.each(missing)('refuses meetingId = %j before doing anything', async (meetingId) => {
+    // @ts-expect-error the type requires a meeting; the server must not trust it
+    const result = await createInvitation({ window: '7d', meetingId })
+    expect(result).toMatchObject({ ok: false, code: 'MEETING_REQUIRED' })
+    expect(rpc).not.toHaveBeenCalled() // no invitation, no meeting
+    expect(getSessionUser).not.toHaveBeenCalled()
+  })
+
+  it('refuses a call with no body fields at all', async () => {
+    // @ts-expect-error invalid on purpose
+    expect(await createInvitation({})).toMatchObject({ ok: false, code: 'MEETING_REQUIRED' })
+    // @ts-expect-error invalid on purpose
+    expect(await createInvitation(undefined)).toMatchObject({ code: 'MEETING_REQUIRED' })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('every accepted call passes its meeting to the database, never null', async () => {
+    await createInvitation({ window: '1h', meetingId: MEETING })
+    expect(rpc.mock.calls.every(([, args]) => args.p_meeting === MEETING)).toBe(true)
+  })
+
+  it('a meeting the user is not part of is a clear error, not a new meeting', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'NOT_ALLOWED' } })
+    expect(await createInvitation({ window: '7d', meetingId: MEETING })).toMatchObject({
+      ok: false,
+      code: 'NOT_ALLOWED',
+    })
   })
 })
 
@@ -106,7 +142,7 @@ describe('acceptInvitation', () => {
 
 describe('InviteModal', () => {
   it('defaults to 7 days, then shows the link with share buttons', async () => {
-    render(<InviteModal onClose={() => {}} />)
+    render(<InviteModal meetingId={MEETING} onClose={() => {}} />)
     expect(screen.getByRole('radio', { name: '7 days' })).toBeChecked()
     fireEvent.click(screen.getByRole('radio', { name: '1 hour' }))
     fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
@@ -124,43 +160,10 @@ describe('InviteModal', () => {
     expect(screen.getByRole('link', { name: /Email/ }).getAttribute('href')).toMatch(/^mailto:/)
   })
 
-  it('says which meeting the link opens, and links the host to it from the dashboard', async () => {
-    render(<InviteModal onClose={() => {}} />)
-    fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
-    expect(await screen.findByText(/opens the meeting you are already in/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Go to this meeting' })).toHaveAttribute(
-      'href',
-      `/m/${MEETING}/lobby`,
-    )
-  })
-
-  it('says so when the link opens a NEW meeting; inside a room there is no extra link', async () => {
-    rpc.mockResolvedValue({
-      data: [
-        {
-          meeting_id: MEETING,
-          invitation_id: 'i1',
-          expires_at: '2026-10-30T10:00:00Z',
-          reused: false,
-        },
-      ],
-      error: null,
-    })
-    const { unmount } = render(<InviteModal onClose={() => {}} />)
-    fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
-    expect(await screen.findByText(/opens a new meeting/)).toBeInTheDocument()
-    unmount()
-
-    render(<InviteModal meetingId={MEETING} onClose={() => {}} />)
-    fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
-    await screen.findByText(/opens a new meeting|already in/)
-    expect(screen.queryByRole('link', { name: 'Go to this meeting' })).toBeNull()
-  })
-
   it('offers to get minutes when the balance is empty', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'NO_MINUTES' } })
     const onNoMinutes = vi.fn()
-    render(<InviteModal onClose={() => {}} onNoMinutes={onNoMinutes} />)
+    render(<InviteModal meetingId={MEETING} onClose={() => {}} onNoMinutes={onNoMinutes} />)
     fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/no minutes/))
     fireEvent.click(screen.getByRole('button', { name: 'Get minutes' }))

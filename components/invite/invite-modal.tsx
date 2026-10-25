@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import Link from 'next/link'
 import { Check, Copy, Link2, Mail, MessageCircle, Send, Share2 } from 'lucide-react'
 import {
   createInvitation,
@@ -25,18 +24,16 @@ const shareClass =
 
 /**
  * Invite Partner (Rule 1 / Rule 3): choose how long the link and the sponsorship stay valid,
- * create the link (in a new meeting, or in `meetingId`), then share it.
+ * create the link for `meetingId` (the meeting you are in), then share it.
  */
 export function InviteModal({
   meetingId,
   onClose,
-  onCreated,
   onNoMinutes,
 }: {
-  meetingId?: string
+  /** The meeting the link is for; an invitation never creates a meeting. */
+  meetingId: string
   onClose: () => void
-  /** Called with the meeting the link belongs to (e.g. to open its lobby). */
-  onCreated?: (meetingId: string) => void
   onNoMinutes?: () => void
 }) {
   const [validity, setValidity] = useState<InviteWindowId>(DEFAULT_INVITE_WINDOW)
@@ -48,7 +45,6 @@ export function InviteModal({
     startTransition(async () => {
       const created = await createInvitation({ window: validity, meetingId })
       setResult(created)
-      if (created.ok) onCreated?.(created.meetingId)
     })
 
   if (result?.ok) {
@@ -94,19 +90,6 @@ export function InviteModal({
             <Mail size={14} aria-hidden /> Email app
           </a>
         </div>
-        <p className="mt-3 text-xs text-slate-400">
-          {result.reused
-            ? 'This link opens the meeting you are already in or about to start.'
-            : 'This link opens a new meeting.'}{' '}
-          {!meetingId && (
-            <Link
-              href={`/m/${result.meetingId}/lobby`}
-              className="font-semibold text-cyan-300 underline underline-offset-2"
-            >
-              Go to this meeting
-            </Link>
-          )}
-        </p>
         <SendInviteEmail inviteUrl={result.url} />
         <p className="mt-4 text-xs text-slate-500">
           Your partner signs up free ({FREE_TRIAL_MINUTES} free minutes) and joins your room. Their

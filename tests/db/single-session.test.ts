@@ -116,7 +116,7 @@ describe('one open session per meeting', () => {
   })
 })
 
-describe('Invite Partner without a meeting reuses the host’s current meeting', () => {
+describe('create_invitation without a meeting id (kept for compatibility, no UI path) reuses the host’s current meeting', () => {
   it('with a live session in the meeting, the link points to that meeting', async () => {
     const { session_id } = await open(host)
     await start(session_id)
@@ -163,5 +163,32 @@ describe('Invite Partner without a meeting reuses the host’s current meeting',
     expect(joined).toBe(meeting)
     const session = await open(newGuest, joined)
     expect(session).toMatchObject({ session_id: hostSession.session_id, status: 'live' })
+  })
+})
+
+describe('create_invitation for an existing meeting never creates a meeting', () => {
+  const meetings = async () =>
+    (await db.query<{ n: number }>('select count(*)::int n from public.meetings')).rows[0]!.n
+
+  it('with a meeting id the meeting count is unchanged, for the host and for a guest who may invite', async () => {
+    const before = await meetings()
+    expect((await invite(host, meeting)).meeting_id).toBe(meeting)
+    expect((await invite(guest, meeting)).meeting_id).toBe(meeting)
+    expect(await meetings()).toBe(before)
+  })
+
+  it('a stranger, or an unknown meeting id, is refused and nothing is created', async () => {
+    const before = await meetings()
+    const stranger = await createUser(db, 'stranger2@example.com')
+    await expect(invite(stranger, meeting)).rejects.toThrow(/NOT_ALLOWED/)
+    await expect(invite(host, '99999999-9999-4999-8999-999999999999')).rejects.toThrow(
+      /NOT_ALLOWED/,
+    )
+    expect(await meetings()).toBe(before)
+    const invitations = await db.query<{ n: number }>(
+      `select count(*)::int n from public.invitations where inviter_id = $1`,
+      [stranger],
+    )
+    expect(invitations.rows[0]!.n).toBe(0)
   })
 })

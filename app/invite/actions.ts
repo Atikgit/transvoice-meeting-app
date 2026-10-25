@@ -16,20 +16,29 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 
 export type CreateInvitationResult =
-  | { ok: true; url: string; meetingId: string; expiresAt: string; reused: boolean }
+  | { ok: true; url: string; meetingId: string; expiresAt: string }
   | {
       ok: false
-      code: 'SIGNED_OUT' | 'NO_MINUTES' | 'EMAIL_NOT_VERIFIED' | 'RATE_LIMITED' | 'FAILED'
+      code:
+        | 'SIGNED_OUT'
+        | 'MEETING_REQUIRED'
+        | 'NOT_ALLOWED'
+        | 'NO_MINUTES'
+        | 'EMAIL_NOT_VERIFIED'
+        | 'RATE_LIMITED'
+        | 'FAILED'
       error: string
     }
 
 const createSchema = z.object({
   window: z.enum(INVITE_WINDOWS.map((w) => w.id) as [InviteWindowId, ...InviteWindowId[]]),
-  meetingId: z.uuid().optional(),
+  meetingId: z.uuid(),
 })
 
 const MESSAGES = {
   SIGNED_OUT: 'Please sign in again.',
+  MEETING_REQUIRED: 'Invitations are created from inside a meeting. Open your meeting first.',
+  NOT_ALLOWED: 'You can only invite people to a meeting you are part of.',
   NO_MINUTES: 'You have no minutes left. Get minutes to invite a partner.',
   EMAIL_NOT_VERIFIED: 'Confirm your email address before inviting partners.',
   RATE_LIMITED: 'You have created many links in the last hour. Please try again later.',
@@ -37,17 +46,20 @@ const MESSAGES = {
 } as const
 
 /**
- * Creates an invitation for the signed-in user. Without meetingId it joins the host's current
- * meeting (open session, or a fresh one not yet used) and only creates a new meeting if there is none.
- * The raw token appears only in the returned URL; the database stores its hash.
+ * Creates an invitation to ONE EXISTING meeting (the room the person is in): `meetingId` is
+ * required and an invitation never creates a meeting. The raw token appears only in the returned URL; the database stores its hash.
  */
 export async function createInvitation(input: {
   window: InviteWindowId
-  meetingId?: string
+  meetingId: string
 }): Promise<CreateInvitationResult> {
   const fail = (code: keyof typeof MESSAGES) =>
     ({ ok: false, code, error: MESSAGES[code] }) as const
 
+  // No meeting id (or not a UUID): refused before anything else, nothing is created.
+  if (!z.uuid().safeParse((input as { meetingId?: unknown })?.meetingId).success) {
+    return fail('MEETING_REQUIRED')
+  }
   const parsed = createSchema.safeParse(input)
   if (!parsed.success) return fail('FAILED')
   const user = await getSessionUser()
@@ -62,7 +74,7 @@ export async function createInvitation(input: {
     p_meeting: parsed.data.meetingId,
   })
   if (error || !data?.[0]) {
-    const known = (['NO_MINUTES', 'EMAIL_NOT_VERIFIED'] as const).find((code) =>
+    const known = (['NO_MINUTES', 'EMAIL_NOT_VERIFIED', 'NOT_ALLOWED'] as const).find((code) =>
       error?.message.includes(code),
     )
     if (!known) console.error('create_invitation failed:', error?.message)
@@ -74,8 +86,6 @@ export async function createInvitation(input: {
     url: `${await appOrigin()}/invite/${token}`,
     meetingId: data[0].meeting_id,
     expiresAt: data[0].expires_at,
-    // true: the link opens a meeting the host already has (not a new one).
-    reused: data[0].reused,
   }
 }
 

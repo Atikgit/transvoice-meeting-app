@@ -249,7 +249,7 @@ describe('Invite Partner modal: Send invite by email', () => {
     }))
     vi.resetModules()
     const { InviteModal } = await import('@/components/invite/invite-modal')
-    render(<InviteModal onClose={() => {}} />)
+    render(<InviteModal meetingId="11111111-1111-4111-8111-111111111111" onClose={() => {}} />)
     expect(screen.queryByPlaceholderText('partner@example.com')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
     const input = await screen.findByPlaceholderText('partner@example.com')
@@ -275,7 +275,7 @@ describe('Invite Partner modal: Send invite by email', () => {
     }))
     vi.resetModules()
     const { InviteModal } = await import('@/components/invite/invite-modal')
-    render(<InviteModal onClose={() => {}} />)
+    render(<InviteModal meetingId="11111111-1111-4111-8111-111111111111" onClose={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
     fireEvent.change(await screen.findByPlaceholderText('partner@example.com'), {
       target: { value: 'known@example.com' },
