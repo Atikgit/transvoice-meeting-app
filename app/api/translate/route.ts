@@ -64,7 +64,12 @@ export async function POST(request: NextRequest) {
   const groups = groupListeners(context.participants, context.speaker.spokenLang)
   // Same-language listeners only: nothing to translate (original audio at full volume).
   if (groups.size === 0) {
-    return NextResponse.json({ utteranceId: upload.utteranceId, languages: [] })
+    return NextResponse.json({
+      utteranceId: upload.utteranceId,
+      languages: [],
+      // Tells the speaker why nothing happened: same language (fixable) or nobody else here.
+      reason: context.participants.length > 0 ? 'same_language' : 'no_listeners',
+    })
   }
 
   const delivered = new Map<string, { captionMs: number; audioMs: number } | null>()

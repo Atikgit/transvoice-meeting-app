@@ -205,6 +205,14 @@ describe('POST /api/translate admission', () => {
     const withListeners = (participants: { userId: string; listenLang: string }[]) =>
       rpc.mockResolvedValue({ data: { ...context, participants }, error: null })
 
+    it('nobody else connected: no call, and the speaker is told there are no listeners', async () => {
+      const bodies = apiCalls()
+      listParticipants.mockImplementation(async () => [{ identity: me }])
+      const res = await post(upload(SESSION()))
+      expect(await res.json()).toMatchObject({ languages: [], reason: 'no_listeners' })
+      expect(bodies).toEqual([])
+    })
+
     it('everyone hears the speaker language: nothing is translated or sent', async () => {
       const bodies = apiCalls()
       withListeners([
@@ -217,7 +225,11 @@ describe('POST /api/translate admission', () => {
         { identity: 'guest-2' },
       ])
       const res = await post(upload(SESSION()))
-      expect(await res.json()).toEqual({ utteranceId: UTTERANCE, languages: [] })
+      expect(await res.json()).toEqual({
+        utteranceId: UTTERANCE,
+        languages: [],
+        reason: 'same_language',
+      })
       expect(bodies).toEqual([])
       expect(sendData).not.toHaveBeenCalled()
     })

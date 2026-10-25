@@ -118,9 +118,17 @@ export function useLiveTranslation({
         original?: string | null
         unavailable?: boolean
         languages?: { lang: string }[]
+        reason?: 'same_language' | 'no_listeners'
       }
       setTranslationDebug({ listenerLanguages: (body.languages ?? []).map((l) => l.lang) })
       if (body.original) transcriptRef.current?.(utteranceId, body.original)
+      if (body.reason === 'same_language') {
+        setNotice({
+          tone: 'info',
+          text: 'You and your partner use the same language, so there is nothing to translate. Change a language in the Languages menu.',
+        })
+        return
+      }
       setNotice(
         body.unavailable
           ? { tone: 'error', text: 'Translation is temporarily unavailable. It resumes by itself.' }
