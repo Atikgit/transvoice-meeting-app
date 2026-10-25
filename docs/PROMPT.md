@@ -377,4 +377,13 @@ Answers given after Phase 0. These override earlier sections where they conflict
 - **Password reset** via `/forgot-password` → email → `/auth/reset`. Neutral responses (no account enumeration); 5/hour per IP and per email. Rate limits fall back to process memory when Upstash is not configured.
 - **Hosting:** see §9.1.
 
+Phase 3 decisions (full spec in `docs/PHASE-3.md`):
+
+1. A sponsored connection's `expires_at` only controls starting/redialing a call. A call already in progress is never cut because the window expires.
+2. Debit order for free/prepaid payers: subscription minutes first, then trial minutes. Never go negative.
+3. A paid guest whose sponsor ran out of minutes can switch to paying for themselves for the rest of the session.
+4. Usage events (speech seconds) are recorded by our own `/api/translate` route. No API-server push endpoint for now.
+5. Latency targets, measured speech-end → translated audio start: p50 ≤ 1.8 s, p95 ≤ 3 s. Report measured values; never claim numbers that were not measured.
+6. Translation stays behind `TRANSLATION_BETA_ALLOWLIST` until it is set to `"*"`.
+
 **Begin with Phase 0 now.**
