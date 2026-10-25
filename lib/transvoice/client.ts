@@ -1,6 +1,7 @@
 import 'server-only'
 import { z } from 'zod'
 import { serverEnv } from '@/lib/env'
+import { transvoiceFetch } from '@/lib/transvoice/http'
 
 /**
  * Typed client for the TransVoice Speech API (Whisper ASR → translation → Azure Neural TTS,
@@ -56,7 +57,7 @@ export async function translateSpeech(
   input: TranslateSpeechInput,
   options: TransVoiceClientOptions = defaultOptions(),
 ): Promise<TranslateSpeechResult> {
-  const doFetch = options.fetch ?? fetch
+  const doFetch = options.fetch ?? transvoiceFetch
   const url = `${options.baseUrl.replace(/\/+$/, '')}/`
 
   let response: Response

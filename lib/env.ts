@@ -50,6 +50,10 @@ const serverSchema = z.object({
     .regex(/^rediss?:\/\//, 'REDIS_URL must start with redis:// or rediss://')
     .optional(),
 
+  // Keep-alive ping to the TransVoice API while a session is live (seconds; 0 = off). The boot
+  // ping always runs and logs whether the API is reachable from this container.
+  TRANSVOICE_WARMUP_SEC: z.coerce.number().int().min(0).default(30),
+
   // Rate limiting (Phase 2+)
   UPSTASH_REDIS_REST_URL: z.url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),

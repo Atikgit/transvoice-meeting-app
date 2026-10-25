@@ -9,6 +9,9 @@ export async function register() {
   const { startSweeper, stopSweeper } = await import('@/lib/sweeper')
   const { DRAIN_MAX_MS, startDraining } = await import('@/lib/draining')
   if (env.SWEEP_INTERVAL_SEC > 0) startSweeper()
+  // Boot ping (logs whether the API is reachable) and keep-alive while sessions are live.
+  const { startWarmup, stopWarmup } = await import('@/lib/transvoice/warmup')
+  startWarmup(env.TRANSVOICE_WARMUP_SEC * 1000)
 
   // Next.js already stops accepting connections and finishes in-flight requests on SIGTERM
   // (docker stop). This listener runs alongside it for what Next does not know about.
@@ -26,6 +29,8 @@ export async function register() {
         import('@/lib/translation/audio-cache'),
       ])
       console.log(JSON.stringify({ event: 'shutdown', signal: 'SIGTERM' }))
+      stopWarmup()
+      await (await import('@/lib/transvoice/http')).closeTransvoicePool()
       clearGraceChecks() // lost timers are recovered by the sweeper of the next container
       await stopSweeper()
       await closeAudioCache()
