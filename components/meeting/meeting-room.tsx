@@ -49,7 +49,10 @@ import { captionText } from '@/features/translation/captions'
 import type { OriginalAudioMode } from '@/features/translation/playback'
 import { BETA_MESSAGE } from '@/lib/translation/gate'
 import { useLiveTranslation } from '@/features/translation/useLiveTranslation'
+import { saveLanguages } from '@/features/translation/language-api'
 import { useTranslatedAudio } from '@/features/translation/useTranslatedAudio'
+import { useTranslationStatus } from '@/features/translation/useTranslationStatus'
+import { TranslationStatusLine } from '@/components/meeting/translation-status-line'
 import { formatElapsed, useElapsedSeconds, useRoomState } from '@/features/meeting/useRoomState'
 import type { MeetingRole } from '@/lib/meetings/load'
 import type { RoomState } from '@/lib/meetings/room-state'
@@ -300,6 +303,7 @@ function RoomView({
   const session = useRoomState(sessionId, initialState)
   const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
 
+  const languages = useTranslationStatus(sessionId)
   const audio = useTranslatedAudio({ sessionId, originalAudioMode })
   const translation = useLiveTranslation({
     sessionId,
@@ -471,7 +475,21 @@ function RoomView({
       }
       caption={{
         actions: (
-          <LanguageMenu sessionId={sessionId} spokenLang={spokenLang} listenLang={listenLang} />
+          <LanguageMenu
+            sessionId={sessionId}
+            // What the server stores; the profile values are only the first guess before it answers.
+            spokenLang={languages.status?.me.spokenLang ?? spokenLang}
+            listenLang={languages.status?.me.listenLang ?? listenLang}
+            onConfirmed={() => void languages.refresh()}
+          />
+        ),
+        statusLine: (
+          <TranslationStatusLine
+            status={languages.status}
+            onFix={(listenLang) =>
+              void saveLanguages(sessionId, { listenLang }).then(languages.refresh)
+            }
+          />
         ),
         translating: translation.translating,
         originalText: captions.original,

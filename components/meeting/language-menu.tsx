@@ -2,6 +2,7 @@
 
 import { useId, useState } from 'react'
 import { Languages } from 'lucide-react'
+import { saveLanguages } from '@/features/translation/language-api'
 import { languageOptions, spokenLanguageOptions } from '@/lib/transvoice/languages'
 
 const selectClass =
@@ -10,37 +11,34 @@ const selectClass =
 /**
  * "Live translation" dropdown in the caption bar: change what you speak and what you hear
  * during the meeting. Applies from your next sentence; your saved settings stay as they are.
+ * The values shown are the ones the server has stored (the room refreshes them every 3 s and
+ * right after a change), never a local guess.
  */
 export function LanguageMenu({
   sessionId,
-  spokenLang,
-  listenLang,
+  spokenLang: spoken,
+  listenLang: listen,
+  onConfirmed,
 }: {
   sessionId: string
+  /** Server-confirmed values. */
   spokenLang: string
   listenLang: string
+  /** Called after the server stored a change (the room refreshes its status). */
+  onConfirmed?: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const [spoken, setSpoken] = useState(spokenLang)
-  const [listen, setListen] = useState(listenLang)
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | { error: string }>('idle')
   const id = useId()
 
   const change = async (patch: { spokenLang?: string; listenLang?: string }) => {
     setState('saving')
-    const res = await fetch(`/api/calls/${sessionId}/languages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    }).catch(() => null)
-    if (res?.ok) {
-      const body = (await res.json()) as { spokenLang: string; listenLang: string }
-      setSpoken(body.spokenLang)
-      setListen(body.listenLang)
+    const result = await saveLanguages(sessionId, patch)
+    if (result.ok) {
       setState('saved')
+      onConfirmed?.()
     } else {
-      const body = (await res?.json().catch(() => ({}))) as { error?: string }
-      setState({ error: body.error ?? 'Could not change the language.' })
+      setState({ error: result.error })
     }
   }
 
@@ -94,6 +92,10 @@ export function LanguageMenu({
               ))}
             </select>
           </label>
+          <p className="text-[11px] leading-4 text-slate-500">
+            &ldquo;I want to hear&rdquo; is the language <em>you</em> understand, normally your own:
+            what your partner says is translated into it.
+          </p>
           <p role="status" className="text-[11px] text-slate-500">
             {state === 'saving' && 'Saving…'}
             {state === 'saved' && 'Done: applies from your next sentence.'}

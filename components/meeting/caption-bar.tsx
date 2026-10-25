@@ -17,6 +17,7 @@ export function CaptionBar({
   translatedText,
   placeholder,
   actions,
+  statusLine,
 }: {
   translating: boolean
   originalText: string
@@ -25,6 +26,8 @@ export function CaptionBar({
   placeholder?: string
   /** Controls at the right of the header (language menu). */
   actions?: React.ReactNode
+  /** What translation is doing right now (languages, server-confirmed). */
+  statusLine?: React.ReactNode
 }) {
   const empty = !originalText && !translatedText
 
@@ -40,6 +43,7 @@ export function CaptionBar({
         </div>
         {actions}
       </div>
+      {statusLine}
       {empty ? (
         <p className="mt-1 text-sm leading-5 text-slate-500">{placeholder}</p>
       ) : (

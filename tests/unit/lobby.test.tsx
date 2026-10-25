@@ -68,7 +68,7 @@ describe('Lobby', () => {
     lobby('guest')
     expect(screen.getByRole('textbox', { name: 'Your name' })).toHaveValue('Atik Islam')
     const speak = screen.getByRole('combobox', { name: 'I speak' }) as HTMLSelectElement
-    const hear = screen.getByRole('combobox', { name: 'Translate to' }) as HTMLSelectElement
+    const hear = screen.getByRole('combobox', { name: 'I want to hear' }) as HTMLSelectElement
     expect(speak.value).toBe('bn-BD')
     expect(hear.value).toBe('en-US')
     expect(speak.options.length).toBeLessThan(hear.options.length)

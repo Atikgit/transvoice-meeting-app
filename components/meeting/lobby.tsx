@@ -147,7 +147,7 @@ export function Lobby({
               </label>
               <label className="block">
                 <span className="mb-1 block text-[10px] uppercase tracking-wider text-slate-500">
-                  Translate to
+                  I want to hear
                 </span>
                 <select name="listen_lang" defaultValue={listenLang} className={fieldClass}>
                   {languageOptions.map((l) => (
@@ -158,6 +158,11 @@ export function Lobby({
                 </select>
               </label>
             </div>
+            <p className="text-xs leading-5 text-slate-500">
+              <strong className="font-medium text-slate-400">I speak</strong> is your language.{' '}
+              <strong className="font-medium text-slate-400">I want to hear</strong> is the language
+              you understand, normally the same one: what your partner says is translated into it.
+            </p>
           </div>
           <button
             type="submit"

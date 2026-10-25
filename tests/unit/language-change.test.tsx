@@ -104,7 +104,15 @@ describe('LanguageMenu', () => {
       async () => new Response(JSON.stringify({ spokenLang: 'bn-BD', listenLang: 'es-ES' })),
     )
     vi.stubGlobal('fetch', fetchMock)
-    render(<LanguageMenu sessionId={SESSION} spokenLang="bn-BD" listenLang="en-US" />)
+    const onConfirmed = vi.fn()
+    const view = render(
+      <LanguageMenu
+        sessionId={SESSION}
+        spokenLang="bn-BD"
+        listenLang="en-US"
+        onConfirmed={onConfirmed}
+      />,
+    )
     fireEvent.click(screen.getByRole('button', { name: /Languages/ }))
     const speak = screen.getByRole('combobox', { name: 'I speak' }) as HTMLSelectElement
     const hear = screen.getByRole('combobox', { name: 'I want to hear' }) as HTMLSelectElement
@@ -118,6 +126,18 @@ describe('LanguageMenu', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/calls/${SESSION}/languages`,
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ listenLang: 'es-ES' }) }),
+    )
+    // The menu shows what the server confirmed (its props), not its own guess: it asks the room to
+    // refresh, and only then does the value change.
+    expect(onConfirmed).toHaveBeenCalledTimes(1)
+    expect(hear.value).toBe('en-US')
+    view.rerender(
+      <LanguageMenu
+        sessionId={SESSION}
+        spokenLang="bn-BD"
+        listenLang="es-ES"
+        onConfirmed={onConfirmed}
+      />,
     )
     expect(hear.value).toBe('es-ES')
     vi.unstubAllGlobals()

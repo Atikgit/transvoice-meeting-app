@@ -65,6 +65,14 @@ export default async function MeetingPage({
     hostUser.user?.email,
     serverEnv().TRANSLATION_BETA_ALLOWLIST,
   )
+  // The languages this session actually uses are the stored row's (set in the lobby or the room's
+  // menu), not the profile's: a reload must show what the server will translate with.
+  const { data: stored } = await createAdminClient()
+    .from('meeting_participants')
+    .select('spoken_lang, listen_lang')
+    .eq('session_id', session.session_id)
+    .eq('user_id', context.userId)
+    .maybeSingle()
   const balance = context.role === 'host' ? await currentBalance(context.userId) : null
 
   return (
@@ -78,8 +86,8 @@ export default async function MeetingPage({
       displayName={context.profile.fullName}
       originalAudioMode={context.profile.originalAudioMode}
       translationEnabled={translationEnabled}
-      spokenLang={context.profile.spokenLang}
-      listenLang={context.profile.listenLang}
+      spokenLang={stored?.spoken_lang ?? context.profile.spokenLang}
+      listenLang={stored?.listen_lang ?? context.profile.listenLang}
       initialState={initialState}
       balance={balance ? availableMinutes(balance) : 0}
       minutesLabel={balance ? minutesLabel(balance) : undefined}
