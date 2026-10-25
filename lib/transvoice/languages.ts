@@ -194,7 +194,87 @@ export function isSpokenLanguage(code: string): boolean {
   return spokenCodes.has(code)
 }
 
-/** Converts a locale ("bn-BD") to the language code the TransVoice API expects ("bn"). */
+/**
+ * Language codes arrive in several spellings ("bn", "bn-BD", "bn_bd", "BN-bd"). Everything that
+ * compares languages, talks to the TransVoice API or picks a voice goes through the functions
+ * below, so "same language" means the same thing everywhere.
+ */
+
+/** A bare language ("en") means this locale when a voice or a region is needed. */
+const PREFERRED_LOCALE: Record<string, string> = {
+  en: 'en-US',
+  es: 'es-ES',
+  pt: 'pt-BR',
+  fr: 'fr-FR',
+  de: 'de-DE',
+  it: 'it-IT',
+  ar: 'ar-SA',
+  zh: 'zh-CN',
+  hi: 'hi-IN',
+  bn: 'bn-BD',
+  ja: 'ja-JP',
+  ko: 'ko-KR',
+  ru: 'ru-RU',
+  tr: 'tr-TR',
+  ur: 'ur-PK',
+  ta: 'ta-IN',
+  nl: 'nl-NL',
+  sv: 'sv-SE',
+  pl: 'pl-PL',
+  id: 'id-ID',
+  vi: 'vi-VN',
+  th: 'th-TH',
+  fa: 'fa-IR',
+  uk: 'uk-UA',
+  el: 'el-GR',
+  fil: 'fil-PH',
+}
+
+/** Chinese written in traditional characters is a different target from simplified. */
+const TRADITIONAL_REGIONS = new Set(['TW', 'HK', 'MO'])
+
+/** "bn_bd" → "bn-BD", "BN-bd" → "bn-BD", "bn" → "bn-BD" (preferred locale), "zh-hant-tw" kept. */
+export function normalizeLocale(input: string): string {
+  const parts = input.trim().replace(/_/g, '-').split('-').filter(Boolean)
+  const primary = parts[0]?.toLowerCase()
+  if (!primary) return input.trim()
+  const rest = parts.slice(1).map((part) => {
+    if (part.length === 4) return part[0]!.toUpperCase() + part.slice(1).toLowerCase() // script
+    if (part.length === 2) return part.toUpperCase() // region
+    return part.toLowerCase() // variant (e.g. "guangxi")
+  })
+  const normalized = [primary, ...rest].join('-')
+  if (rest.length > 0) return normalized
+  return (
+    PREFERRED_LOCALE[primary] ??
+    languageOptions.find((l) => l.code.split('-')[0] === primary)?.code ??
+    primary
+  )
+}
+
+/**
+ * What decides "same language": the primary subtag ("bn-BD" and "bn-IN" are both Bangla, "en-US"
+ * and "en-GB" both English), except Chinese: traditional (zh-TW / zh-HK / zh-Hant) and simplified
+ * differ, and Cantonese ("yue") is its own language.
+ */
+export function languageKey(input: string): string {
+  const locale = normalizeLocale(input)
+  const [primary = '', ...rest] = locale.split('-')
+  if (primary === 'zh') {
+    const traditional = rest.includes('Hant') || rest.some((part) => TRADITIONAL_REGIONS.has(part))
+    return traditional ? 'zh-Hant' : 'zh'
+  }
+  return primary
+}
+
+export function sameLanguage(a: string, b: string): boolean {
+  return languageKey(a) === languageKey(b)
+}
+
+/**
+ * The code the TransVoice API gets as src_lang / tgt_lang: the bare language ("bn", "en"), as
+ * the API's contract examples and defaults ("bn") show. Never a locale.
+ */
 export function toApiLang(locale: string): string {
-  return locale.split('-')[0] ?? locale
+  return languageKey(locale).split('-')[0]!
 }

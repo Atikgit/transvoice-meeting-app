@@ -1,5 +1,10 @@
 import 'server-only'
-import { languageOptions, toApiLang } from '@/lib/transvoice/languages'
+import {
+  languageOptions,
+  normalizeLocale,
+  sameLanguage,
+  toApiLang,
+} from '@/lib/transvoice/languages'
 import { getVoiceName, type VoiceGender } from '@/lib/transvoice/voices'
 import {
   TransVoiceApiError,
@@ -14,7 +19,7 @@ const whisperCode = new Map(languageOptions.map((l) => [l.code, l.whisper]))
 
 /** API source language for the speaker: the Whisper code ("fil-PH" → "tl"), else "auto". */
 export function sourceLang(spokenLang: string): string {
-  return whisperCode.get(spokenLang) ?? 'auto'
+  return whisperCode.get(normalizeLocale(spokenLang)) ?? 'auto'
 }
 
 /** Listeners grouped by target locale; listeners who share the speaker's language are left out. */
@@ -22,11 +27,11 @@ export function groupListeners(
   participants: { userId: string; listenLang: string }[],
   speakerSpokenLang: string,
 ): Map<string, string[]> {
-  const speakerApi = toApiLang(speakerSpokenLang)
   const groups = new Map<string, string[]>()
   for (const { userId, listenLang } of participants) {
-    if (toApiLang(listenLang) === speakerApi) continue // same language: original audio only
-    groups.set(listenLang, [...(groups.get(listenLang) ?? []), userId])
+    if (sameLanguage(listenLang, speakerSpokenLang)) continue // same language: original audio only
+    const target = normalizeLocale(listenLang) // "en", "en_us", "en-US" are one group
+    groups.set(target, [...(groups.get(target) ?? []), userId])
   }
   return groups
 }
@@ -105,7 +110,7 @@ export async function translateForListeners({
         audio: audioBase64,
         srcLang: sourceLang(spokenLang),
         tgtLang: toApiLang(lang),
-        azureVoice: getVoiceName(lang, voiceGender),
+        azureVoice: getVoiceName(normalizeLocale(lang), voiceGender),
         sessionId,
         speakerId,
       })
