@@ -1,8 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useConnectionState, useLocalParticipant } from '@livekit/components-react'
-import { Track } from 'livekit-client'
+import {
+  useConnectionState,
+  useLocalParticipant,
+  useRemoteParticipants,
+} from '@livekit/components-react'
+import { Track, type RemoteAudioTrack } from 'livekit-client'
 import {
   enableTranslationDebug,
   lastUtteranceSamples,
@@ -11,7 +15,7 @@ import {
 import { useMicLevel } from '@/features/translation/useMicLevel'
 import { uploadUtterance } from '@/features/translation/useLiveTranslation'
 import type { TranslationStatus } from '@/features/translation/useTranslationStatus'
-import { audioContextState } from '@/features/translation/web-audio'
+import { audioContextState, playTestBeep } from '@/features/translation/web-audio'
 
 const ago = (at: number | undefined, now: number) =>
   at === undefined ? '—' : `${Math.max(0, Math.round((now - at) / 1000))} s ago`
@@ -51,6 +55,7 @@ export function DebugOverlay({
 }) {
   const connection = useConnectionState()
   const { localParticipant } = useLocalParticipant()
+  const remotes = useRemoteParticipants()
   const d = useTranslationDebug()
   const [now, setNow] = useState(() => Date.now())
   const [audio, setAudio] = useState(audioContextState())
@@ -58,10 +63,23 @@ export function DebugOverlay({
   const [blocked, setBlocked] = useState<string[]>([])
   const [test, setTest] = useState<string>('')
   const [testing, setTesting] = useState(false)
+  const [beep, setBeep] = useState('')
 
   const micTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track
     ?.mediaStreamTrack
   const level = useMicLevel(micTrack, true)
+  const localPub = localParticipant.getTrackPublication(Track.Source.Microphone)
+  const localAudio = localPub
+    ? `published, LiveKit ${localPub.isMuted ? 'MUTED' : 'live'}, track ${micTrack?.readyState ?? '?'}${micTrack && !micTrack.enabled ? ', DISABLED' : ''}${micTrack?.muted ? ', MUTED BY SYSTEM' : ''}`
+    : 'NOT published'
+  const remoteAudio = remotes
+    .map((p) => {
+      const pub = p.getTrackPublication(Track.Source.Microphone)
+      if (!pub) return `${p.name || 'Participant'}: no microphone track`
+      const volume = (pub.track as RemoteAudioTrack | undefined)?.getVolume?.()
+      return `${p.name || 'Participant'}: ${pub.isSubscribed ? 'subscribed' : 'NOT subscribed'}, ${pub.isMuted ? 'MUTED' : 'live'}, volume ${volume === undefined ? '?' : volume}`
+    })
+    .join('; ')
 
   useEffect(() => {
     enableTranslationDebug(true)
@@ -155,6 +173,14 @@ export function DebugOverlay({
       `${gateOpen ? 'OPEN' : 'closed'} (session ${d.gate.status}, ${d.gate.remotes + 1} connected, mic ${d.gate.micEnabled ? 'on' : 'MUTED'}${d.gate.playingTranslation ? ', playing' : ''}${d.gate.translationEnabled ? '' : ', translation OFF for this meeting'})`,
     ],
     ['livekit', `${connection}, ${d.gate.remotes} remote participant(s)`],
+    ['my mic track', localAudio],
+    ['their mic tracks', remoteAudio || 'nobody else'],
+    [
+      'last ducking',
+      d.lastDuck
+        ? `${d.lastDuck.volume === 1 ? 'restored to 1' : `lowered to ${d.lastDuck.volume}`} (${d.lastDuck.reason}), ${ago(d.lastDuck.at, now)}`
+        : 'none',
+    ],
     ['translation allowed', allowed],
     [
       'service',
@@ -230,6 +256,18 @@ export function DebugOverlay({
         sends your last sentence (or a tone) through /api/translate; your partner receives the
         result
       </span>
+      <button
+        type="button"
+        onClick={() => void playTestBeep().then(setBeep)}
+        className="mt-1.5 ml-2 rounded border border-cyan-300/40 px-2 py-0.5 text-cyan-200"
+      >
+        Play test beep
+      </button>
+      {beep && (
+        <span data-testid="debug-beep-result" className="ml-2 text-amber-200">
+          {beep}
+        </span>
+      )}
       {test && (
         <p data-testid="debug-test-result" className="mt-1 break-words text-amber-200">
           {test}

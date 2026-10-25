@@ -8,6 +8,7 @@ vi.mock('@livekit/components-react', () => ({
   useLocalParticipant: () => ({
     localParticipant: { getTrackPublication: () => undefined },
   }),
+  useRemoteParticipants: () => [],
 }))
 vi.mock('livekit-client', () => ({ Track: { Source: { Microphone: 'microphone' } } }))
 const uploadUtterance = vi.fn()
@@ -149,6 +150,31 @@ describe('translation debug overlay', () => {
     )
     expect(screen.getByTestId('debug-test-result')).toHaveTextContent('{"error":"Not allowed"}')
     expect(uploadUtterance.mock.calls[1]![0].utterance.samples).toBe(sentence)
+  })
+
+  it('shows my published microphone track, the others’ tracks, the last ducking event and a beep test', async () => {
+    overlay(status())
+    act(() =>
+      setTranslationDebug({
+        lastDuck: { speakerId: 's', volume: 0.15, reason: 'start', at: Date.now() },
+      }),
+    )
+    const panel = screen.getByTestId('debug-overlay')
+    expect(panel).toHaveTextContent('my mic trackNOT published')
+    expect(panel).toHaveTextContent('their mic tracksnobody else')
+    expect(panel).toHaveTextContent('lowered to 0.15 (start)')
+    act(() =>
+      setTranslationDebug({
+        lastDuck: { speakerId: 's', volume: 1, reason: 'ended', at: Date.now() },
+      }),
+    )
+    expect(panel).toHaveTextContent('restored to 1 (ended)')
+    fireEvent.click(screen.getByRole('button', { name: 'Play test beep' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('debug-beep-result')).toHaveTextContent(
+        'blocked (AudioContext none)',
+      ),
+    )
   })
 
   it('records nothing while the overlay is not mounted', () => {

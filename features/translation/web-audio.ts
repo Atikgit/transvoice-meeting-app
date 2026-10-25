@@ -52,6 +52,8 @@ export async function fetchAndDecode(url: string): Promise<AudioBuffer> {
 export function playBuffer(buffer: AudioBuffer): Promise<void> {
   const ctx = audioContext()
   if (!ctx) return Promise.reject(new Error('Web Audio is not available'))
+  // A suspended context accepts start() and then never plays or ends: fail instead of hanging.
+  if (ctx.state !== 'running') return Promise.reject(new Error('Audio is blocked'))
   return new Promise((resolve) => {
     const source = ctx.createBufferSource()
     source.buffer = buffer
@@ -83,4 +85,22 @@ export async function decodeBytes(data: Uint8Array): Promise<AudioBuffer> {
   const ctx = audioContext()
   if (!ctx) throw new Error('Web Audio is not available')
   return ctx.decodeAudioData(data.slice().buffer)
+}
+
+/**
+ * A short 440 Hz beep through the same AudioContext the translated clips use: tells whether sound
+ * can come out of this browser/device at all. Call from a click. Returns what happened.
+ */
+export async function playTestBeep(): Promise<string> {
+  const ok = await unlockAudio()
+  const ctx = audioContext()
+  if (!ctx || !ok) return `blocked (AudioContext ${ctx?.state ?? 'none'})`
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  gain.gain.value = 0.2
+  osc.frequency.value = 440
+  osc.connect(gain).connect(ctx.destination)
+  osc.start()
+  osc.stop(ctx.currentTime + 0.4)
+  return `played (AudioContext ${ctx.state}, sample rate ${ctx.sampleRate})`
 }

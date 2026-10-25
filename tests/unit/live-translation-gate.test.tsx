@@ -8,7 +8,17 @@ const lk = {
 }
 vi.mock('@livekit/components-react', () => ({
   useLocalParticipant: () => ({
-    localParticipant: { getTrackPublication: () => ({ track: { mediaStreamTrack: {} } }) },
+    localParticipant: {
+      getTrackPublication: () => ({
+        track: {
+          mediaStreamTrack: {
+            readyState: 'live',
+            addEventListener: () => {},
+            removeEventListener: () => {},
+          },
+        },
+      }),
+    },
     isMicrophoneEnabled: lk.micEnabled,
   }),
   useRemoteParticipants: () => lk.remotes,

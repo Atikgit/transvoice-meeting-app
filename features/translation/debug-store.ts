@@ -25,6 +25,8 @@ export interface TranslationDebug {
   lastCaption?: { lang: string; at: number }
   lastAudio?: { via: 'url' | 'inline'; status: 'ok' | number | 'error'; ms: number; at: number }
   queue: number
+  /** The last change of a speaker's original-voice volume (translation ducking). */
+  lastDuck?: { speakerId: string; volume: number; reason: string; at: number }
   /** Languages the server translated into for the last utterance (listener languages). */
   listenerLanguages?: string[]
 }

@@ -8,6 +8,7 @@ import { reportLatency } from './latency-beacon'
 import { encodeWav } from '@/lib/translation/wav'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
 import { rememberUtterance, setTranslationDebug } from './debug-store'
+import { useLocalAudioWatch } from './useLocalAudioWatch'
 import { shouldListen } from './vad-gate'
 
 export type TranslationNotice = {
@@ -98,6 +99,7 @@ export function useLiveTranslation({
 
   const micTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track
     ?.mediaStreamTrack
+  useLocalAudioWatch(micTrack, sessionId)
   const listening =
     enabled &&
     !blocked &&

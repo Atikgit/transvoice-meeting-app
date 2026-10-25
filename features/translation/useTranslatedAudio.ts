@@ -9,7 +9,15 @@ import { setTranslationDebug } from './debug-store'
 import { reportLatency } from './latency-beacon'
 import { LatencyTracker, type LatencySample } from './metrics'
 import { PlaybackQueues, type Clip, type OriginalAudioMode } from './playback'
-import { decodeBytes, fetchAndDecode, playBuffer, unlockAudioOnFirstGesture } from './web-audio'
+import {
+  audioIsRunning,
+  decodeBytes,
+  fetchAndDecode,
+  onAudioStateChange,
+  playBuffer,
+  unlockAudioOnFirstGesture,
+} from './web-audio'
+import { reportDiag } from './diag'
 
 /**
  * Receives the server's captions and translated clips (LiveKit data, topics tvx.*) and plays
@@ -75,6 +83,9 @@ export function useTranslatedAudio({
         }
       },
       play: (buffer) => playBuffer(buffer),
+      durationMs: (buffer) => buffer.duration * 1000,
+      // A suspended audio context plays nothing: do not lower the voice that IS coming through.
+      canPlay: () => audioIsRunning(),
       mode: () => modeRef.current,
       setOriginalVolume: (speakerId, volume) => {
         const track = room.remoteParticipants
@@ -85,6 +96,23 @@ export function useTranslatedAudio({
       onPlayingChange: (value) => {
         setPlaying(value)
         setTranslationDebug({ queue: queues.size() })
+      },
+      onDuck: (event) => {
+        setTranslationDebug({ lastDuck: { ...event, at: Date.now() } })
+        // A clip that hung or failed while the original was lowered is worth a line in the log.
+        if (event.reason === 'timeout' || event.reason === 'failed') {
+          reportDiag({ type: 'duck_restored', detail: event.reason, sessionId })
+        }
+      },
+      onDrop: (clip, reason) => {
+        if (reason === 'blocked') {
+          reportDiag({
+            type: 'audio_blocked',
+            detail: 'clip dropped, audio context not running',
+            sessionId,
+          })
+        }
+        void clip
       },
       onStart: (clip) => {
         const endedAt = speechEnds.current.get(clip.utteranceId)
@@ -176,9 +204,22 @@ export function useTranslatedAudio({
 
     room.on(RoomEvent.DataReceived, onData)
     const stopGestureUnlock = unlockAudioOnFirstGesture()
+    // Backgrounded tab / stopped audio context: whatever was lowered goes back to full volume.
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') queues.restoreAll('interrupted')
+    }
+    const onPageHide = () => queues.restoreAll('interrupted')
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', onPageHide)
+    const offContext = onAudioStateChange(() => {
+      if (!audioIsRunning()) queues.restoreAll('interrupted')
+    })
     return () => {
       room.off(RoomEvent.DataReceived, onData)
       stopGestureUnlock()
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', onPageHide)
+      offContext()
       queues.clear()
     }
   }, [room, sessionId])

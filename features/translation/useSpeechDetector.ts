@@ -52,7 +52,13 @@ export function useSpeechDetector({
     if (!track) return
     let cancelled = false
     let splitTimer: ReturnType<typeof setTimeout> | undefined
-    const stream = new MediaStream([track])
+    // The VAD listens to a CLONE of the published microphone track: same capture (no second
+    // getUserMedia), but stopping or disabling the VAD's copy can never end or mute the track
+    // that LiveKit sends to the other person. The clone is always enabled; the gate
+    // (shouldListen) decides when the VAD may listen, e.g. never while the user is muted.
+    const capture = track.clone()
+    capture.enabled = true
+    const stream = new MediaStream([capture])
     setTranslationDebug({ vad: 'loading', vadError: undefined })
 
     void (async () => {
@@ -121,6 +127,7 @@ export function useSpeechDetector({
       cancelled = true
       clearTimeout(splitTimer)
       if (vadRef.current) void retire(vadRef.current)
+      capture.stop() // the clone only
       vadRef.current = null
       setReady(false)
       setTranslationDebug({ vad: 'off', vadListening: false, vadSpeaking: false })

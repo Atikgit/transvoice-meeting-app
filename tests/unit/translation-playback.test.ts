@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { addCaption, captionText } from '@/features/translation/captions'
 import { LatencyTracker } from '@/features/translation/metrics'
 import {
@@ -130,15 +130,20 @@ describe('ducking the speaker’s original audio', () => {
     },
   )
 
-  it('stays ducked between back-to-back clips and only touches that speaker', async () => {
+  it('lowers the voice only while a clip plays: back to full volume between two clips', async () => {
     const h = harness('duck')
     h.queues.enqueue(h.clip('a', 'sp1'))
     h.queues.enqueue(h.clip('b', 'sp1'))
     await h.tick()
     await h.finish()
     await h.tick()
-    const volumes = h.events.filter((e) => e.startsWith('vol:'))
-    expect(volumes).toEqual(['vol:sp1=0.15', 'vol:sp1=0.15'])
+    expect(h.events.filter((e) => e.startsWith('vol:') || e.startsWith('play:'))).toEqual([
+      'vol:sp1=0.15',
+      'play:a',
+      'vol:sp1=1', // a ended: restored before b is even considered
+      'vol:sp1=0.15',
+      'play:b',
+    ])
     await h.finish()
     await h.tick()
     expect(h.events.filter((e) => e.startsWith('vol:')).at(-1)).toBe('vol:sp1=1')
@@ -231,5 +236,129 @@ describe('LatencyTracker', () => {
     t.captionShown('u2', 5000, 4990) // clock skew never gives negative numbers
     t.captionShown('u3', 6000, 6500)
     expect(t.latest()).toEqual({ utteranceId: 'u3', captionMs: 500 })
+  })
+})
+
+describe('every path puts the original voice back (and never lowers it without a clip)', () => {
+  const volumes = (h: ReturnType<typeof harness>) => h.events.filter((e) => e.startsWith('vol:'))
+
+  it('a clip that cannot be decoded, a stale clip and an empty queue never touch the volume', async () => {
+    const h = harness('mute')
+    h.failPrepare('bad')
+    h.queues.enqueue(h.clip('bad'))
+    await h.tick()
+    h.advance(MAX_CLIP_AGE_MS + 1)
+    h.queues.enqueue(h.clip('old', 'sp1', 0))
+    await h.tick()
+    expect(h.events).toContain('drop:bad:failed')
+    expect(h.events).toContain('drop:old:stale')
+    expect(volumes(h)).toEqual([]) // "mute" mode has nothing to mute when no translation plays
+  })
+
+  it('"mute" mode lowers nothing for a direction that has no translated clip', async () => {
+    const h = harness('mute')
+    await h.tick()
+    expect(volumes(h)).toEqual([])
+    expect(h.queues.duckedSpeakers()).toEqual([])
+  })
+
+  it('a clip whose playback fails restores the voice', async () => {
+    const events: string[] = []
+    const queues = new PlaybackQueues<string>({
+      now: () => 0,
+      prepare: async () => 'x',
+      play: async () => {
+        throw new Error('decode error')
+      },
+      setOriginalVolume: (s, v) => events.push(`vol:${s}=${v}`),
+      mode: () => 'duck',
+      onPlayingChange: () => {},
+      onDrop: (_c, r) => events.push(`drop:${r}`),
+    })
+    queues.enqueue({ speakerId: 'sp1', utteranceId: 'a', url: '', receivedAt: 0 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events).toEqual(['vol:sp1=0.15', 'drop:failed', 'vol:sp1=1'])
+    expect(queues.duckedSpeakers()).toEqual([])
+  })
+
+  it('a clip that never ends is abandoned after its length + 3 s and the voice comes back', async () => {
+    vi.useFakeTimers()
+    try {
+      const events: string[] = []
+      const queues = new PlaybackQueues<{ ms: number }>({
+        now: () => 0,
+        prepare: async () => ({ ms: 2000 }),
+        durationMs: (p) => p.ms,
+        play: () => new Promise<void>(() => {}), // a suspended context: never ends
+        setOriginalVolume: (s, v) => events.push(`vol:${s}=${v}`),
+        mode: () => 'mute',
+        onPlayingChange: (p) => events.push(`playing:${p}`),
+        onDrop: (_c, r) => events.push(`drop:${r}`),
+      })
+      queues.enqueue({ speakerId: 'sp1', utteranceId: 'a', url: '', receivedAt: 0 })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(queues.duckedSpeakers()).toEqual(['sp1'])
+      await vi.advanceTimersByTimeAsync(4_900)
+      expect(queues.duckedSpeakers()).toEqual(['sp1']) // still within 2 s + 3 s
+      await vi.advanceTimersByTimeAsync(200)
+      expect(events).toEqual([
+        'vol:sp1=0',
+        'playing:true',
+        'drop:timeout',
+        'vol:sp1=1',
+        'playing:false',
+      ])
+      expect(queues.duckedSpeakers()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a hidden tab or a stopped audio context restores at once, even mid-clip', async () => {
+    const h = harness('mute')
+    h.queues.enqueue(h.clip('a', 'sp1'))
+    h.queues.enqueue(h.clip('b', 'sp2'))
+    await h.tick()
+    expect(h.queues.duckedSpeakers().sort()).toEqual(['sp1', 'sp2'])
+    h.queues.restoreAll('interrupted')
+    await h.tick()
+    expect(h.queues.duckedSpeakers()).toEqual([])
+    expect([...new Set(volumes(h).filter((v) => v.endsWith('=1')))].sort()).toEqual([
+      'vol:sp1=1',
+      'vol:sp2=1',
+    ])
+  })
+
+  it('blocked audio (suspended context): the clip is dropped and the audible voice is NOT lowered', async () => {
+    const events: string[] = []
+    const queues = new PlaybackQueues<string>({
+      now: () => 0,
+      prepare: async () => 'x',
+      play: async () => void events.push('play'),
+      canPlay: () => false,
+      setOriginalVolume: (s, v) => events.push(`vol:${s}=${v}`),
+      mode: () => 'mute',
+      onPlayingChange: () => {},
+      onDrop: (_c, r) => events.push(`drop:${r}`),
+    })
+    queues.enqueue({ speakerId: 'sp1', utteranceId: 'a', url: '', receivedAt: 0 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events).toEqual(['drop:blocked'])
+  })
+
+  it('reports every change for the debug overlay (start, end)', async () => {
+    const ducks: string[] = []
+    const queues = new PlaybackQueues<string>({
+      now: () => 0,
+      prepare: async () => 'x',
+      play: async () => {},
+      setOriginalVolume: () => {},
+      mode: () => 'duck',
+      onPlayingChange: () => {},
+      onDuck: (e) => ducks.push(`${e.volume}:${e.reason}`),
+    })
+    queues.enqueue({ speakerId: 'sp1', utteranceId: 'a', url: '', receivedAt: 0 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(ducks).toEqual(['0.15:start', '1:ended'])
   })
 })
