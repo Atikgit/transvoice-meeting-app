@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocalParticipant, useRemoteParticipants } from '@livekit/components-react'
 import { Track } from 'livekit-client'
 import { DRAIN_RETRY_MS } from '@/lib/draining'
+import { reportLatency } from './latency-beacon'
 import { encodeWav } from '@/lib/translation/wav'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
 import { setTranslationDebug } from './debug-store'
@@ -18,21 +19,26 @@ export type TranslationNotice = {
 } | null
 
 /** Uploads one utterance (POST /api/translate, multipart). */
-export async function uploadUtterance({
-  sessionId,
-  utteranceId,
-  utterance,
-}: {
-  sessionId: string
-  utteranceId: string
-  utterance: Utterance
-}): Promise<Response> {
+export async function uploadUtterance(
+  {
+    sessionId,
+    utteranceId,
+    utterance,
+  }: {
+    sessionId: string
+    utteranceId: string
+    utterance: Utterance
+  },
+  onEncoded?: (encodeMs: number) => void,
+): Promise<Response> {
   const form = new FormData()
+  const encodeStarted = performance.now()
   form.set(
     'audio',
     new Blob([encodeWav(utterance.samples)], { type: 'audio/wav' }),
     'utterance.wav',
   )
+  onEncoded?.(Math.round(performance.now() - encodeStarted))
   form.set('sessionId', sessionId)
   form.set('utteranceId', utteranceId)
   // Wall-clock time the speaker stopped talking (listeners derive latency from it).
@@ -176,8 +182,17 @@ export function useLiveTranslation({
           at: Date.now(),
         },
       })
-      void uploadUtterance({ sessionId, utteranceId, utterance })
+      let encodeMs = 0
+      void uploadUtterance({ sessionId, utteranceId, utterance }, (ms) => (encodeMs = ms))
         .then((res) => {
+          reportLatency({
+            sessionId,
+            utteranceId,
+            kind: 'speak',
+            encodeMs,
+            roundTripMs: Math.round(performance.now() - sentAt),
+            bytes: 44 + utterance.samples.length * 2,
+          })
           setTranslationDebug({
             lastTranslate: {
               status: res.status,

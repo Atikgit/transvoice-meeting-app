@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
   })
   logTranslate({
     sessionId: upload.sessionId,
+    utteranceId: upload.utteranceId,
     audioBytes: upload.audio.length,
     intakeMs: Math.round(contextStartedAt - startedAt),
     contextMs,

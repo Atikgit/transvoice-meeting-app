@@ -18,7 +18,7 @@ async function retire(vad: MicVAD): Promise<void> {
 export interface Utterance {
   /** 16 kHz mono samples in [-1, 1]. */
   samples: Float32Array
-  /** performance.now() when the speaker stopped (latency metrics). */
+  /** performance.now() when the speaker actually stopped talking (before the VAD's silence wait). */
   endedAt: number
 }
 
@@ -88,7 +88,8 @@ export function useSpeechDetector({
             clearTimeout(splitTimer)
             setSpeaking(false)
             setTranslationDebug({ vadSpeaking: false })
-            emit({ samples, endedAt: performance.now() })
+            // The VAD only fires after `redemptionMs` of silence: speech really ended that long ago.
+            emit({ samples, endedAt: performance.now() - VAD_SETTINGS.redemptionMs })
           },
           onVADMisfire: () => {
             clearTimeout(splitTimer)

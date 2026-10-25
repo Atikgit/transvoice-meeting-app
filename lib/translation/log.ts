@@ -6,6 +6,8 @@ import 'server-only'
  */
 export interface TranslateLog {
   sessionId: string
+  /** Random per utterance: joins this line with the clients' latency lines. */
+  utteranceId: string
   audioBytes: number
   /** Auth, rate limit, upload parsing. */
   intakeMs: number
@@ -32,4 +34,32 @@ export interface TranslateLog {
 
 export function logTranslate(entry: TranslateLog): void {
   console.info(JSON.stringify({ event: 'translate', ...entry }))
+}
+
+/**
+ * What a client measured for one utterance (POST /api/latency). Ids are random per session and
+ * utterance; no user id, text or audio. Times are milliseconds.
+ */
+export interface LatencyLog {
+  sessionId: string
+  utteranceId: string
+  kind: 'speak' | 'listen'
+  /** Listener's language (kind listen). */
+  lang?: string
+  /** speak: WAV encoding. */
+  encodeMs?: number
+  /** speak: upload start → answer received (includes the server's totalMs). */
+  roundTripMs?: number
+  bytes?: number
+  /** listen: speech end → caption shown / first sound of the translated clip. */
+  captionMs?: number
+  audioMs?: number
+  /** listen: how the clip arrived. */
+  via?: 'url' | 'inline'
+  /** listen: fetching + decoding the clip. */
+  fetchMs?: number
+}
+
+export function logLatency(entry: LatencyLog): void {
+  console.info(JSON.stringify({ event: 'latency', ...entry }))
 }

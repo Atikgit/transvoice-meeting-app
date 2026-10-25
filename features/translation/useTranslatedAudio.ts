@@ -6,6 +6,7 @@ import { RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client'
 import { parseDataMessage, TOPICS } from '@/lib/translation/messages'
 import { addCaption, type CaptionEntry } from './captions'
 import { setTranslationDebug } from './debug-store'
+import { reportLatency } from './latency-beacon'
 import { LatencyTracker, type LatencySample } from './metrics'
 import { PlaybackQueues, type Clip, type OriginalAudioMode } from './playback'
 import { fetchAndDecode, playBuffer, unlockAudioOnFirstGesture } from './web-audio'
@@ -15,8 +16,10 @@ import { fetchAndDecode, playBuffer, unlockAudioOnFirstGesture } from './web-aud
  * them: per-speaker queue, stale clips dropped, original audio ducked while a clip plays.
  */
 export function useTranslatedAudio({
+  sessionId,
   originalAudioMode,
 }: {
+  sessionId: string
   originalAudioMode: OriginalAudioMode
 }) {
   const room = useRoomContext()
@@ -27,6 +30,8 @@ export function useTranslatedAudio({
   const modeRef = useRef(originalAudioMode)
   const tracker = useRef(new LatencyTracker())
   const speechEnds = useRef(new Map<string, number>())
+  // Per utterance: the caption's language and how long fetching + decoding its clip took.
+  const clipInfo = useRef(new Map<string, { lang?: string; fetchMs?: number }>())
 
   useEffect(() => {
     modeRef.current = originalAudioMode
@@ -39,6 +44,10 @@ export function useTranslatedAudio({
         const started = performance.now()
         try {
           const buffer = await fetchAndDecode(clip.url)
+          clipInfo.current.set(clip.utteranceId, {
+            ...clipInfo.current.get(clip.utteranceId),
+            fetchMs: Math.round(performance.now() - started),
+          })
           setTranslationDebug({
             lastAudio: {
               via: 'url',
@@ -78,6 +87,19 @@ export function useTranslatedAudio({
         if (endedAt !== undefined) {
           tracker.current.audioStarted(clip.utteranceId, endedAt, Date.now())
           setLatency(tracker.current.latest())
+          const sample = tracker.current.get(clip.utteranceId)
+          const info = clipInfo.current.get(clip.utteranceId)
+          reportLatency({
+            sessionId,
+            utteranceId: clip.utteranceId,
+            kind: 'listen',
+            lang: info?.lang,
+            captionMs: sample?.captionMs,
+            audioMs: sample?.audioMs,
+            fetchMs: info?.fetchMs,
+            via: 'url',
+          })
+          clipInfo.current.delete(clip.utteranceId)
         }
       },
     })
@@ -90,6 +112,12 @@ export function useTranslatedAudio({
       if (parsed.topic === TOPICS.caption) {
         const m = parsed.message
         speechEnds.current.set(m.utteranceId, m.speechEndedAt)
+        clipInfo.current.set(m.utteranceId, {
+          ...clipInfo.current.get(m.utteranceId),
+          lang: m.lang,
+        })
+        if (clipInfo.current.size > 50)
+          clipInfo.current.delete(clipInfo.current.keys().next().value!)
         setTranslationDebug({ lastCaption: { lang: m.lang, at: Date.now() } })
         tracker.current.captionShown(m.utteranceId, m.speechEndedAt, Date.now())
         setLatency(tracker.current.latest())
@@ -125,7 +153,7 @@ export function useTranslatedAudio({
       stopGestureUnlock()
       queues.clear()
     }
-  }, [room])
+  }, [room, sessionId])
 
   /** My own transcript, shown to me as the speaker. */
   const addOwnTranscript = (id: string, original: string) =>

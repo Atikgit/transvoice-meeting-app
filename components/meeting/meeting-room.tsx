@@ -297,7 +297,7 @@ function RoomView({
   const session = useRoomState(sessionId, initialState)
   const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
 
-  const audio = useTranslatedAudio({ originalAudioMode })
+  const audio = useTranslatedAudio({ sessionId, originalAudioMode })
   const translation = useLiveTranslation({
     sessionId,
     status: session.state.status,

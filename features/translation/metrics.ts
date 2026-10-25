@@ -24,6 +24,10 @@ export class LatencyTracker {
     this.merge(utteranceId, { audioMs: Math.max(0, Math.round(now - speechEndedAt)) })
   }
 
+  get(utteranceId: string): LatencySample | undefined {
+    return this.samples.get(utteranceId)
+  }
+
   latest(): LatencySample | null {
     return [...this.samples.values()].at(-1) ?? null
   }

@@ -14,6 +14,8 @@ const LIMITS = {
   meeting: { tokens: 30, window: '1 h' },
   call: { tokens: 10, window: '1 m' },
   translate: { tokens: 30, window: '1 m' },
+  // Latency beacons: two per utterance at most (speaker + each listener).
+  latency: { tokens: 120, window: '1 m' },
   // Invite emails: per user and per IP (10/20 an hour), per recipient (3 a day).
   inviteEmailUser: { tokens: 10, window: '1 h' },
   inviteEmailIp: { tokens: 20, window: '1 h' },
