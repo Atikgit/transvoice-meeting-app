@@ -278,6 +278,18 @@ describe('POST /api/translate admission', () => {
     expect((await res.json()).code).toBe('NOT_CONNECTED')
   })
 
+  it('503 (not 403) when LiveKit cannot be asked, and the failure is not remembered', async () => {
+    const session = SESSION()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    listParticipants.mockRejectedValueOnce(new Error('fetch failed'))
+    const failed = await post(upload(session))
+    expect(failed.status).toBe(503)
+    expect((await failed.json()).code).toBe('LIVEKIT_UNAVAILABLE')
+    // Same session, straight away: LiveKit is back, so the next utterance works.
+    const ok = await post(upload(session))
+    expect(ok.status).toBe(200)
+  })
+
   it.each([
     ['SESSION_NOT_LIVE', 409],
     ['NOT_A_PARTICIPANT', 403],

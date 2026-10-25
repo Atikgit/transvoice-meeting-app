@@ -18,7 +18,7 @@ const contextSchema = z.object({
 
 export type TranslationContext = z.infer<typeof contextSchema>
 
-export type ContextError = { status: 403 | 404 | 409 | 500; code: string; error: string }
+export type ContextError = { status: 403 | 404 | 409 | 500 | 503; code: string; error: string }
 
 const ERRORS: Record<string, ContextError> = {
   NO_SESSION: { status: 404, code: 'NO_SESSION', error: 'Unknown session.' },
@@ -49,7 +49,16 @@ export async function loadTranslationContext(
 ): Promise<{ ok: true; context: TranslationContext } | ({ ok: false } & ContextError)> {
   const [{ data, error }, connected] = await Promise.all([
     createAdminClient().rpc('translation_context', { p_session: sessionId, p_speaker: speakerId }),
-    connectedIdentities(sessionId),
+    connectedIdentities(sessionId).catch((e: unknown) => {
+      console.error(
+        JSON.stringify({
+          event: 'translate_error',
+          stage: 'livekit_participants',
+          detail: e instanceof Error ? e.message.slice(0, 120) : 'unknown',
+        }),
+      )
+      return null
+    }),
   ])
   if (error) {
     const known = Object.keys(ERRORS).find((key) => error.message.includes(key))
@@ -57,6 +66,14 @@ export async function loadTranslationContext(
     return {
       ok: false,
       ...(known ? ERRORS[known]! : { status: 500, code: 'FAILED', error: 'Please try again.' }),
+    }
+  }
+  if (!connected) {
+    return {
+      ok: false,
+      status: 503,
+      code: 'LIVEKIT_UNAVAILABLE',
+      error: 'Could not check who is connected. Please try again.',
     }
   }
   const context = contextSchema.parse(data)
