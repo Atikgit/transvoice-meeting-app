@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldListen, VAD_SETTINGS } from '@/features/translation/vad-gate'
+import { clampEndSilence, shouldListen, VAD_SETTINGS } from '@/features/translation/vad-gate'
 
 const live = {
   status: 'live' as const,
@@ -24,9 +24,17 @@ describe('shouldListen (VAD gate)', () => {
     )
   })
 
+  it('the end-of-speech pause is configurable between 300 and 700 ms', () => {
+    expect(clampEndSilence(undefined)).toBe(400)
+    expect(clampEndSilence(350)).toBe(350)
+    expect(clampEndSilence(100)).toBe(300)
+    expect(clampEndSilence(5000)).toBe(700)
+    expect(clampEndSilence(Number.NaN)).toBe(400)
+  })
+
   it('uses the §8 timings', () => {
     expect(VAD_SETTINGS).toMatchObject({
-      redemptionMs: 500,
+      redemptionMs: 400,
       minSpeechMs: 300,
       maxUtteranceMs: 12_000,
     })

@@ -16,9 +16,9 @@ export function shouldListen(c: ListenConditions): boolean {
   )
 }
 
-/** VAD tuning: ~500 ms end-of-speech pause, 300 ms minimum speech, 12 s maximum utterance. */
+/** VAD tuning: 400 ms end-of-speech pause (VAD_END_SILENCE_MS), 300 ms minimum speech, 12 s maximum utterance. */
 export const VAD_SETTINGS = {
-  redemptionMs: 500,
+  redemptionMs: 400,
   minSpeechMs: 300,
   preSpeechPadMs: 300,
   maxUtteranceMs: 12_000,
@@ -28,3 +28,11 @@ export const VAD_SETTINGS = {
 
 /** Where the pinned VAD/ONNX assets are served from (scripts/copy-vad-assets.ts). */
 export const VAD_ASSET_PATH = '/vad/'
+
+/** Allowed range for the end-of-speech pause (the server validates VAD_END_SILENCE_MS the same way). */
+export const END_SILENCE_RANGE = { min: 300, max: 700 } as const
+
+export function clampEndSilence(ms: number | undefined): number {
+  if (ms === undefined || !Number.isFinite(ms)) return VAD_SETTINGS.redemptionMs
+  return Math.min(END_SILENCE_RANGE.max, Math.max(END_SILENCE_RANGE.min, Math.round(ms)))
+}

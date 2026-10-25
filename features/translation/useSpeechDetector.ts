@@ -2,7 +2,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { MicVAD } from '@ricky0123/vad-web'
-import { VAD_ASSET_PATH, VAD_SETTINGS } from './vad-gate'
+import { clampEndSilence, VAD_ASSET_PATH, VAD_SETTINGS } from './vad-gate'
 import { setTranslationDebug } from './debug-store'
 import { sharedAudioContext } from './web-audio'
 
@@ -32,9 +32,12 @@ export function useSpeechDetector({
   track,
   listening,
   onUtterance,
+  endSilenceMs,
 }: {
   track: MediaStreamTrack | undefined
   listening: boolean
+  /** Silence that ends an utterance (VAD_END_SILENCE_MS, 300–700; default 400). */
+  endSilenceMs?: number
   onUtterance: (utterance: Utterance) => void
 }) {
   const vadRef = useRef<MicVAD | null>(null)
@@ -42,6 +45,7 @@ export function useSpeechDetector({
   const [speaking, setSpeaking] = useState(false)
   const [ready, setReady] = useState(false)
   const emit = useEffectEvent(onUtterance)
+  const redemptionMs = clampEndSilence(endSilenceMs)
 
   // Create the VAD for this microphone track.
   useEffect(() => {
@@ -62,7 +66,7 @@ export function useSpeechDetector({
           audioContext: sharedAudioContext() ?? undefined,
           startOnLoad: false,
           submitUserSpeechOnPause: false,
-          redemptionMs: VAD_SETTINGS.redemptionMs,
+          redemptionMs,
           minSpeechMs: VAD_SETTINGS.minSpeechMs,
           preSpeechPadMs: VAD_SETTINGS.preSpeechPadMs,
           positiveSpeechThreshold: VAD_SETTINGS.positiveSpeechThreshold,
@@ -89,7 +93,7 @@ export function useSpeechDetector({
             setSpeaking(false)
             setTranslationDebug({ vadSpeaking: false })
             // The VAD only fires after `redemptionMs` of silence: speech really ended that long ago.
-            emit({ samples, endedAt: performance.now() - VAD_SETTINGS.redemptionMs })
+            emit({ samples, endedAt: performance.now() - redemptionMs })
           },
           onVADMisfire: () => {
             clearTimeout(splitTimer)
@@ -121,7 +125,7 @@ export function useSpeechDetector({
       setReady(false)
       setTranslationDebug({ vad: 'off', vadListening: false, vadSpeaking: false })
     }
-  }, [track])
+  }, [track, redemptionMs])
 
   // Start / pause with the gate (pausing drops any partial utterance). MicVAD throws on pause()
   // before its first start(), and start() must wait until the model has loaded.

@@ -77,6 +77,8 @@ export interface MeetingRoomProps {
   /** Host's balance (minutes) and label. */
   balance?: number
   minutesLabel?: string
+  /** VAD_END_SILENCE_MS from the server environment (300–700, default 400). */
+  vadEndSilenceMs?: number
   /** ?debug=1 by an allow-listed user (or in development): show the translation overlay. */
   debug?: boolean
   /** Camera / mic choice from the lobby. */
@@ -268,6 +270,7 @@ function RoomView({
   mediaProblem,
   onMediaProblemHandled,
   debug = false,
+  vadEndSilenceMs,
 }: MeetingRoomProps & {
   mediaProblem: MediaProblem | null
   onMediaProblemHandled: () => void
@@ -302,6 +305,7 @@ function RoomView({
     sessionId,
     status: session.state.status,
     enabled: translationEnabled,
+    endSilenceMs: vadEndSilenceMs,
     playingTranslation: audio.playing, // echo safety: never listen while a clip plays
     onTranscript: audio.addOwnTranscript,
   })

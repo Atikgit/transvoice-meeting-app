@@ -24,6 +24,13 @@ describe('parseServerEnv', () => {
     expect(env.RECONNECT_GRACE_SEC).toBe(30)
   })
 
+  it('VAD_END_SILENCE_MS defaults to 400 and must stay within 300-700', () => {
+    expect(parseServerEnv({ ...TEST_ENV }).VAD_END_SILENCE_MS).toBe(400)
+    expect(parseServerEnv({ ...TEST_ENV, VAD_END_SILENCE_MS: '650' }).VAD_END_SILENCE_MS).toBe(650)
+    expect(() => parseServerEnv({ ...TEST_ENV, VAD_END_SILENCE_MS: '200' })).toThrow()
+    expect(() => parseServerEnv({ ...TEST_ENV, VAD_END_SILENCE_MS: '900' })).toThrow()
+  })
+
   it('fails fast listing every missing secret', () => {
     const { SUPABASE_SERVICE_ROLE_KEY: _a, TRANSVOICE_MASTER_API_KEY: _b, ...partial } = TEST_ENV
     expect(() => parseServerEnv(partial)).toThrow(

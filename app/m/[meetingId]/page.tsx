@@ -83,6 +83,7 @@ export default async function MeetingPage({
       initialState={initialState}
       balance={balance ? availableMinutes(balance) : 0}
       minutesLabel={balance ? minutesLabel(balance) : undefined}
+      vadEndSilenceMs={serverEnv().VAD_END_SILENCE_MS}
       debug={
         query.debug === '1' &&
         (process.env.NODE_ENV !== 'production' ||

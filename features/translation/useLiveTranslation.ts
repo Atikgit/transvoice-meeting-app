@@ -72,6 +72,7 @@ export function useLiveTranslation({
   status,
   playingTranslation = false,
   enabled = true,
+  endSilenceMs,
   onTranscript,
 }: {
   sessionId: string
@@ -79,6 +80,8 @@ export function useLiveTranslation({
   playingTranslation?: boolean
   /** False while translation is not available (beta gate): the VAD stays off. */
   enabled?: boolean
+  /** Silence that ends an utterance (VAD_END_SILENCE_MS). */
+  endSilenceMs?: number
   /** The speaker's own transcript of an utterance. */
   onTranscript?: (utteranceId: string, original: string) => void
 }) {
@@ -171,6 +174,7 @@ export function useLiveTranslation({
   const detector = useSpeechDetector({
     track: micTrack,
     listening,
+    endSilenceMs,
     onUtterance: (utterance) => {
       const utteranceId = crypto.randomUUID()
       const sentAt = performance.now()

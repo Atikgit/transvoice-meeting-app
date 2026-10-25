@@ -54,6 +54,10 @@ const serverSchema = z.object({
   // ping always runs and logs whether the API is reachable from this container.
   TRANSVOICE_WARMUP_SEC: z.coerce.number().int().min(0).default(30),
 
+  // How long the microphone must be silent before an utterance is sent (ms). Shorter = lower
+  // latency but sentences may be cut at a breath; longer = safer for slow speakers.
+  VAD_END_SILENCE_MS: z.coerce.number().int().min(300).max(700).default(400),
+
   // Rate limiting (Phase 2+)
   UPSTASH_REDIS_REST_URL: z.url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
