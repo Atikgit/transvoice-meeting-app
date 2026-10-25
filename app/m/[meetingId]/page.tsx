@@ -7,6 +7,7 @@ import { availableMinutes, minutesLabel } from '@/lib/billing/balance'
 import { ensureRoom } from '@/lib/livekit/rooms'
 import { serverEnv } from '@/lib/env'
 import { loadMeetingContext } from '@/lib/meetings/load'
+import { logRoom } from '@/lib/meetings/log'
 import { betaAllows } from '@/lib/translation/gate'
 import type { RoomState } from '@/lib/meetings/room-state'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -42,6 +43,12 @@ export default async function MeetingPage({
     )
   }
 
+  logRoom(session.created ? 'session_created' : 'session_reused', {
+    meetingId: context.meeting.id,
+    sessionId: session.session_id,
+    role: context.role,
+    status: session.status,
+  })
   const initialState: RoomState = {
     status: session.status === 'live' ? 'live' : 'ready',
     startedAt: session.started_at,

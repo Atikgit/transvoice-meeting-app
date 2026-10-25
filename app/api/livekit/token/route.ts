@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { serverEnv } from '@/lib/env'
 import { createParticipantToken, roomNameFor } from '@/lib/livekit/server'
 import type { MeetingRole } from '@/lib/meetings/load'
+import { logRoom } from '@/lib/meetings/log'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 
@@ -52,6 +53,13 @@ export async function GET(request: NextRequest) {
     },
   })
 
+  logRoom('token_issued', {
+    meetingId: admitted.meeting_id,
+    sessionId: sessionId.data,
+    room,
+    role,
+    status: admitted.status,
+  })
   return NextResponse.json(
     { token, url: serverEnv().NEXT_PUBLIC_LIVEKIT_URL, room, role, status: admitted.status },
     { headers: { 'Cache-Control': 'no-store' } },
