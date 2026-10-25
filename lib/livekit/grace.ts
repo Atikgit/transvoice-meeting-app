@@ -3,6 +3,7 @@ import { serverEnv } from '@/lib/env'
 import { publishRoomState } from '@/lib/livekit/rooms'
 import { roomNameFor, roomService } from '@/lib/livekit/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { nullableArg } from '@/lib/supabase/database.types'
 
 /**
  * Rule 5 reconnect grace. LiveKit's client reconnects by itself and keeps a participant's slot
@@ -43,7 +44,7 @@ export function defaultGraceDeps(): GraceDeps {
     endSession: async (id, reason) => {
       const { data, error } = await admin.rpc('end_call_session', {
         p_session: id,
-        p_user: null,
+        p_user: nullableArg<string>(null), // null: the server itself ends it
         p_reason: reason,
       })
       if (error) throw new Error(error.message)
@@ -72,7 +73,12 @@ export async function checkAfterGrace(
   return 'ended'
 }
 
-const timers = new Map<string, ReturnType<typeof setTimeout>>()
+// On globalThis: the shutdown hook (instrumentation) and the webhook route can be separate
+// module instances in Next.js.
+const timersHolder = globalThis as unknown as {
+  __tvGraceTimers?: Map<string, ReturnType<typeof setTimeout>>
+}
+const timers = (timersHolder.__tvGraceTimers ??= new Map())
 
 /** (Re)starts the grace timer for a session after a participant left. */
 export function scheduleGraceCheck(sessionId: string, deps: GraceDeps = defaultGraceDeps()) {
@@ -93,4 +99,10 @@ export function scheduleGraceCheck(sessionId: string, deps: GraceDeps = defaultG
 
 export function pendingGraceChecks(): number {
   return timers.size
+}
+
+/** Graceful shutdown: drops pending timers. The sweeper re-checks open sessions after a restart. */
+export function clearGraceChecks() {
+  for (const timer of timers.values()) clearTimeout(timer)
+  timers.clear()
 }

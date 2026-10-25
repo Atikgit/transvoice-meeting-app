@@ -3,11 +3,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocalParticipant, useRemoteParticipants } from '@livekit/components-react'
 import { Track } from 'livekit-client'
+import { DRAIN_RETRY_MS } from '@/lib/draining'
 import { encodeWav } from '@/lib/translation/wav'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
 import { shouldListen } from './vad-gate'
 
-export type TranslationNotice = { tone: 'info' | 'error'; text: string } | null
+export type TranslationNotice = {
+  tone: 'info' | 'error'
+  text: string
+  /** PAYER_NO_MINUTES: the room offers Subscribe (payer) or Message host (everyone else). */
+  code?: 'PAYER_NO_MINUTES'
+  payerIsSpeaker?: boolean
+} | null
 
 /** Uploads one utterance (POST /api/translate, multipart). */
 export async function uploadUtterance({
@@ -29,7 +36,22 @@ export async function uploadUtterance({
   form.set('utteranceId', utteranceId)
   // Wall-clock time the speaker stopped talking (listeners derive latency from it).
   form.set('clientTs', String(Math.round(Date.now() - (performance.now() - utterance.endedAt))))
-  return fetch('/api/translate', { method: 'POST', body: form })
+  const send = () => fetch('/api/translate', { method: 'POST', body: form })
+  const res = await send()
+  // The server is restarting (SIGTERM drain): one retry, which lands on the new container.
+  if (res.status === 503 && (await isRetryable(res))) {
+    await new Promise((resolve) => setTimeout(resolve, DRAIN_RETRY_MS))
+    return send()
+  }
+  return res
+}
+
+async function isRetryable(res: Response): Promise<boolean> {
+  const body = (await res
+    .clone()
+    .json()
+    .catch(() => null)) as { retryable?: boolean } | null
+  return body?.retryable === true
 }
 
 /**
@@ -86,22 +108,34 @@ export function useLiveTranslation({
       if (body.original) transcriptRef.current?.(utteranceId, body.original)
       setNotice(
         body.unavailable
-          ? { tone: 'error', text: 'Translation is temporarily unavailable.' }
+          ? { tone: 'error', text: 'Translation is temporarily unavailable. It resumes by itself.' }
           : null,
       )
       return
     }
-    const body = (await res.json().catch(() => ({}))) as { code?: string; error?: string }
+    const body = (await res.json().catch(() => ({}))) as {
+      code?: string
+      error?: string
+      payerIsSpeaker?: boolean
+    }
     if (body.code === 'BETA') {
       setBlocked({ tone: 'info', text: body.error ?? 'Live translation is in private beta.' })
     } else if (body.code === 'PAYER_NO_MINUTES') {
-      setNotice({ tone: 'error', text: body.error ?? 'Translation paused: no minutes left.' })
+      setNotice({
+        tone: 'error',
+        text: body.error ?? "The host's minutes have run out. Translation is paused.",
+        code: 'PAYER_NO_MINUTES',
+        payerIsSpeaker: body.payerIsSpeaker === true,
+      })
       setPaused(true)
       setTimeout(() => setPaused(false), 60_000) // re-check the balance after a minute
     } else if (res.status === 429) {
       setNotice({ tone: 'info', text: 'Speaking fast: some phrases were skipped.' })
     } else if (res.status >= 500) {
-      setNotice({ tone: 'error', text: 'Translation is temporarily unavailable.' })
+      setNotice({
+        tone: 'error',
+        text: 'Translation is temporarily unavailable. It resumes by itself.',
+      })
     }
   }
 

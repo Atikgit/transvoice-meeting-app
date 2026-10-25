@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { DRAIN_RETRY_MS, isDraining } from '@/lib/draining'
 import { serverEnv } from '@/lib/env'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { loadTranslationContext } from '@/lib/translation/context'
@@ -15,6 +16,13 @@ import { getSessionUser } from '@/lib/supabase/server'
  * No billing here: the Phase 3 minute meter bills connected time.
  */
 export async function POST(request: NextRequest) {
+  // Shutting down (SIGTERM): requests already running finish, new ones are told to retry.
+  if (isDraining()) {
+    return NextResponse.json(
+      { code: 'DRAINING', error: 'The server is restarting. Retrying…', retryable: true },
+      { status: 503, headers: { 'Retry-After': String(DRAIN_RETRY_MS / 1000) } },
+    )
+  }
   const startedAt = performance.now()
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 })
@@ -43,7 +51,15 @@ export async function POST(request: NextRequest) {
     allowlist: serverEnv().TRANSLATION_BETA_ALLOWLIST,
   })
   if (!gate.ok) {
-    return NextResponse.json({ code: gate.code, error: gate.error }, { status: gate.status })
+    return NextResponse.json(
+      {
+        code: gate.code,
+        error: gate.error,
+        // Lets the room offer "Subscribe" to the payer and "Message host" to everyone else.
+        payerIsSpeaker: context.speaker.payerId === user.id,
+      },
+      { status: gate.status },
+    )
   }
   const groups = groupListeners(context.participants, context.speaker.spokenLang)
   // Same-language listeners only: nothing to translate (original audio at full volume).

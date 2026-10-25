@@ -58,6 +58,9 @@ const serverSchema = z.object({
   BILLING_MODE: z.enum(['wallclock']).default('wallclock'),
   LANG_MULTIPLIER_ENABLED: z.stringbool().default(true),
   RECONNECT_GRACE_SEC: z.coerce.number().int().positive().default(60),
+  // Sweeper (lib/sweeper.ts): how often stale sessions, open segments and ringing calls are
+  // cleaned up. 0 disables it.
+  SWEEP_INTERVAL_SEC: z.coerce.number().int().min(0).default(60),
   // The free trial amount lives in the database (private.app_settings), not here.
 
   // Signup country (analytics). Without the salt no IP hash is stored; without the GeoLite2

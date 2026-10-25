@@ -74,6 +74,10 @@ export class MemoryAudioCache implements AudioCache {
 export class RedisAudioCache implements AudioCache {
   constructor(private readonly redis: Redis) {}
 
+  async close() {
+    await this.redis.quit().catch(() => this.redis.disconnect())
+  }
+
   async put(id: string, entry: CachedAudio, ttlSec: number) {
     const key = `tvx:tts:${id}`
     await this.redis
@@ -103,4 +107,11 @@ export function audioCache(): AudioCache {
       : new MemoryAudioCache()
   }
   return cache
+}
+
+/** Graceful shutdown: closes the Redis connection, if one was opened. */
+export async function closeAudioCache() {
+  const current = cache
+  cache = undefined
+  if (current instanceof RedisAudioCache) await current.close()
 }
