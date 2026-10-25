@@ -789,14 +789,10 @@ export type Database = {
         }
         Returns: {
           expires_at: string
-          reused: boolean
           invitation_id: string
           meeting_id: string
+          reused: boolean
         }[]
-      }
-      revoke_invitation: {
-        Args: { p_token_hash: string; p_user: string }
-        Returns: boolean
       }
       create_meeting: {
         Args: { p_title?: string; p_user: string }
@@ -887,6 +883,10 @@ export type Database = {
       resolve_payer: {
         Args: { p_meeting: string; p_user: string }
         Returns: string
+      }
+      revoke_invitation: {
+        Args: { p_token_hash: string; p_user: string }
+        Returns: boolean
       }
       set_participant_langs: {
         Args: {

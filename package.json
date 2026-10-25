@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "load:translate": "vitest run --config vitest.load.config.mts",
-    "db:types": "supabase gen types typescript --linked --schema public > lib/supabase/database.generated.ts && prettier --write lib/supabase/database.generated.ts",
+    "db:types": "pnpm dlx supabase gen types typescript --linked --schema public > lib/supabase/database.generated.ts.tmp && mv lib/supabase/database.generated.ts.tmp lib/supabase/database.generated.ts && prettier --write lib/supabase/database.generated.ts",
     "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/gen-icons.ts",
     "auth:templates": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/push-auth-templates.ts",
     "mail:test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=.env.production scripts/mail-test.ts",
