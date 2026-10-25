@@ -65,12 +65,19 @@ export async function POST(request: NextRequest) {
       meetingId: call.meeting_id,
       callerName: caller?.full_name || 'Your partner',
       expiresAt: call.expires_at!,
+      fromHost: call.callee_id !== null && user.id === (await hostOf(admin, call.meeting_id)),
     },
   })
+  console.info(JSON.stringify({ event: 'call', action: 'ringing', sessionId: call.session_id }))
   return NextResponse.json({
     mode: 'ringing',
     sessionId: call.session_id,
     meetingId: call.meeting_id,
     expiresAt: call.expires_at,
   })
+}
+
+async function hostOf(admin: ReturnType<typeof createAdminClient>, meetingId: string) {
+  const { data } = await admin.from('meetings').select('owner_id').eq('id', meetingId).maybeSingle()
+  return data?.owner_id
 }

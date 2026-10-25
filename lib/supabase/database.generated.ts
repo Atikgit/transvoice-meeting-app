@@ -834,6 +834,7 @@ export type Database = {
           caller_id: string
           caller_name: string
           expires_at: string
+          from_host: boolean
           meeting_id: string
           session_id: string
         }[]

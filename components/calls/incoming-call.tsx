@@ -12,13 +12,25 @@ interface IncomingCall {
   meetingId: string
   callerName: string
   expiresAt: string
+  /** The host is calling their guest (else a guest is calling their sponsor). */
+  fromHost?: boolean
 }
+
+/** A ring that Realtime did not deliver is found by polling within this long. */
+export const INCOMING_POLL_MS = 3000
 
 /**
  * Rings for calls to me (Rule 3): the sponsor sees who is calling and accepts or declines.
  * The call is missed after 30 s.
  */
-export function IncomingCallListener({ userId }: { userId: string }) {
+export function IncomingCallListener({
+  userId,
+  currentMeetingId,
+}: {
+  userId: string
+  /** On a meeting's lobby / room page: a call for that very meeting is not shown (you are there). */
+  currentMeetingId?: string
+}) {
   const router = useRouter()
   const [call, setCall] = useState<IncomingCall | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -27,21 +39,41 @@ export function IncomingCallListener({ userId }: { userId: string }) {
 
   useUserChannel(userId, {
     incoming_call: (payload) => {
+      if (payload.meetingId === currentMeetingId) return
       setError(undefined)
       setCall(payload)
     },
     call_cancelled: ({ sessionId }) => setCall((c) => (c?.sessionId === sessionId ? null : c)),
   })
 
-  // A call that started ringing before this page opened.
+  // Calls that started ringing before this page opened, or whose Realtime event was lost:
+  // asked once now and then every 3 s. Realtime stays the fast path; this is the guarantee.
   useEffect(() => {
-    void fetch('/api/calls/incoming', { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : { calls: [] }))
-      .then(({ calls }: { calls: IncomingCall[] }) => {
-        if (calls[0]) setCall(calls[0])
-      })
-      .catch(() => {})
-  }, [])
+    let alive = true
+    const poll = () =>
+      fetch('/api/calls/incoming', { cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : { calls: [] }))
+        .then(({ calls }: { calls: IncomingCall[] }) => {
+          if (!alive) return
+          const first = calls.find((c) => c.meetingId !== currentMeetingId)
+          if (first) {
+            setCall((current) => {
+              if (current?.sessionId !== first.sessionId)
+                console.debug('[calls] incoming call found by polling')
+              // An expired ring that is still in state must not hide a new one.
+              return current && secondsUntil(current.expiresAt, Date.now()) > 0 ? current : first
+            })
+          }
+        })
+        .catch(() => {})
+    const first = setTimeout(() => void poll(), 0)
+    const timer = setInterval(() => void poll(), INCOMING_POLL_MS)
+    return () => {
+      alive = false
+      clearTimeout(first)
+      clearInterval(timer)
+    }
+  }, [currentMeetingId])
 
   useEffect(() => {
     if (!call) return
@@ -74,7 +106,10 @@ export function IncomingCallListener({ userId }: { userId: string }) {
           {call.callerName} is calling
         </p>
         <p className="mt-1 text-sm text-slate-400">
-          The call is billed to your minutes while you sponsor them. Missed in {left} s.
+          {call.fromHost
+            ? `Accepting joins ${call.callerName}'s meeting.`
+            : 'The call is billed to your minutes while you sponsor them.'}{' '}
+          Missed in {left} s.
         </p>
         {error && (
           <p role="alert" className="mt-3 text-sm text-rose-300">

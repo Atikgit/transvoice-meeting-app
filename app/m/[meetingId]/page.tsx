@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { IncomingCallListener } from '@/components/calls/incoming-call'
 import { MeetingRoom } from '@/components/meeting/meeting-room'
 import { RoomNotice } from '@/components/meeting/room-notice'
 import { currentBalance } from '@/lib/auth/account'
@@ -76,27 +77,30 @@ export default async function MeetingPage({
   const balance = context.role === 'host' ? await currentBalance(context.userId) : null
 
   return (
-    <MeetingRoom
-      meetingId={context.meeting.id}
-      sessionId={session.session_id}
-      userId={context.userId}
-      role={context.role}
-      roomName={context.meeting.roomName}
-      title={context.meeting.title ?? 'Translated meeting'}
-      displayName={context.profile.fullName}
-      originalAudioMode={context.profile.originalAudioMode}
-      translationEnabled={translationEnabled}
-      spokenLang={stored?.spoken_lang ?? context.profile.spokenLang}
-      listenLang={stored?.listen_lang ?? context.profile.listenLang}
-      initialState={initialState}
-      balance={balance ? availableMinutes(balance) : 0}
-      minutesLabel={balance ? minutesLabel(balance) : undefined}
-      vadEndSilenceMs={serverEnv().VAD_END_SILENCE_MS}
-      // Any signed-in participant of the meeting may open the overlay: it shows only their own
-      // browser's state and what the server stores about this session.
-      debug={query.debug === '1'}
-      initialCamera={query.camera !== 'off'}
-      initialMic={query.mic !== 'off'}
-    />
+    <>
+      <IncomingCallListener userId={context.userId} currentMeetingId={context.meeting.id} />
+      <MeetingRoom
+        meetingId={context.meeting.id}
+        sessionId={session.session_id}
+        userId={context.userId}
+        role={context.role}
+        roomName={context.meeting.roomName}
+        title={context.meeting.title ?? 'Translated meeting'}
+        displayName={context.profile.fullName}
+        originalAudioMode={context.profile.originalAudioMode}
+        translationEnabled={translationEnabled}
+        spokenLang={stored?.spoken_lang ?? context.profile.spokenLang}
+        listenLang={stored?.listen_lang ?? context.profile.listenLang}
+        initialState={initialState}
+        balance={balance ? availableMinutes(balance) : 0}
+        minutesLabel={balance ? minutesLabel(balance) : undefined}
+        vadEndSilenceMs={serverEnv().VAD_END_SILENCE_MS}
+        // Any signed-in participant of the meeting may open the overlay: it shows only their own
+        // browser's state and what the server stores about this session.
+        debug={query.debug === '1'}
+        initialCamera={query.camera !== 'off'}
+        initialMic={query.mic !== 'off'}
+      />
+    </>
   )
 }

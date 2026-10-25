@@ -52,8 +52,47 @@ const drain = (user: string) =>
   db.query(`select public.debit_minutes($1, $2, 'test')`, [user, FREE_TRIAL_MINUTES])
 
 describe('create_call', () => {
-  it('host calls directly (no ringing)', async () => {
-    expect(await call(host)).toMatchObject({ mode: 'direct', session_id: null })
+  it('the host’s Call rings the guest of the meeting (evidence: in production nobody was ever rung)', async () => {
+    const first = await call(host)
+    expect(first).toMatchObject({ mode: 'ringing', callee_id: guest, meeting_id: meeting })
+    expect(await status(first.session_id!)).toBe('ringing')
+    expect((await call(host)).session_id).toBe(first.session_id) // repeated presses reuse it
+    const incoming = await db.query<{ from_host: boolean; caller_name: string }>(
+      'select * from public.incoming_calls($1)',
+      [guest],
+    )
+    expect(incoming.rows).toEqual([
+      expect.objectContaining({ from_host: true, caller_name: 'Host' }),
+    ])
+  })
+
+  it('the host’s Call still rings when the host is already in the open room', async () => {
+    await db.query('select * from public.open_call_session($1, $2)', [meeting, host])
+    const ring = await call(host)
+    expect(ring).toMatchObject({ mode: 'ringing', callee_id: guest })
+    // The guest accepts: they land in the host’s open session, no second session appears.
+    const accepted = await answer(ring.session_id!, guest, true)
+    expect(accepted.outcome).toBe('accepted')
+    const open = await db.query<{ n: number }>(
+      `select count(*)::int n from public.call_sessions where meeting_id = $1 and status in ('ready','live')`,
+      [meeting],
+    )
+    expect(open.rows[0]!.n).toBe(1)
+  })
+
+  it('a meeting nobody has joined yet has nobody to ring: the host goes straight to the lobby', async () => {
+    const alone = (await db.query<{ id: string }>(`select public.create_meeting($1) id`, [host]))
+      .rows[0]!.id
+    const result = await db.query<{ mode: string }>('select * from public.create_call($1, $2)', [
+      alone,
+      host,
+    ])
+    expect(result.rows[0]!.mode).toBe('direct')
+  })
+
+  it('the guest’s Call joins an open session instead of ringing the host in the room', async () => {
+    await db.query('select * from public.open_call_session($1, $2)', [meeting, host])
+    expect(await call(guest)).toMatchObject({ mode: 'join' })
   })
 
   it('a sponsored guest rings the sponsor; repeated presses reuse the ringing call', async () => {

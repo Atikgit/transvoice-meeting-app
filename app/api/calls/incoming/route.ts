@@ -18,6 +18,7 @@ export async function GET() {
         meetingId: c.meeting_id,
         callerName: c.caller_name,
         expiresAt: c.expires_at,
+        fromHost: c.from_host,
       })),
     },
     { headers: { 'Cache-Control': 'no-store' } },

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { IncomingCallListener } from '@/components/calls/incoming-call'
 import { Lobby } from '@/components/meeting/lobby'
 import { loadMeetingContext } from '@/lib/meetings/load'
 
@@ -11,12 +12,15 @@ export default async function LobbyPage({ params }: { params: Promise<{ meetingI
   if (!context) notFound()
 
   return (
-    <Lobby
-      meetingId={context.meeting.id}
-      role={context.role}
-      defaultName={context.profile.fullName}
-      spokenLang={context.profile.spokenLang}
-      listenLang={context.profile.listenLang}
-    />
+    <>
+      <Lobby
+        meetingId={context.meeting.id}
+        role={context.role}
+        defaultName={context.profile.fullName}
+        spokenLang={context.profile.spokenLang}
+        listenLang={context.profile.listenLang}
+      />
+      <IncomingCallListener userId={context.userId} currentMeetingId={context.meeting.id} />
+    </>
   )
 }

@@ -27,27 +27,38 @@ vi.mock('@/lib/supabase/admin', () => ({
 }))
 vi.mock('@/lib/supabase/server', () => ({ getSessionUser }))
 
-// Browser side: capture the user channel handlers.
+// Browser side: capture the user channel handlers and its status callback.
 const channelHandlers: Record<string, (msg: { payload: unknown }) => void> = {}
-vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({
-    channel: () => {
-      const ch = {
-        on: (
-          _type: string,
-          { event }: { event: string },
-          handler: (m: { payload: unknown }) => void,
-        ) => {
-          channelHandlers[event] = handler
-          return ch
-        },
-        subscribe: () => ch,
-      }
-      return ch
-    },
-    removeChannel: vi.fn(),
+const browser = {
+  channelsCreated: 0,
+  removed: 0,
+  status: (_s: string) => {},
+}
+const browserClient = {
+  realtime: { setAuth: vi.fn(async () => {}) },
+  channel: () => {
+    browser.channelsCreated++
+    const ch = {
+      on: (
+        _type: string,
+        { event }: { event: string },
+        handler: (m: { payload: unknown }) => void,
+      ) => {
+        channelHandlers[event] = handler
+        return ch
+      },
+      subscribe: (cb?: (s: string) => void) => {
+        browser.status = cb ?? (() => {})
+        return ch
+      },
+    }
+    return ch
+  },
+  removeChannel: vi.fn(() => {
+    browser.removed++
   }),
-}))
+}
+vi.mock('@/lib/supabase/client', () => ({ createClient: () => browserClient }))
 const push = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
@@ -72,6 +83,8 @@ let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
   vi.clearAllMocks()
   channelNames.length = 0
+  browser.channelsCreated = 0
+  browser.removed = 0
   getSessionUser.mockResolvedValue({ id: 'guest-1' })
   profile.mockReturnValue({ full_name: 'Guest Person' })
   sessionRow.mockReturnValue({ initiated_by: 'guest-1' })
@@ -107,7 +120,61 @@ describe('POST /api/calls', () => {
       meetingId: MEETING,
       callerName: 'Guest Person',
       expiresAt: 'T',
+      fromHost: false,
     })
+  })
+
+  it('the host’s Call rings the guest, flagged fromHost, and logs the publish', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    getSessionUser.mockResolvedValue({ id: 'host-1' })
+    sessionRow.mockReturnValue({ owner_id: 'host-1' }) // the meetings row
+    rpc.mockResolvedValue({
+      data: [
+        {
+          mode: 'ringing',
+          meeting_id: MEETING,
+          session_id: SESSION,
+          callee_id: 'guest-9',
+          expires_at: 'T',
+        },
+      ],
+      error: null,
+    })
+    const res = await createCall(callReq({ meetingId: MEETING }))
+    expect(await res.json()).toMatchObject({ mode: 'ringing', sessionId: SESSION })
+    expect(channelNames).toEqual([{ name: 'user:guest-9', private: true }])
+    expect(httpSend).toHaveBeenCalledWith(
+      'incoming_call',
+      expect.objectContaining({ fromHost: true, sessionId: SESSION }),
+    )
+    const lines = info.mock.calls.map((c) => String(c[0]))
+    expect(lines).toContainEqual(
+      expect.stringContaining('"event":"notify","type":"incoming_call","ok":true'),
+    )
+    expect(lines).toContainEqual(expect.stringContaining('"event":"call","action":"ringing"'))
+    expect(lines.join('')).not.toContain('guest-9') // no ids of people in the log
+    info.mockRestore()
+  })
+
+  it('a failed publish is logged as a failure, not swallowed', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    httpSend.mockRejectedValue(new Error('realtime down'))
+    rpc.mockResolvedValue({
+      data: [
+        {
+          mode: 'ringing',
+          meeting_id: MEETING,
+          session_id: SESSION,
+          callee_id: 'host-1',
+          expires_at: 'T',
+        },
+      ],
+      error: null,
+    })
+    expect((await createCall(callReq({ meetingId: MEETING }))).status).toBe(200)
+    expect(String(error.mock.calls[0]![0])).toContain('"event":"notify"')
+    expect(String(error.mock.calls[0]![0])).toContain('"ok":false')
+    error.mockRestore()
   })
 
   it('host or already open: straight to the lobby, nobody rings', async () => {
@@ -169,6 +236,7 @@ describe('IncomingCallListener', () => {
         : new Response(JSON.stringify({ outcome: 'accepted', redirect: `/m/${MEETING}/lobby` })),
     )
     render(<IncomingCallListener userId="host-1" />)
+    await waitFor(() => expect(channelHandlers.incoming_call).toBeDefined()) // joined after setAuth
     act(() =>
       channelHandlers.incoming_call!({
         payload: {
@@ -207,6 +275,118 @@ describe('IncomingCallListener', () => {
   })
 })
 
+describe('ringing never depends on Realtime alone', () => {
+  const ringing = (id = SESSION, meetingId = MEETING, fromHost = true) => ({
+    sessionId: id,
+    meetingId,
+    callerName: 'Rahim',
+    expiresAt: inFuture(30),
+    fromHost,
+  })
+
+  it('polls /api/calls/incoming every 3 s: a ring Realtime lost still pops up', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let calls: unknown[] = []
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ calls })))
+    render(<IncomingCallListener userId="guest-1" />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10)
+    })
+    expect(screen.queryByText('Rahim is calling')).toBeNull()
+    calls = [ringing()] // the host presses Call; the Realtime event never arrives
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000)
+    })
+    expect(await screen.findByText('Rahim is calling')).toBeInTheDocument()
+    expect(screen.getByText(/Accepting joins Rahim's meeting/)).toBeInTheDocument()
+  })
+
+  it('on a meeting’s own lobby / room page a call for that meeting is not shown', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ calls: [ringing()] })))
+    render(<IncomingCallListener userId="guest-1" currentMeetingId={MEETING} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3100)
+    })
+    await waitFor(() => expect(channelHandlers.incoming_call).toBeDefined())
+    expect(screen.queryByText('Rahim is calling')).toBeNull()
+    act(() => channelHandlers.incoming_call!({ payload: ringing() }))
+    expect(screen.queryByText('Rahim is calling')).toBeNull()
+    // ...but a call for another meeting still rings.
+    act(() =>
+      channelHandlers.incoming_call!({
+        payload: {
+          ...ringing(
+            '55555555-5555-4555-8555-555555555555',
+            '66666666-6666-4666-8666-666666666666',
+          ),
+          callerName: 'Other',
+        },
+      }),
+    )
+    expect(screen.getByText('Other is calling')).toBeInTheDocument()
+  })
+
+  it('a ring that ran out does not hide the next one', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let calls: unknown[] = [{ ...ringing(), expiresAt: inFuture(1) }]
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ calls })))
+    render(<IncomingCallListener userId="guest-1" />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10)
+    })
+    expect(screen.getByText('Rahim is calling')).toBeInTheDocument()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    expect(screen.queryByText('Rahim is calling')).toBeNull() // timed out
+    calls = [{ ...ringing('77777777-7777-4777-8777-777777777777'), callerName: 'Second' }]
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000)
+    })
+    expect(await screen.findByText('Second is calling')).toBeInTheDocument()
+  })
+})
+
+describe('the Realtime channel', () => {
+  it('is shared by every listener on the page: one subscription, and leaving one keeps it for the other', () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ calls: [] })))
+    const first = render(<IncomingCallListener userId="guest-1" />)
+    const second = render(
+      <ConnectionsCard userId="guest-1" connections={[]} canSpend onSubscribe={vi.fn()} />,
+    )
+    return waitFor(() => expect(browser.channelsCreated).toBe(1)).then(() => {
+      second.unmount()
+      expect(browser.removed).toBe(0) // the incoming-call modal still listens
+      first.unmount()
+      expect(browser.removed).toBe(1)
+    })
+  })
+
+  it('sets the access token before joining and re-subscribes after an error, telling the server log', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ calls: [] })))
+    render(<IncomingCallListener userId="guest-1" />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10)
+    })
+    expect(browserClient.realtime.setAuth).toHaveBeenCalled()
+    expect(browser.channelsCreated).toBe(1)
+
+    act(() => browser.status('SUBSCRIBED'))
+    act(() => browser.status('CHANNEL_ERROR'))
+    expect(browser.removed).toBe(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/diag',
+      expect.objectContaining({ body: expect.stringContaining('CHANNEL_ERROR') }),
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100)
+    })
+    expect(browser.channelsCreated).toBe(2) // a fresh channel after 1 s
+  })
+})
+
 describe('ConnectionsCard', () => {
   const card = (
     canSpend: boolean,
@@ -242,6 +422,8 @@ describe('ConnectionsCard', () => {
     expect(rows[1]).toHaveTextContent('Subscribe')
     expect(rows[1]).toHaveTextContent('Message')
     expect(rows[1]).not.toHaveTextContent(/\bCall\b/)
+    // The sponsor can ring their guest and can also just open the room.
+    expect(rows[2]).toHaveTextContent('Call')
     expect(rows[2]).toHaveTextContent('Open room')
   })
 

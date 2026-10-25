@@ -22,8 +22,8 @@ const linkClass =
   'inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/[.09]'
 
 /**
- * People you are connected with through invitations (Rule 3): sponsors open the room; guests
- * press Call (rings the sponsor). A guest whose window expired calls with their own minutes, or
+ * People you are connected with through invitations (Rule 3): both sides can press Call (it rings
+ * the other person); sponsors can also just open the room. A guest whose window expired calls with their own minutes, or
  * sees only Subscribe / Message.
  */
 export function ConnectionsCard({
@@ -128,9 +128,14 @@ export function ConnectionsCard({
               </div>
               <div className="flex gap-2">
                 {item.role === 'sponsor' ? (
-                  <Link href={`/m/${item.meetingId}/lobby`} className={linkClass}>
-                    <Video size={14} aria-hidden /> Open room
-                  </Link>
+                  <>
+                    <Button className="px-3 py-2 text-xs" onClick={() => void call(item)}>
+                      <Phone size={14} /> Call
+                    </Button>
+                    <Link href={`/m/${item.meetingId}/lobby`} className={linkClass}>
+                      <Video size={14} aria-hidden /> Open room
+                    </Link>
+                  </>
                 ) : valid || canSpend ? (
                   <Button className="px-3 py-2 text-xs" onClick={() => void call(item)}>
                     <Phone size={14} /> Call
@@ -161,7 +166,15 @@ export function ConnectionsCard({
             <p role="status" className="mt-1 text-sm text-slate-400">
               Waiting for them to accept · {left} s
             </p>
-            <Button variant="danger" className="mt-6 w-full" onClick={() => void hangUp('cancel')}>
+            {connections.find((c) => c.name === ringing.name)?.role === 'sponsor' && (
+              <Link
+                href={`/m/${connections.find((c) => c.name === ringing.name)!.meetingId}/lobby`}
+                className={`${linkClass} mt-4 w-full`}
+              >
+                <Video size={14} aria-hidden /> Open the room while you wait
+              </Link>
+            )}
+            <Button variant="danger" className="mt-3 w-full" onClick={() => void hangUp('cancel')}>
               <PhoneOff size={15} /> Cancel
             </Button>
           </div>

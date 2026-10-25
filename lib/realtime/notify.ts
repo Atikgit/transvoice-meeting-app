@@ -5,7 +5,14 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export type UserEvent =
   | {
       event: 'incoming_call'
-      payload: { sessionId: string; meetingId: string; callerName: string; expiresAt: string }
+      payload: {
+        sessionId: string
+        meetingId: string
+        callerName: string
+        expiresAt: string
+        /** The host is calling their guest (else a guest is calling their sponsor). */
+        fromHost: boolean
+      }
     }
   | { event: 'call_cancelled'; payload: { sessionId: string } }
   | {
@@ -20,11 +27,17 @@ export async function notifyUser(userId: string, { event, payload }: UserEvent):
   try {
     const channel = createAdminClient().channel(userChannel(userId), { config: { private: true } })
     await channel.httpSend(event, payload)
+    // One line per publish: "was the ring sent?" is answerable from `docker logs` (no ids of people).
+    console.info(JSON.stringify({ event: 'notify', type: event, ok: true }))
     return true
   } catch (error) {
     console.error(
-      `Realtime ${event} to user failed:`,
-      error instanceof Error ? error.message : error,
+      JSON.stringify({
+        event: 'notify',
+        type: event,
+        ok: false,
+        detail: error instanceof Error ? error.message.slice(0, 120) : 'unknown',
+      }),
     )
     return false
   }
