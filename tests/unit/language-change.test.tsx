@@ -50,7 +50,7 @@ describe('POST /api/calls/[id]/languages', () => {
     expect(rpc).toHaveBeenCalledWith('set_participant_langs', {
       p_session: SESSION,
       p_user: 'guest-1',
-      p_spoken: null,
+      p_spoken: undefined,
       p_listen: 'es-ES',
     })
     expect(updateParticipant).toHaveBeenCalledWith(

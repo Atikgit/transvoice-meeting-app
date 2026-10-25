@@ -1,5 +1,6 @@
 import 'server-only'
 import { createClient, getSessionUser } from '@/lib/supabase/server'
+import type { OriginalAudioMode } from '@/lib/supabase/database.types'
 
 export type MeetingRole = 'host' | 'guest'
 
@@ -48,7 +49,7 @@ export async function loadMeetingContext(meetingId: string): Promise<MeetingCont
       fullName: profile?.full_name || user.email?.split('@')[0] || '',
       spokenLang: profile?.spoken_lang ?? 'en-US',
       listenLang: profile?.listen_lang ?? 'en-US',
-      originalAudioMode: profile?.original_audio_mode ?? 'duck',
+      originalAudioMode: (profile?.original_audio_mode ?? 'duck') as OriginalAudioMode,
     },
   }
 }

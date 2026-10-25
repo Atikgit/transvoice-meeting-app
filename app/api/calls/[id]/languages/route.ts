@@ -39,8 +39,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { data, error } = await admin.rpc('set_participant_langs', {
     p_session: sessionId,
     p_user: user.id,
-    p_spoken: parsed.data.spokenLang ?? null,
-    p_listen: parsed.data.listenLang ?? null,
+    p_spoken: parsed.data.spokenLang,
+    p_listen: parsed.data.listenLang,
   })
   const row = data?.[0]
   if (error || !row) {

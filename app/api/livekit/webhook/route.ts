@@ -4,6 +4,7 @@ import { serverEnv } from '@/lib/env'
 import { scheduleGraceCheck } from '@/lib/livekit/grace'
 import { sessionIdFromRoom } from '@/lib/livekit/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { nullableArg } from '@/lib/supabase/database.types'
 
 const HANDLED = new Set(['participant_joined', 'participant_left', 'room_finished'])
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
     p_event_id: event.id,
     p_event: event.event,
     p_session: sessionId,
-    p_user: userId,
+    p_user: nullableArg(userId),
     p_at: at,
   })
   if (error) {

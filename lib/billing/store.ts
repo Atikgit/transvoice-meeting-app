@@ -1,7 +1,7 @@
 import 'server-only'
 import type { BillingStore } from '@/lib/billing/lemonsqueezy'
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { Json } from '@/lib/supabase/database.types'
+import { nullableArg, type Json } from '@/lib/supabase/database.types'
 
 /** BillingStore backed by the SECURITY DEFINER SQL functions (service role). */
 export function supabaseBillingStore(): BillingStore {
@@ -14,7 +14,7 @@ export function supabaseBillingStore(): BillingStore {
         p_customer_id: input.customerId,
         p_variant_id: input.variantId,
         p_status: input.status,
-        p_period_end: input.periodEnd,
+        p_period_end: nullableArg(input.periodEnd),
       })
       if (error) throw new Error(`link_subscription failed: ${error.message}`)
     },

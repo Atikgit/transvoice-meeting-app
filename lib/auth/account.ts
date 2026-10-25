@@ -4,6 +4,7 @@ import { type Balance, fetchBalance } from '@/lib/billing/balance'
 import { serverEnv } from '@/lib/env'
 import { resolveSignupGeo } from '@/lib/geo/signup-geo'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { nullableArg } from '@/lib/supabase/database.types'
 import { createClient } from '@/lib/supabase/server'
 
 /**
@@ -30,9 +31,9 @@ export async function recordSignupGeo(userId: string, headers: Headers): Promise
     })
     const { error } = await createAdminClient().rpc('record_signup_geo', {
       p_user: userId,
-      p_country_code: geo.countryCode,
-      p_country_name: geo.countryName,
-      p_ip_hash: geo.ipHash,
+      p_country_code: nullableArg(geo.countryCode),
+      p_country_name: nullableArg(geo.countryName),
+      p_ip_hash: nullableArg(geo.ipHash),
     })
     if (error) console.error('record_signup_geo failed:', error.message)
   } catch (error) {

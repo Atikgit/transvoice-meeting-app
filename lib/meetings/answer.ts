@@ -2,6 +2,7 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { callContext } from '@/lib/meetings/calls'
 import { notifyUser } from '@/lib/realtime/notify'
+import type { AnswerOutcome } from '@/lib/supabase/database.types'
 
 /** Accept or decline as the callee; tells the caller on their user channel. */
 export async function answer(params: Promise<{ id: string }>, accept: boolean) {
@@ -37,7 +38,11 @@ export async function answer(params: Promise<{ id: string }>, accept: boolean) {
   if (session) {
     await notifyUser(session.initiated_by, {
       event: 'call_answered',
-      payload: { sessionId, meetingId: result.meeting_id, outcome: result.outcome },
+      payload: {
+        sessionId,
+        meetingId: result.meeting_id,
+        outcome: result.outcome as AnswerOutcome,
+      },
     })
   }
   return NextResponse.json({
