@@ -156,6 +156,10 @@ describe('User manual', () => {
     expect(list.className).toMatch(/\bhidden\b.*md:grid|md:grid.*\bhidden\b/)
     expect(list.querySelectorAll('li')).toHaveLength(6)
     expect(list).toHaveTextContent('signs up free (gets 15 free minutes)')
+    expect(list).toHaveTextContent(
+      'Click Start meeting, then press Invite Partner inside the room and share the link (WhatsApp, LinkedIn, email).',
+    )
+    expect(list).not.toHaveTextContent('Click "Invite Partner"')
     expect(list).toHaveTextContent('Chat is always free.')
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')

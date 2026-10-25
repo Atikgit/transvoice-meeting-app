@@ -30,8 +30,8 @@ const STEPS: { icon: typeof Languages; title: string; body: ReactNode }[] = [
   },
   {
     icon: UserPlus,
-    title: 'Invite your partner',
-    body: 'Click "Invite Partner", choose how long the link stays valid, and share it (WhatsApp, LinkedIn, email).',
+    title: 'Start a meeting and invite your partner',
+    body: 'Click Start meeting, then press Invite Partner inside the room and share the link (WhatsApp, LinkedIn, email).',
   },
   {
     icon: Share2,
@@ -41,7 +41,7 @@ const STEPS: { icon: typeof Languages; title: string; body: ReactNode }[] = [
   {
     icon: Video,
     title: 'Start the meeting',
-    body: 'Click "Start meeting", check camera and mic in the lobby, then press "Start" in the room.',
+    body: 'Check camera and mic in the lobby, then press "Start" in the room once your partner has joined.',
   },
   {
     icon: Captions,
