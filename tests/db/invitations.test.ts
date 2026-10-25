@@ -94,16 +94,16 @@ describe('accept_invitation', () => {
     expect(visible).toEqual([{ id: meeting_id }])
   })
 
-  it('is idempotent for the same guest, single-use for anyone else', async () => {
+  it('is idempotent for the same guest and usable by others while places remain (default 20)', async () => {
     const { hash } = await invite(host)
     await accept(hash, guest)
     await accept(hash, guest)
     const other = await createUser(db, 'other@example.com')
-    await expect(accept(hash, other)).rejects.toThrow(/INVITE_USED/)
-    const { rows } = await db.query<{ used_count: number }>(
-      'select used_count from public.invitations',
+    await accept(hash, other)
+    const { rows } = await db.query<{ used_count: number; max_uses: number }>(
+      'select used_count, max_uses from public.invitations',
     )
-    expect(rows[0]!.used_count).toBe(1)
+    expect(rows[0]).toEqual({ used_count: 2, max_uses: 20 })
   })
 
   it('lets the inviter open their own link', async () => {

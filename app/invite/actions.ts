@@ -33,6 +33,8 @@ export type CreateInvitationResult =
 const createSchema = z.object({
   window: z.enum(INVITE_WINDOWS.map((w) => w.id) as [InviteWindowId, ...InviteWindowId[]]),
   meetingId: z.uuid(),
+  /** How many people may use the link (1–100). */
+  maxUses: z.number().int().min(1).max(100).default(20),
 })
 
 const MESSAGES = {
@@ -52,6 +54,7 @@ const MESSAGES = {
 export async function createInvitation(input: {
   window: InviteWindowId
   meetingId: string
+  maxUses?: number
 }): Promise<CreateInvitationResult> {
   const fail = (code: keyof typeof MESSAGES) =>
     ({ ok: false, code, error: MESSAGES[code] }) as const
@@ -72,6 +75,7 @@ export async function createInvitation(input: {
     p_token_hash: hash,
     p_window: inviteWindow(parsed.data.window).interval,
     p_meeting: parsed.data.meetingId,
+    p_max_uses: parsed.data.maxUses,
   })
   if (error || !data?.[0]) {
     const known = (['NO_MINUTES', 'EMAIL_NOT_VERIFIED', 'NOT_ALLOWED'] as const).find((code) =>
@@ -87,6 +91,29 @@ export async function createInvitation(input: {
     meetingId: data[0].meeting_id,
     expiresAt: data[0].expires_at,
   }
+}
+
+export type RevokeInvitationResult = { ok: true } | { ok: false; error: string }
+
+/** The inviter cancels a link they created: nobody can use it any more (new or returning). */
+export async function revokeInvitation(input: {
+  inviteUrl: string
+}): Promise<RevokeInvitationResult> {
+  const token = /\/invite\/([A-Za-z0-9_-]{43})$/.exec(String(input?.inviteUrl ?? ''))?.[1]
+  if (!token || !isInviteToken(token)) return { ok: false, error: 'This is not an invite link.' }
+  const user = await getSessionUser()
+  if (!user) return { ok: false, error: MESSAGES.SIGNED_OUT }
+  const { data, error } = await createAdminClient().rpc('revoke_invitation', {
+    p_user: user.id,
+    p_token_hash: hashInviteToken(token),
+  })
+  if (error) {
+    console.error('revoke_invitation failed:', error.message)
+    return { ok: false, error: 'Could not revoke the link. Please try again.' }
+  }
+  return data
+    ? { ok: true }
+    : { ok: false, error: 'This link was already revoked, or is not yours.' }
 }
 
 /** Accepts the invitation in `token` for the signed-in user, then opens the meeting lobby. */

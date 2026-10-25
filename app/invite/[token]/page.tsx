@@ -16,7 +16,7 @@ const PROBLEMS: Record<Exclude<InviteStatus, 'ok'>, string> = {
   invalid: 'This invitation link is not valid. Check that you copied the whole link.',
   expired: 'This invitation has expired. Ask your partner to send you a new link.',
   revoked: 'This invitation was cancelled. Ask your partner to send you a new link.',
-  used: 'This invitation was already used by someone else. Ask your partner for a new link.',
+  used: 'This invitation link is full: everyone it allowed has already joined. Ask your partner for a new link.',
 }
 
 const ACCEPT_ERRORS: Record<string, InviteStatus> = {
@@ -49,6 +49,8 @@ async function loadInvitation(token: string, userId: string | undefined) {
     .maybeSingle()
   const inviterName = inviter?.full_name || 'Your partner'
 
+  // Revoked and expired links stop working for everyone but the inviter, including people who
+  // joined before. "Full" only stops NEW people: someone already in can always come back.
   let status: InviteStatus = 'ok'
   const own = userId === invitation.inviter_id
   const { data: accepted } = userId
@@ -59,12 +61,12 @@ async function loadInvitation(token: string, userId: string | undefined) {
         .eq('guest_id', userId)
         .maybeSingle()
     : { data: null }
-  if (!own && !accepted) {
+  if (!own) {
     if (invitation.revoked_at) status = 'revoked'
     else if (new Date(invitation.expires_at) <= new Date()) status = 'expired'
-    else if (invitation.used_count >= invitation.max_uses) status = 'used'
+    else if (!accepted && invitation.used_count >= invitation.max_uses) status = 'used'
   }
-  return { status, inviterName }
+  return { status, inviterName, returning: Boolean(accepted) || own }
 }
 
 export default async function InvitePage({
@@ -94,14 +96,18 @@ export default async function InvitePage({
 
   return (
     <AuthCard
-      title={`${invitation.inviterName} invited you to a translated meeting`}
+      title={
+        invitation.returning
+          ? `Welcome back: ${invitation.inviterName}'s translated meeting`
+          : `${invitation.inviterName} invited you to a translated meeting`
+      }
       subtitle={`Speak your language, hear theirs, with ${LANGUAGES_AND_VOICES}.`}
     >
       {user ? (
         <form action={acceptInvitation} className="space-y-3">
           <input type="hidden" name="token" value={token} />
           <button type="submit" className={primaryClass}>
-            Accept and join the meeting
+            {invitation.returning ? 'Open the meeting' : 'Accept and join the meeting'}
           </button>
           <p className="text-center text-xs text-slate-500">
             Signed in as {user.email}. Your call minutes are covered by {invitation.inviterName} for

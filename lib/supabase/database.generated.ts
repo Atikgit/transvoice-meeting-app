@@ -781,6 +781,7 @@ export type Database = {
       }
       create_invitation: {
         Args: {
+          p_max_uses?: number
           p_meeting?: string
           p_token_hash: string
           p_user: string
@@ -792,6 +793,10 @@ export type Database = {
           invitation_id: string
           meeting_id: string
         }[]
+      }
+      revoke_invitation: {
+        Args: { p_token_hash: string; p_user: string }
+        Returns: boolean
       }
       create_meeting: {
         Args: { p_title?: string; p_user: string }

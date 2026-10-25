@@ -16,7 +16,8 @@ vi.mock('next/navigation', () => ({
   },
 }))
 
-const { acceptInvitation, createInvitation } = await import('@/app/invite/actions')
+const { acceptInvitation, createInvitation, revokeInvitation } =
+  await import('@/app/invite/actions')
 const { InviteModal } = await import('@/components/invite/invite-modal')
 const { shareLinks } = await import('@/lib/invitations/windows')
 
@@ -51,6 +52,7 @@ describe('createInvitation', () => {
       p_token_hash: createHash('sha256').update(token).digest('hex'),
       p_window: '24 hours',
       p_meeting: MEETING,
+      p_max_uses: 20,
     })
     expect(result.meetingId).toBe(MEETING)
   })
@@ -78,6 +80,47 @@ describe('createInvitation', () => {
       code: 'SIGNED_OUT',
     })
     expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe('link places and revoking', () => {
+  it('passes the chosen number of places (default 20, 1 to 100)', async () => {
+    await createInvitation({ window: '7d', meetingId: MEETING, maxUses: 100 })
+    await createInvitation({ window: '7d', meetingId: MEETING, maxUses: 1 })
+    expect(rpc.mock.calls.map(([, args]) => args.p_max_uses)).toEqual([100, 1])
+    expect(await createInvitation({ window: '7d', meetingId: MEETING, maxUses: 0 })).toMatchObject({
+      ok: false,
+    })
+    expect(
+      await createInvitation({ window: '7d', meetingId: MEETING, maxUses: 101 }),
+    ).toMatchObject({
+      ok: false,
+    })
+    expect(rpc).toHaveBeenCalledTimes(2) // the invalid ones never reached the database
+  })
+
+  it('revokes a link by its URL, for the inviter only', async () => {
+    const token = 'a'.repeat(43)
+    rpc.mockResolvedValueOnce({ data: true, error: null })
+    expect(
+      await revokeInvitation({ inviteUrl: `https://meet.transvoice.ai/invite/${token}` }),
+    ).toEqual({
+      ok: true,
+    })
+    expect(rpc).toHaveBeenLastCalledWith('revoke_invitation', {
+      p_user: 'host-1',
+      p_token_hash: createHash('sha256').update(token).digest('hex'),
+    })
+    rpc.mockResolvedValueOnce({ data: false, error: null })
+    expect(await revokeInvitation({ inviteUrl: `https://x/invite/${token}` })).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/already revoked, or is not yours/),
+    })
+    expect(await revokeInvitation({ inviteUrl: 'https://x/nope' })).toMatchObject({ ok: false })
+    getSessionUser.mockResolvedValueOnce(null)
+    expect(await revokeInvitation({ inviteUrl: `https://x/invite/${token}` })).toMatchObject({
+      ok: false,
+    })
   })
 })
 
@@ -158,6 +201,28 @@ describe('InviteModal', () => {
       /linkedin\.com\/sharing/,
     )
     expect(screen.getByRole('link', { name: /Email/ }).getAttribute('href')).toMatch(/^mailto:/)
+  })
+
+  it('lets the host pick how many people can use the link (default 20) and revoke it afterwards', async () => {
+    render(<InviteModal meetingId={MEETING} onClose={() => {}} />)
+    const places = screen.getByRole('combobox', {
+      name: /People who can use the link/,
+    }) as HTMLSelectElement
+    expect(places.value).toBe('20')
+    fireEvent.change(places, { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
+    expect(await screen.findByText(/Up to 5 people can use it/)).toBeInTheDocument()
+    expect(rpc.mock.calls[0]![1]).toMatchObject({ p_max_uses: 5 })
+
+    rpc.mockResolvedValueOnce({ data: true, error: null })
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke this link' }))
+    expect(
+      await screen.findByText(/Link revoked: it no longer works for anyone/),
+    ).toBeInTheDocument()
+    expect(rpc).toHaveBeenLastCalledWith(
+      'revoke_invitation',
+      expect.objectContaining({ p_user: 'host-1' }),
+    )
   })
 
   it('offers to get minutes when the balance is empty', async () => {

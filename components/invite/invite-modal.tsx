@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { Check, Copy, Link2, Mail, MessageCircle, Send, Share2 } from 'lucide-react'
 import {
   createInvitation,
+  revokeInvitation,
   sendInvitationEmail,
   type CreateInvitationResult,
   type SendInviteEmailResult,
@@ -18,6 +19,10 @@ import {
   shareLinks,
 } from '@/lib/invitations/windows'
 import { LANGUAGES_AND_VOICES } from '@/lib/transvoice/languages'
+
+/** How many people may use one link (server limit: 1–100; default 20). */
+const MAX_USES_OPTIONS = [1, 5, 20, 50, 100] as const
+const DEFAULT_MAX_USES = 20
 
 const shareClass =
   'inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-white/[.09]'
@@ -40,12 +45,22 @@ export function InviteModal({
   const [result, setResult] = useState<CreateInvitationResult | null>(null)
   const [copied, setCopied] = useState(false)
   const [pending, startTransition] = useTransition()
+  const [maxUses, setMaxUses] = useState<number>(DEFAULT_MAX_USES)
+  const [revoke, setRevoke] = useState<'idle' | 'revoking' | 'revoked' | { error: string }>('idle')
 
   const create = () =>
     startTransition(async () => {
-      const created = await createInvitation({ window: validity, meetingId })
+      const created = await createInvitation({ window: validity, meetingId, maxUses })
       setResult(created)
+      setRevoke('idle')
     })
+
+  const revokeLink = (url: string) => {
+    setRevoke('revoking')
+    void revokeInvitation({ inviteUrl: url }).then((done) =>
+      setRevoke(done.ok ? 'revoked' : { error: done.error }),
+    )
+  }
 
   if (result?.ok) {
     const links = shareLinks(result.url)
@@ -56,7 +71,8 @@ export function InviteModal({
     return (
       <Modal title="Invite Partner" onClose={onClose}>
         <p className="text-sm text-slate-400">
-          Share this link with your partner. It works once and stays valid until {expires}.
+          Share this link with your partner. Up to {maxUses} {maxUses === 1 ? 'person' : 'people'}{' '}
+          can use it, and it can be opened again by the same person, until {expires}.
         </p>
         <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/50 p-2">
           <Link2 size={16} className="ml-2 shrink-0 text-cyan-300" aria-hidden />
@@ -91,6 +107,28 @@ export function InviteModal({
           </a>
         </div>
         <SendInviteEmail inviteUrl={result.url} />
+        <div className="mt-3 text-xs">
+          {revoke === 'revoked' ? (
+            <p role="status" className="text-amber-200">
+              Link revoked: it no longer works for anyone. People who already joined keep their
+              minutes window.
+            </p>
+          ) : (
+            <button
+              type="button"
+              disabled={revoke === 'revoking'}
+              onClick={() => revokeLink(result.url)}
+              className="text-slate-400 underline underline-offset-2 hover:text-rose-300 disabled:opacity-50"
+            >
+              {revoke === 'revoking' ? 'Revoking…' : 'Revoke this link'}
+            </button>
+          )}
+          {typeof revoke === 'object' && (
+            <p role="alert" className="mt-1 text-rose-300">
+              {revoke.error}
+            </p>
+          )}
+        </div>
         <p className="mt-4 text-xs text-slate-500">
           Your partner signs up free ({FREE_TRIAL_MINUTES} free minutes) and joins your room. Their
           call minutes come from your balance while the link&apos;s sponsorship is valid.
@@ -127,6 +165,22 @@ export function InviteModal({
           ))}
         </div>
       </fieldset>
+      <label className="mt-4 block">
+        <span className="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-500">
+          People who can use the link
+        </span>
+        <select
+          value={maxUses}
+          onChange={(e) => setMaxUses(Number(e.target.value))}
+          className="w-full rounded-xl border border-white/10 bg-white/[.04] px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-cyan-300"
+        >
+          {MAX_USES_OPTIONS.map((n) => (
+            <option key={n} value={n}>
+              {n === 1 ? '1 person (single use)' : `Up to ${n} people`}
+            </option>
+          ))}
+        </select>
+      </label>
       {result && !result.ok && (
         <p
           role="alert"
