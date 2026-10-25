@@ -37,8 +37,11 @@ export function defaultGraceDeps(): GraceDeps {
     connectedIdentities: async (id) => {
       try {
         return (await roomService().listParticipants(roomNameFor(id))).map((p) => p.identity)
-      } catch {
-        return [] // the room no longer exists
+      } catch (error) {
+        // Only "no such room" means nobody is there. Any other failure (LiveKit unreachable,
+        // timeout, bad credentials) is unknown: throw, so a live session is never ended on a guess.
+        if (isRoomNotFound(error)) return []
+        throw error
       }
     },
     endSession: async (id, reason) => {
@@ -53,6 +56,11 @@ export function defaultGraceDeps(): GraceDeps {
     publishEnded: (id, hostId, reason) =>
       publishRoomState(id, { status: 'ended', startedAt: null, hostId, endReason: reason }),
   }
+}
+
+function isRoomNotFound(error: unknown): boolean {
+  const e = error as { status?: number; code?: string } | null
+  return e?.status === 404 || e?.code === 'not_found'
 }
 
 /** Ends the session if it is still lost after the grace period. */

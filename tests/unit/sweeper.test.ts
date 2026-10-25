@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GraceDeps } from '@/lib/livekit/grace'
-import { startSweeper, stopSweeper, sweepOnce, sweeperRunning, type SweepDeps } from '@/lib/sweeper'
+import {
+  READY_IDLE_MS,
+  startSweeper,
+  stopSweeper,
+  sweepOnce,
+  sweeperRunning,
+  type StaleSession,
+  type SweepDeps,
+} from '@/lib/sweeper'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -16,12 +24,21 @@ function grace(overrides: Partial<GraceDeps> = {}): GraceDeps {
   }
 }
 
+const NOW = Date.parse('2026-10-25T12:00:00Z')
+const live = (id: string): StaleSession => ({ id, status: 'live', idleSince: NOW - 120_000 })
+const ready = (id: string, idleMs: number): StaleSession => ({
+  id,
+  status: 'ready',
+  idleSince: NOW - idleMs,
+})
+
 function deps(overrides: Partial<SweepDeps> = {}): SweepDeps {
   return {
     graceMs: 60_000,
     grace: grace(),
     sweepOrphans: vi.fn(async () => ({ segmentsClosed: 2, ringingExpired: 1 })),
-    staleSessions: vi.fn(async () => [A, B]),
+    staleSessions: vi.fn(async () => [live(A), live(B)]),
+    now: () => NOW,
     ...overrides,
   }
 }
@@ -71,6 +88,44 @@ describe('sweeper', () => {
     const d = deps({ sweepOrphans: vi.fn(async () => Promise.reject(new Error('db'))) })
     const result = await sweepOnce(d)
     expect(result).toMatchObject({ sessionsEnded: 2, failed: 1 })
+  })
+
+  it('does not touch a ready session somebody may still be joining or waiting in', async () => {
+    const d = deps({
+      staleSessions: vi.fn(async () => [ready(A, 90_000), ready(B, READY_IDLE_MS - 1)]),
+    })
+    const result = await sweepOnce(d)
+    expect(result.sessionsChecked).toBe(0)
+    expect(d.grace.endSession).not.toHaveBeenCalled()
+  })
+
+  it('closes a ready session nobody ever came to, but not one with a guest waiting', async () => {
+    const stale = [ready(A, READY_IDLE_MS + 1000), ready(B, READY_IDLE_MS + 1000)]
+    const connectedIdentities = vi.fn(async (id: string) => (id === B ? ['guest-1'] : []))
+    const d = deps({
+      staleSessions: vi.fn(async () => stale),
+      grace: grace({
+        loadSession: vi.fn(async () => ({ status: 'ready', hostId: 'host-1' })),
+        connectedIdentities,
+      }),
+    })
+    await sweepOnce(d)
+    expect(d.grace.endSession).toHaveBeenCalledTimes(1)
+    expect(d.grace.endSession).toHaveBeenCalledWith(A, 'abandoned')
+  })
+
+  it('never ends a live session just because LiveKit could not be asked', async () => {
+    const d = deps({
+      staleSessions: vi.fn(async () => [live(A)]),
+      grace: grace({
+        connectedIdentities: vi.fn(async () => {
+          throw new Error('LiveKit unreachable')
+        }),
+      }),
+    })
+    const result = await sweepOnce(d)
+    expect(d.grace.endSession).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ sessionsEnded: 0, failed: 1 })
   })
 
   it('runs at start and on every interval, never overlapping, and stops cleanly', async () => {

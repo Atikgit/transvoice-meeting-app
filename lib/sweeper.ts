@@ -14,9 +14,25 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export interface SweepDeps {
   graceMs: number
   sweepOrphans: () => Promise<{ segmentsClosed: number; ringingExpired: number }>
-  staleSessions: (olderThanMs: number) => Promise<string[]>
+  staleSessions: (olderThanMs: number) => Promise<StaleSession[]>
+  /** Clock, for tests. */
+  now?: () => number
   grace: GraceDeps
 }
+
+export interface StaleSession {
+  id: string
+  status: string
+  /** started_at (live) or created_at (ready). */
+  idleSince: number
+}
+
+/**
+ * A "ready" session is somebody opening the room, granting camera access or waiting for the
+ * host. It is only abandoned after this long with nobody in the LiveKit room (the room's own
+ * empty timeout is 5 minutes too); a live session is judged after the reconnect grace.
+ */
+export const READY_IDLE_MS = 5 * 60_000
 
 export interface SweepResult {
   segmentsClosed: number
@@ -45,7 +61,11 @@ export function defaultSweepDeps(): SweepDeps {
         p_older_than: `${Math.ceil(ms / 1000)} seconds`,
       })
       if (error) throw new Error(error.message)
-      return (data ?? []).map((row) => row.session_id)
+      return (data ?? []).map((row) => ({
+        id: row.session_id,
+        status: row.status,
+        idleSince: Date.parse(row.idle_since),
+      }))
     },
   }
 }
@@ -65,13 +85,15 @@ export async function sweepOnce(deps: SweepDeps = defaultSweepDeps()): Promise<S
   } catch {
     result.failed++
   }
-  let sessions: string[] = []
+  let sessions: StaleSession[] = []
   try {
     sessions = await deps.staleSessions(deps.graceMs)
   } catch {
     result.failed++
   }
-  for (const id of sessions) {
+  const now = (deps.now ?? Date.now)()
+  for (const { id, status, idleSince } of sessions) {
+    if (status === 'ready' && now - idleSince < READY_IDLE_MS) continue
     result.sessionsChecked++
     try {
       if ((await checkAfterGrace(id, deps.grace)) === 'ended') result.sessionsEnded++

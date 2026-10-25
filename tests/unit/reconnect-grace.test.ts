@@ -72,3 +72,26 @@ describe('reconnect grace (Rule 5)', () => {
     expect(pendingGraceChecks()).toBe(0)
   })
 })
+
+describe('LiveKit lookups (defaultGraceDeps)', () => {
+  it('a missing room means nobody is there; any other error is not a verdict', async () => {
+    vi.resetModules()
+    const listParticipants = vi.fn()
+    vi.doMock('@/lib/livekit/server', () => ({
+      roomNameFor: (id: string) => `tv-${id}`,
+      roomService: () => ({ listParticipants }),
+    }))
+    vi.doMock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({}) }))
+    const { defaultGraceDeps } = await import('@/lib/livekit/grace')
+    const { connectedIdentities } = defaultGraceDeps()
+
+    listParticipants.mockRejectedValueOnce(Object.assign(new Error('no room'), { status: 404 }))
+    await expect(connectedIdentities(SESSION)).resolves.toEqual([])
+    listParticipants.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 503 }))
+    await expect(connectedIdentities(SESSION)).rejects.toThrow('boom')
+    listParticipants.mockRejectedValueOnce(new Error('fetch failed'))
+    await expect(connectedIdentities(SESSION)).rejects.toThrow('fetch failed')
+    listParticipants.mockResolvedValueOnce([{ identity: 'guest-1' }])
+    await expect(connectedIdentities(SESSION)).resolves.toEqual(['guest-1'])
+  })
+})

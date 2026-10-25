@@ -900,6 +900,7 @@ export type Database = {
         Args: { p_older_than: string }
         Returns: {
           host_id: string
+          idle_since: string
           session_id: string
           status: string
         }[]
