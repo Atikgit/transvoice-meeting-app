@@ -43,6 +43,9 @@ const serverSchema = z.object({
   // meeting hosts. Unset → only the default allowlist (lib/translation/gate.ts); `*` → everyone.
   TRANSLATION_BETA_ALLOWLIST: z.string().optional(),
 
+  // Kill switch: false turns live translation off for everyone (calls, video and chat go on).
+  TRANSLATION_ENABLED: z.stringbool().default(true),
+
   // Translated audio clip cache (60 s). Unset: in-process memory (single container).
   // Only over a private Docker network, never a published port.
   REDIS_URL: z

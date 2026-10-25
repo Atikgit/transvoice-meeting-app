@@ -39,6 +39,17 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+describe('language spelling', () => {
+  it('stores "bn_BD" and "bn" in the one spelling the picker uses', async () => {
+    const res = await call({ spokenLang: 'bn', listenLang: 'bn_bd' })
+    expect(res.status).toBe(200)
+    expect(rpc).toHaveBeenCalledWith(
+      'set_participant_langs',
+      expect.objectContaining({ p_spoken: 'bn-BD', p_listen: 'bn-BD' }),
+    )
+  })
+})
+
 describe('POST /api/calls/[id]/languages', () => {
   it('updates meeting_participants and the LiveKit participant metadata', async () => {
     const res = await call({ listenLang: 'es-ES' })

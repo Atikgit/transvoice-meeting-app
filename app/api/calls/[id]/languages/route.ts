@@ -2,16 +2,19 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { roomNameFor, roomService } from '@/lib/livekit/server'
 import { callContext } from '@/lib/meetings/calls'
-import { isSpokenLanguage, isSupportedLanguage } from '@/lib/transvoice/languages'
+import { isSpokenLanguage, isSupportedLanguage, normalizeLocale } from '@/lib/transvoice/languages'
 
 const body = z
   .object({
+    // "bn", "bn_BD" and "bn-BD" are accepted and stored in one spelling ("bn-BD").
     spokenLang: z
       .string()
+      .transform(normalizeLocale)
       .refine(isSpokenLanguage, 'Choose a spoken language from the list.')
       .optional(),
     listenLang: z
       .string()
+      .transform(normalizeLocale)
       .refine(isSupportedLanguage, 'Choose a language from the list.')
       .optional(),
   })

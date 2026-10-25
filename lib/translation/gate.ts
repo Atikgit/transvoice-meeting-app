@@ -33,19 +33,31 @@ export function isAllowlistedUser(email: string | null | undefined, raw: string 
 }
 
 export type GateDecision =
-  { ok: true } | { ok: false; status: 403 | 402; code: 'BETA' | 'PAYER_NO_MINUTES'; error: string }
+  | { ok: true }
+  | {
+      ok: false
+      status: 403 | 402
+      code: 'DISABLED' | 'BETA' | 'PAYER_NO_MINUTES'
+      error: string
+    }
+
+export const DISABLED_MESSAGE =
+  'Live translation is switched off. Video, voice and chat still work.'
 
 export function translationGate({
   hostEmail,
   payerHasMinutes,
   speakerIsPayer,
   allowlist,
+  enabled = true,
 }: {
+  enabled?: boolean
   hostEmail: string | null | undefined
   payerHasMinutes: boolean
   speakerIsPayer: boolean
   allowlist: string | undefined
 }): GateDecision {
+  if (!enabled) return { ok: false, status: 403, code: 'DISABLED', error: DISABLED_MESSAGE }
   if (!betaAllows(hostEmail, allowlist)) {
     return { ok: false, status: 403, code: 'BETA', error: BETA_MESSAGE }
   }

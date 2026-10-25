@@ -5,8 +5,9 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { loadTranslationContext } from '@/lib/translation/context'
 import { deliverResult } from '@/lib/translation/deliver'
 import { translationGate } from '@/lib/translation/gate'
-import { groupListeners, translateForListeners } from '@/lib/translation/fanout'
-import { logTranslate } from '@/lib/translation/log'
+import { translateForListeners } from '@/lib/translation/fanout'
+import { planFanout } from '@/lib/translation/plan'
+import { logDecision, logTranslate } from '@/lib/translation/log'
 import { parseTranslateUpload } from '@/lib/translation/request'
 import { getSessionUser } from '@/lib/supabase/server'
 
@@ -40,6 +41,11 @@ export async function POST(request: NextRequest) {
   const loaded = await loadTranslationContext(upload.sessionId, user.id)
   const contextMs = Math.round(performance.now() - contextStartedAt)
   if (!loaded.ok) {
+    logDecision({
+      sessionId: upload.sessionId,
+      utteranceId: upload.utteranceId,
+      decision: `rejected:${loaded.code}`,
+    })
     return NextResponse.json({ code: loaded.code, error: loaded.error }, { status: loaded.status })
   }
 
@@ -49,8 +55,18 @@ export async function POST(request: NextRequest) {
     payerHasMinutes: context.speaker.payerHasMinutes,
     speakerIsPayer: context.speaker.payerId === user.id,
     allowlist: serverEnv().TRANSLATION_BETA_ALLOWLIST,
+    enabled: serverEnv().TRANSLATION_ENABLED,
   })
+  const plan = planFanout(context.speaker.spokenLang, context.participants)
+  const decisionLog = {
+    sessionId: upload.sessionId,
+    utteranceId: upload.utteranceId,
+    speakerLang: context.speaker.spokenLang,
+    listenerLangs: context.participants.map((p) => p.listenLang),
+    targets: [...plan.groups.keys()],
+  }
   if (!gate.ok) {
+    logDecision({ ...decisionLog, decision: `blocked:${gate.code}` })
     return NextResponse.json(
       {
         code: gate.code,
@@ -61,16 +77,18 @@ export async function POST(request: NextRequest) {
       { status: gate.status },
     )
   }
-  const groups = groupListeners(context.participants, context.speaker.spokenLang)
+  const groups = plan.groups
   // Same-language listeners only: nothing to translate (original audio at full volume).
   if (groups.size === 0) {
+    logDecision({ ...decisionLog, decision: plan.reason })
     return NextResponse.json({
       utteranceId: upload.utteranceId,
       languages: [],
       // Tells the speaker why nothing happened: same language (fixable) or nobody else here.
-      reason: context.participants.length > 0 ? 'same_language' : 'no_listeners',
+      reason: plan.reason,
     })
   }
+  logDecision({ ...decisionLog, decision: 'translate' })
 
   const delivered = new Map<string, { captionMs: number; audioMs: number } | null>()
   const results = await translateForListeners({

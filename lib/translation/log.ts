@@ -63,3 +63,24 @@ export interface LatencyLog {
 export function logLatency(entry: LatencyLog): void {
   console.info(JSON.stringify({ event: 'latency', ...entry }))
 }
+
+/**
+ * One line per /api/translate call, whatever happened to it, saying what the server decided and
+ * from which stored values. Language codes only: no text, audio, emails or user ids.
+ */
+export interface DecisionLog {
+  sessionId: string
+  utteranceId: string
+  /** translate | same_language | no_listeners | blocked:<CODE> | rejected:<CODE> */
+  decision: string
+  /** The speaker's stored spoken language (meeting_participants). */
+  speakerLang?: string
+  /** The stored listen language of every other participant that is connected. */
+  listenerLangs?: string[]
+  /** The locales the utterance is translated into. */
+  targets?: string[]
+}
+
+export function logDecision(entry: DecisionLog): void {
+  console.info(JSON.stringify({ event: 'translate_decision', ...entry }))
+}
