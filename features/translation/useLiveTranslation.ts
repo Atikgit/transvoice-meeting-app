@@ -126,6 +126,7 @@ export function useLiveTranslation({
       const body = (await res.json().catch(() => ({}))) as {
         original?: string | null
         unavailable?: boolean
+        serviceKeyRejected?: boolean
         languages?: { lang: string }[]
         reason?: 'same_language' | 'no_listeners'
       }
@@ -139,9 +140,17 @@ export function useLiveTranslation({
         return
       }
       setNotice(
-        body.unavailable
-          ? { tone: 'error', text: 'Translation is temporarily unavailable. It resumes by itself.' }
-          : null,
+        body.serviceKeyRejected
+          ? {
+              tone: 'error',
+              text: 'Translation is unavailable: the translation service rejected our access key. Please tell support.',
+            }
+          : body.unavailable
+            ? {
+                tone: 'error',
+                text: 'Translation is temporarily unavailable. It resumes by itself.',
+              }
+            : null,
       )
       return
     }

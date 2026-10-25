@@ -290,6 +290,29 @@ describe('POST /api/translate admission', () => {
     expect((await res.json()).code).toBe('NOT_CONNECTED')
   })
 
+  it('a rejected API key (401) is reported as such, not as a passing hiccup', async () => {
+    server.use(
+      http.post(`${TEST_ENV.TRANSVOICE_API_URL}/`, () =>
+        HttpResponse.json({ detail: 'Invalid or Revoked API Key' }, { status: 401 }),
+      ),
+    )
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const res = await post(upload(SESSION()))
+    expect(await res.json()).toMatchObject({ unavailable: true, serviceKeyRejected: true })
+    const lines = info.mock.calls.map((c) => JSON.parse(String(c[0])))
+    expect(lines.find((l) => l.event === 'translate')?.languages[0]).toMatchObject({
+      outcome: 'failed',
+      status: 401,
+    })
+    expect(lines.find((l) => l.event === 'translate_decision')).toMatchObject({
+      decision: 'translate',
+      speakerLang: 'bn-BD',
+      listenerLangs: ['en-US'],
+      targets: ['en-US'],
+    })
+    info.mockRestore()
+  })
+
   it('503 (not 403) when LiveKit cannot be asked, and the failure is not remembered', async () => {
     const session = SESSION()
     vi.spyOn(console, 'error').mockImplementation(() => {})

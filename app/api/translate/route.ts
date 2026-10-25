@@ -147,5 +147,7 @@ export async function POST(request: NextRequest) {
       result: r.kind === 'failed' ? r.reason : r.kind,
     })),
     unavailable: failed.length === results.length,
+    // 401/403 from the API: our key is wrong or revoked, which no retry will fix.
+    serviceKeyRejected: failed.some((f) => f.status === 401 || f.status === 403),
   })
 }
