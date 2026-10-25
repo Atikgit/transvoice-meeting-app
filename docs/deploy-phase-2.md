@@ -1,7 +1,7 @@
 # Deploying Phase 2
 
-Phase 2 ships in three checkpoints. This file grows with each one; 2C adds the final
-docker-compose and smoke-test checklist.
+Phase 2 ships in three checkpoints. This file grows with each one; 2C adds the sweeper,
+graceful shutdown and the final smoke-test checklist.
 
 ## Checkpoint 2A — LiveKit media and call control
 
@@ -119,3 +119,135 @@ Also set from the invite-email feature (optional): `EMAIL_FROM`, `RESEND_API_KEY
    "Live translation is in private beta." and the microphone is never analysed.
 8. Latency in a development build: the cyan badge at the top left (caption / audio ms).
    In production read the `translate` log lines (`apiMs`, `captionMs`, `audioMs`, `totalMs`).
+
+## Checkpoint 2C — Hardening: sweeper, shutdown, mobile audio, error states
+
+### 1. Migration
+
+| File                     | What it does                                                                                                            |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `20261025000100_sweeper` | `stale_open_sessions()`, `sweep_orphans()` (close orphan segments, expire ringing calls). Service role only, idempotent |
+
+```sh
+pnpm dlx supabase db push
+pnpm db:types   # writes lib/supabase/database.generated.ts; database.types.ts adds the aliases
+```
+
+### 2. Environment (`.env.production`)
+
+| Variable              | Meaning                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| `SWEEP_INTERVAL_SEC`  | Sweeper period in seconds. Default `60`; `0` disables it. No other new variables in 2C. |
+| `RECONNECT_GRACE_SEC` | Unchanged (60). The sweeper treats open sessions older than this as candidates.         |
+
+`docker-compose.yml` now has `init: true` and `stop_grace_period: 30s`; rebuild with
+`docker compose up -d --build`.
+
+### 3. What changed
+
+**Sweeper** (`lib/sweeper.ts`, started from `instrumentation.ts` in production): one run at
+container start, then every `SWEEP_INTERVAL_SEC`. Each run (1) closes participant segments left
+open on ended sessions and marks unanswered ringing calls `missed`; (2) for `ready`/`live`
+sessions older than the grace period, asks LiveKit who is present and ends abandoned ones
+(`reconnect_timeout` / `abandoned`), the same check as the in-memory grace timer. This recovers
+sessions whose timer was lost in a restart. It logs one `{"event":"sweep",…}` line only when it
+did something or failed.
+
+**First connection** (`components/meeting/meeting-room.tsx`): the header says **Connecting…**
+until LiveKit is connected. If the first connection fails, or has not completed 15 s after the
+room opened (or the token request takes 15 s), the page shows **"Can't reach the meeting server"**
+with **Retry** (fetches a fresh token). "Call again" is only for a connection that existed and
+was lost. **Reconnecting…** is only shown after a connection dropped.
+
+**Graceful shutdown** (`docker stop` → SIGTERM): `lib/draining.ts` sets a draining flag at once.
+`POST /api/translate` then answers `503 {code:"DRAINING", retryable:true}` with `Retry-After: 2`
+and the browser retries that upload once after 2 s. Requests already running finish (Next.js
+closes the server and waits for them); after 10 s the process exits anyway (code 143). The
+listener also drops grace timers, waits ≤ 5 s for a running sweep and closes Redis. A session
+whose timer was dropped is picked up by the next container's start-up sweep.
+
+**Mobile audio** (iOS Safari, Android Chrome):
+
+- The lobby's Join/Continue button and the room's Start button resume the shared `AudioContext`
+  inside the click, and Start also calls `room.startAudio()`. The first tap anywhere does the
+  same. If playback is still blocked, the room shows **Tap to enable audio**
+  (`features/meeting/useAudioPlayback.ts`).
+- **Screen Wake Lock** while the session is live, re-acquired when the tab becomes visible again
+  (`useWakeLock.ts`). Browsers without the API simply skip it.
+- **Loudspeaker**: on Android phones whose browser supports `setSinkId`, LiveKit audio and the
+  translated clips are switched to an output labelled "speaker". iOS Safari does not let pages
+  choose the output; use the system audio route there.
+
+**Error states** (each has a message and a recovery action):
+
+| Situation                             | What the user sees                                                                                                                                         |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Camera / microphone permission denied | How to allow it (lock icon → Allow; iPhone: Settings → Safari), button **Reload** (lobby and room)                                                         |
+| Microphone in use by another app      | "…used by another app. Close that app, then try again." button **Try again**                                                                               |
+| No camera / microphone found          | "No microphone found. Plug one in or pick another in Devices." button **Try again**                                                                        |
+| LiveKit unreachable                   | "Can't reach the meeting server" + **Retry** (see above)                                                                                                   |
+| TransVoice API down (circuit open)    | "Translation is temporarily unavailable. It resumes by itself." The circuit half-opens after 30 s and the notice clears with the next translated utterance |
+| Payer's minutes at 0                  | "The host's minutes have run out…" with **Message host** (opens chat, free) and **Subscribe**; the paying speaker gets **Subscribe** only                  |
+
+### 4. Load test (`pnpm load:translate`)
+
+`tests/load/translate-load.test.ts` runs the real fan-out code (per-language parallel calls, HTTP
+client, retry, timeout) for **8 participants in 3 languages** (3 × bn-BD, 3 × en-US, 2 × es-ES; every
+utterance goes to the two other languages) against a local mock TransVoice server returning
+production-sized payloads. It is **not** end to end: the TransVoice latency is synthetic
+(300 ms + exponential tail with a 150 ms mean; change with `LOAD_MOCK_BASE_MS` / `LOAD_MOCK_EXTRA_MS`),
+Supabase is a fixed object and LiveKit delivery is a 3 ms stub. It therefore shows what our code
+adds on top of the API. Other knobs: `LOAD_SECONDS`, `LOAD_MEAN_GAP_S`, `LOAD_BURST_ROUNDS`.
+
+Result on the development machine (one Node process):
+
+| Scenario                                       | Measure                            | p50    | p95    | max     |
+| ---------------------------------------------- | ---------------------------------- | ------ | ------ | ------- |
+| Conversation: 8 speakers, 1 utterance/8 s each | utterance (slowest language)       | 532 ms | 872 ms | 947 ms  |
+|                                                | **our overhead** (utterance − API) | 8 ms   | 21 ms  | 23 ms   |
+| Worst case: all 8 speak at once, ×10           | utterance (slowest language)       | 516 ms | 828 ms | 1204 ms |
+|                                                | **our overhead** (utterance − API) | 20 ms  | 30 ms  | 38 ms   |
+
+No failed calls; the event loop stayed responsive (p95 ≈ 11 ms, which is the sampler's 10 ms
+resolution). Re-measure the real API with the `translate` log lines (`apiMs`, `totalMs`) in
+production; the p95 there is dominated by Triton, not by this server.
+
+### 5. Smoke-test checklist (after `docker compose up -d --build`)
+
+Server:
+
+1. `curl -s https://meet.transvoice.ai/api/health` → `{"status":"ok"}`; `docker ps` shows `healthy`.
+2. `docker logs transvoice_meeting_app 2>&1 | grep '"event":"sweep"'` shows nothing wrong after start-up.
+
+Two devices (laptop + phone; repeat with an iPhone if available):
+
+3. Laptop: dashboard → Invite Partner → copy link. Phone: open link, sign in, Join. The Join tap
+   unlocks audio; the room opens without a "Tap to enable audio" bar. On iPhone Safari, if the bar
+   shows, tap it once and it goes away.
+4. Laptop **Start** → both "Live". Video and voice both ways; mute shows on the other side.
+5. Translation: Bangla on the laptop → English voice and captions on the phone, and back.
+6. Phone: lock/unlock the screen or switch tabs while live: the screen stays on while the tab is
+   open (Wake Lock) and sound resumes after returning. (Android) audio comes out of the loudspeaker.
+7. Connecting wording: open the room with the network throttled: header "Connecting…". Block
+   `*.livekit.cloud` for 15 s (or go offline before opening the room): "Can't reach the meeting
+   server" + Retry; **Retry** after restoring the network joins normally. Pull the network for
+   ~10 s inside a live call: "Reconnecting…", then it recovers.
+8. Permissions: deny the microphone in the browser and join → the permission message with
+   **Reload**. Open the microphone in another app (phone call, other tab) and join → "used by
+   another app" + **Try again**.
+9. Minutes: set the host's balance to 0 and speak as the guest → "The host's minutes have run
+   out…" with **Message host** (opens chat) and **Subscribe**.
+10. TransVoice down: point `TRANSVOICE_API_URL` at a dead host (staging only) → after a few failed
+    utterances the "temporarily unavailable" notice; restore it → translation resumes by itself
+    within ~30 s.
+11. Sweeper: start a meeting, close both tabs, `docker restart transvoice_meeting_app` within
+    the grace period. After the restart + `RECONNECT_GRACE_SEC`: the log has
+    `"event":"sweep"` with `sessionsEnded: 1` and
+    ```sql
+    select status, end_reason from call_sessions order by created_at desc limit 1; -- ended, reconnect_timeout
+    select count(*) from participant_segments where disconnected_at is null;       -- 0
+    ```
+12. Shutdown: in a call with translation running, `time docker stop transvoice_meeting_app`:
+    finishes in under 30 s (10 s drain at most), logs `{"event":"shutdown","signal":"SIGTERM"}`;
+    exit code 143 is normal. The next utterance during the restart is retried once after 2 s.
+13. Ringing: call someone and let it ring 30 s → "did not answer"; the session is `missed`.

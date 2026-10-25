@@ -6,3 +6,4 @@ test-results
 coverage
 docs/PROMPT.md
 public/vad
+.claude
