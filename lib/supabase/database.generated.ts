@@ -788,6 +788,7 @@ export type Database = {
         }
         Returns: {
           expires_at: string
+          reused: boolean
           invitation_id: string
           meeting_id: string
         }[]
@@ -851,6 +852,7 @@ export type Database = {
       open_call_session: {
         Args: { p_meeting: string; p_user: string }
         Returns: {
+          created: boolean
           host_id: string
           session_id: string
           started_at: string
