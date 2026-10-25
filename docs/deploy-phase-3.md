@@ -127,3 +127,73 @@ What changed for speed (one commit each, none measured in production yet):
    laptop: gate OPEN → `last utterance` → `/api/translate 200`; on the phone: `last caption`, `last audio url ok`.
 4. Reload the phone's page in the middle of the call: its languages stay as you set them.
 5. Run `latency:report` as above.
+
+## Fix — translation still silent after 3A (branch `fix-translation`)
+
+### What the production logs and the live API showed (2026-10-26)
+
+Read from the running container and the live API on the Hetzner host:
+
+1. **The Speech API rejects our key.** `POST https://speech.transvoice.ai/` with
+   `Authorization: Bearer $TRANSVOICE_MASTER_API_KEY` answers `401 {"detail":"Invalid or Revoked
+API Key"}` (the key in `.env.production`: 56 characters, `tv_…`, no stray spaces or quotes).
+   The same key on `/v1/tts` gives the same answer, `x-api-key` instead gives `Not authenticated`.
+   The contract itself matches our client: `POST /`, JSON body with `audio`, `src_lang`,
+   `tgt_lang` (bare codes: default `"bn"`), `azure_voice` (and optional `voice_tone`, `action`,
+   `text_in`), `Authorization: Bearer`. **No code can fix this: a valid key is needed**
+   (create one in the API dashboard, put it in `TRANSVOICE_MASTER_API_KEY`, then
+   `docker compose --env-file .env.production up -d --force-recreate`). The response shape could
+   not be checked without a valid key.
+2. **No utterance ever reached the API.** The container logged `latency … kind:"speak"` lines (the
+   browser uploaded, the route answered 200 in ~1 s) but **zero** `"event":"translate"` lines, which
+   are written after the API calls. So the route returned early every time with "nothing to
+   translate". The stored session rows explain it
+   (`meeting_participants`, language columns only):
+
+   | role  | speaks | hears |
+   | ----- | ------ | ----- |
+   | host  | en-US  | bn-BD |
+   | guest | bn-BD  | en-US |
+
+   Each person is set to **hear the language the other one speaks**. "I want to hear" is the
+   language _you_ understand (normally your own): what your partner says is translated **into** it.
+   Here the host (English speaker) asks to hear Bangla while the guest already speaks Bangla, and
+   the guest asks to hear English while the host already speaks English: both original voices are
+   already in the language each wants, so the server correctly translates nothing. For two people
+   to understand each other, set **I speak = I want to hear = your own language** on both sides
+   (host bn/bn, guest en/en). The wording "Translate to" in the lobby invited exactly this mistake
+   (it reads as "translate my speech into …"), and the "same language" hint appeared only on the
+   side that had just spoken, which looked like the two screens disagreeing. They did not: each
+   hint described that person's own next sentence, and the server used the stored rows for both.
+
+### What changed
+
+| Area                | Change                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| One source of truth | `meeting_participants` of the open session decides fan-out, the hint, the Languages menu and the status line. `planFanout()` is the only place that turns those rows into targets; `/api/translate` performs it, `GET /api/translate/status` reports it. Profile, lobby choice and LiveKit participant metadata are not read by any translation path (metadata is written for display only).                       |
+| Menu and reload     | The page's first render and the Languages menu show the stored row (the profile used to be shown, which could differ after a reload); the menu shows what the server confirmed, and the room refreshes every 3 s, so the partner's change appears within 3 s                                                                                                                                                       |
+| Status line         | Always visible above the captions: `You speak Bangla → Atikul hears English · You hear Atikul in Bangla`, `Same language: nothing to translate`, or — for the mix-up above — `Nothing is translated: you each hear the other's own language` with a one-tap `I want to hear Bangla`                                                                                                                                |
+| Wording             | Lobby `Translate to` → `I want to hear`, with an explanation; the Languages menu explains it too                                                                                                                                                                                                                                                                                                                   |
+| Language codes      | `bn`, `bn-BD`, `bn_BD`, `BN-bd` / `en`, `en_US`, `en-US` compare as the same language everywhere: fan-out grouping (en and en-US were two API calls), `src_lang`/`tgt_lang` (always the bare code, e.g. `bn`), the Whisper lookup and the Azure voice (a bare code used to get the default English voice). Chinese traditional vs simplified and Cantonese stay distinct. The Languages route stores one spelling. |
+| Debug overlay       | `?debug=1` now works for any signed-in participant (a `*` allowlist used to hide it from everyone). Shows both people's stored languages, where my sentences go, the allowlist decision, whether the API accepts our key, a live mic level, whether the 4 `/vad` files load, CSP violations, and a **Send test clip** button                                                                                       |
+| Status endpoint     | `GET /api/translate/status?sessionId=…` (participants only; display names + languages, no ids/emails)                                                                                                                                                                                                                                                                                                              |
+| Logs                | One `translate_decision` line per `/api/translate` call, also when nothing is translated: speaker language, listener languages, targets, decision (`translate`, `same_language`, `no_listeners`, `blocked:<code>`, `rejected:<code>`)                                                                                                                                                                              |
+| API key             | A 401/403 from the API is reported to the speaker as "the translation service rejected our access key" instead of a generic hiccup                                                                                                                                                                                                                                                                                 |
+| Kill switch         | `TRANSLATION_ENABLED=false` turns translation off for everyone (calls go on)                                                                                                                                                                                                                                                                                                                                       |
+
+No migration. New optional variable: `TRANSLATION_ENABLED` (default `true`).
+
+### After deploying
+
+```sh
+docker compose --env-file .env.production up -d --build
+docker logs transvoice_meeting_app 2>&1 | grep -E 'transvoice_warmup|translate_decision|"event":"translate"' | tail
+```
+
+1. Put a valid `TRANSVOICE_MASTER_API_KEY` in `.env.production` (see 1 above) and recreate the container.
+2. Both people: lobby/menu **I speak** = **I want to hear** = own language (host Bangla/Bangla, guest English/English).
+   The line above the captions should read `You speak Bangla → … hears English`.
+3. Open the room with `?debug=1` (e.g. `/m/<id>?camera=on&mic=on&debug=1`). Check `service … API key accepted`,
+   `vad files 4/4 ok`, `blocked by CSP none`, `mic level` moves when you talk, `gate OPEN`.
+4. Speak, pause 1 s. If nothing arrives: **Send test clip** prints the exact status and body; the log shows
+   `translate_decision` and, for each language, `status`/`detail` of a failed API call.
