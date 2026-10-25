@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRoomContext } from '@livekit/components-react'
 import { RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client'
-import { parseDataMessage, TOPICS } from '@/lib/translation/messages'
+import { decodeInlineAudio, parseDataMessage, TOPICS } from '@/lib/translation/messages'
 import { addCaption, type CaptionEntry } from './captions'
 import { setTranslationDebug } from './debug-store'
 import { reportLatency } from './latency-beacon'
 import { LatencyTracker, type LatencySample } from './metrics'
 import { PlaybackQueues, type Clip, type OriginalAudioMode } from './playback'
-import { fetchAndDecode, playBuffer, unlockAudioOnFirstGesture } from './web-audio'
+import { decodeBytes, fetchAndDecode, playBuffer, unlockAudioOnFirstGesture } from './web-audio'
 
 /**
  * Receives the server's captions and translated clips (LiveKit data, topics tvx.*) and plays
@@ -31,7 +31,9 @@ export function useTranslatedAudio({
   const tracker = useRef(new LatencyTracker())
   const speechEnds = useRef(new Map<string, number>())
   // Per utterance: the caption's language and how long fetching + decoding its clip took.
-  const clipInfo = useRef(new Map<string, { lang?: string; fetchMs?: number }>())
+  const clipInfo = useRef(
+    new Map<string, { lang?: string; fetchMs?: number; via?: 'url' | 'inline' }>(),
+  )
 
   useEffect(() => {
     modeRef.current = originalAudioMode
@@ -43,14 +45,16 @@ export function useTranslatedAudio({
       prepare: async (clip) => {
         const started = performance.now()
         try {
-          const buffer = await fetchAndDecode(clip.url)
+          const via = clip.data ? 'inline' : 'url'
+          const buffer = clip.data ? await decodeBytes(clip.data) : await fetchAndDecode(clip.url)
           clipInfo.current.set(clip.utteranceId, {
             ...clipInfo.current.get(clip.utteranceId),
             fetchMs: Math.round(performance.now() - started),
+            via,
           })
           setTranslationDebug({
             lastAudio: {
-              via: 'url',
+              via,
               status: 'ok',
               ms: Math.round(performance.now() - started),
               at: Date.now(),
@@ -97,7 +101,7 @@ export function useTranslatedAudio({
             captionMs: sample?.captionMs,
             audioMs: sample?.audioMs,
             fetchMs: info?.fetchMs,
-            via: 'url',
+            via: info?.via ?? 'url',
           })
           clipInfo.current.delete(clip.utteranceId)
         }
@@ -107,6 +111,25 @@ export function useTranslatedAudio({
     const onData = (payload: Uint8Array, participant: unknown, _kind: unknown, topic?: string) => {
       // Only the server sends tvx.* messages (clients cannot publish data): ignore the rest.
       if (participant) return
+      if (topic === TOPICS.audioInline) {
+        const inline = decodeInlineAudio(payload)
+        if (!inline) return
+        const { header, audio } = inline
+        speechEnds.current.set(header.utteranceId, header.speechEndedAt)
+        clipInfo.current.set(header.utteranceId, {
+          ...clipInfo.current.get(header.utteranceId),
+          lang: header.lang,
+        })
+        queues.enqueue({
+          speakerId: header.speakerId,
+          utteranceId: header.utteranceId,
+          url: '',
+          data: audio,
+          receivedAt: performance.now(),
+        })
+        setTranslationDebug({ queue: queues.size() })
+        return
+      }
       const parsed = parseDataMessage(topic, payload)
       if (!parsed) return
       if (parsed.topic === TOPICS.caption) {
@@ -133,6 +156,11 @@ export function useTranslatedAudio({
       } else if (parsed.topic === TOPICS.audio) {
         const m = parsed.message
         speechEnds.current.set(m.utteranceId, m.speechEndedAt)
+        // The audio can arrive before its caption (separate packets): remember the language here too.
+        clipInfo.current.set(m.utteranceId, {
+          ...clipInfo.current.get(m.utteranceId),
+          lang: m.lang,
+        })
         const clip: Clip = {
           speakerId: m.speakerId,
           utteranceId: m.utteranceId,

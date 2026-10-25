@@ -22,8 +22,17 @@ export interface TranslateSpeechInput {
 }
 
 export type TranslateSpeechResult =
-  | { kind: 'speech'; originalText: string; translatedText: string; ttsAudio: string }
+  | {
+      kind: 'speech'
+      originalText: string
+      translatedText: string
+      ttsAudio: string
+      /** Format the API says the audio is in (audio_format / output_format field), if it says. */
+      audioFormat?: AudioFormat
+    }
   | { kind: 'silence' }
+
+export type AudioFormat = 'wav' | 'mp3' | 'opus'
 
 export class TransVoiceApiError extends Error {
   constructor(
@@ -41,6 +50,9 @@ const speechResponse = z.object({
   original_text: z.string(),
   translated_text: z.string(),
   tts_audio: z.string(),
+  // Optional: only an API that supports output_format says which one it used.
+  audio_format: z.string().optional(),
+  output_format: z.string().optional(),
 })
 const silenceResponse = z.object({ error: z.literal('Silence') })
 
@@ -48,6 +60,8 @@ export interface TransVoiceClientOptions {
   baseUrl: string
   apiKey: string
   timeoutMs?: number
+  /** Asked from the API as output_format when not wav. */
+  outputFormat?: AudioFormat
   fetch?: typeof fetch
 }
 
@@ -75,6 +89,10 @@ export async function translateSpeech(
         azure_voice: input.azureVoice,
         session_id: input.sessionId,
         speaker_id: input.speakerId,
+        // Omitted for wav: an API without the feature never sees an unknown field.
+        ...(options.outputFormat && options.outputFormat !== 'wav'
+          ? { output_format: options.outputFormat }
+          : {}),
       }),
       signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     })
@@ -109,10 +127,20 @@ export async function translateSpeech(
     originalText: parsed.data.original_text,
     translatedText: parsed.data.translated_text,
     ttsAudio: parsed.data.tts_audio,
+    audioFormat: knownFormat(parsed.data.audio_format ?? parsed.data.output_format),
   }
 }
 
 function defaultOptions(): TransVoiceClientOptions {
   const env = serverEnv()
-  return { baseUrl: env.TRANSVOICE_API_URL, apiKey: env.TRANSVOICE_MASTER_API_KEY }
+  return {
+    baseUrl: env.TRANSVOICE_API_URL,
+    apiKey: env.TRANSVOICE_MASTER_API_KEY,
+    outputFormat: env.TRANSVOICE_OUTPUT_FORMAT,
+  }
+}
+
+function knownFormat(value: string | undefined): AudioFormat | undefined {
+  const format = value?.trim().toLowerCase()
+  return format === 'wav' || format === 'mp3' || format === 'opus' ? format : undefined
 }

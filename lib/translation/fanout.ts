@@ -3,6 +3,7 @@ import { languageOptions, toApiLang } from '@/lib/transvoice/languages'
 import { getVoiceName, type VoiceGender } from '@/lib/transvoice/voices'
 import {
   TransVoiceApiError,
+  type AudioFormat,
   translateSpeech,
   type TranslateSpeechInput,
   type TranslateSpeechResult,
@@ -38,6 +39,7 @@ export type LanguageResult =
       originalText: string
       translatedText: string
       ttsAudio: string
+      audioFormat?: AudioFormat
       ms: number
     }
   | { lang: string; listeners: string[]; kind: 'silence'; ms: number }

@@ -7,7 +7,14 @@ import {
 } from '@/lib/translation/audio-cache'
 import { deliverResult } from '@/lib/translation/deliver'
 import type { LanguageResult } from '@/lib/translation/fanout'
-import { encodeMessage, MAX_PACKET_BYTES, TOPICS } from '@/lib/translation/messages'
+import {
+  decodeInlineAudio,
+  encodeInlineAudio,
+  encodeMessage,
+  MAX_INLINE_AUDIO_BYTES,
+  MAX_PACKET_BYTES,
+  TOPICS,
+} from '@/lib/translation/messages'
 
 const getSessionUser = vi.fn()
 const cacheRef: { current: MemoryAudioCache } = { current: new MemoryAudioCache() }
@@ -81,6 +88,132 @@ describe('deliverResult', () => {
     })
     const cached = await cacheRef.current.get(audio.url.split('/').pop())
     expect(cached?.recipients).toEqual(['en-1', 'en-2'])
+  })
+
+  it('sends the caption and the audio at the same moment, not one after the other', async () => {
+    const releases: (() => void)[] = []
+    const send = vi.fn(
+      () => new Promise<void>((resolve) => releases.push(resolve)), // a slow LiveKit API
+    )
+    const done = deliverResult({
+      sessionId: 's1',
+      utteranceId: 'u1',
+      speakerId: 'speaker',
+      speechEndedAt: 1,
+      result: speech('en-US', ['en-1']),
+      send,
+      cache: cacheRef.current,
+    })
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2)) // both in flight, none finished
+    expect(send.mock.calls.map((c) => (c as unknown[])[2])).toEqual([
+      expect.objectContaining({ topic: TOPICS.caption }),
+      expect.objectContaining({ topic: TOPICS.audio }),
+    ])
+    releases.forEach((release) => release())
+    expect(await done).toMatchObject({ captionMs: expect.any(Number), audioMs: expect.any(Number) })
+  })
+
+  describe('compressed clips (the API reports a format)', () => {
+    const small = Buffer.alloc(4000, 7)
+    it('a clip of at most 12 KiB travels inside the packet: no cache entry, no URL', async () => {
+      const { sent, send } = recorder()
+      const put = vi.spyOn(cacheRef.current, 'put')
+      await deliverResult({
+        sessionId: 's1',
+        utteranceId: 'u1',
+        speakerId: 'speaker',
+        speechEndedAt: 42,
+        result: speech('en-US', ['en-1'], {
+          ttsAudio: small.toString('base64'),
+          audioFormat: 'mp3',
+        } as Partial<LanguageResult>),
+        send,
+        cache: cacheRef.current,
+      })
+      expect(sent.map((s) => s.options.topic).sort()).toEqual(
+        [TOPICS.audioInline, TOPICS.caption].sort(),
+      )
+      const packet = sent.find((s) => s.options.topic === TOPICS.audioInline)!
+      expect(packet.options.destinationIdentities).toEqual(['en-1'])
+      expect(packet.data.length).toBeLessThanOrEqual(MAX_PACKET_BYTES)
+      const decoded = decodeInlineAudio(packet.data)!
+      expect(decoded.header).toEqual({
+        utteranceId: 'u1',
+        speakerId: 'speaker',
+        lang: 'en-US',
+        format: 'mp3',
+        speechEndedAt: 42,
+      })
+      expect(Buffer.from(decoded.audio).equals(small)).toBe(true)
+      expect(put).not.toHaveBeenCalled()
+    })
+
+    it('a bigger clip, or an API that reports no format, keeps the URL path (WAV unchanged)', async () => {
+      const big = Buffer.alloc(MAX_INLINE_AUDIO_BYTES + 1, 7).toString('base64')
+      for (const overrides of [
+        { ttsAudio: big, audioFormat: 'mp3' },
+        { ttsAudio: small.toString('base64') }, // no format field
+      ]) {
+        const { sent, send } = recorder()
+        await deliverResult({
+          sessionId: 's1',
+          utteranceId: 'u1',
+          speakerId: 'speaker',
+          speechEndedAt: 1,
+          result: speech('en-US', ['en-1'], overrides as Partial<LanguageResult>),
+          send,
+          cache: cacheRef.current,
+        })
+        expect(sent.map((s) => s.options.topic)).toEqual([TOPICS.caption, TOPICS.audio])
+      }
+    })
+
+    it('the cached clip of a non-wav format is served with its own content type', async () => {
+      const { sent, send, json } = recorder()
+      await deliverResult({
+        sessionId: 's1',
+        utteranceId: 'u1',
+        speakerId: 'speaker',
+        speechEndedAt: 1,
+        result: speech('en-US', ['en-1'], {
+          ttsAudio: Buffer.alloc(MAX_INLINE_AUDIO_BYTES + 1).toString('base64'),
+          audioFormat: 'mp3',
+        } as Partial<LanguageResult>),
+        send,
+        cache: cacheRef.current,
+      })
+      const id = json(sent.findIndex((s) => s.options.topic === TOPICS.audio))
+        .url.split('/')
+        .pop()
+      expect((await cacheRef.current.get(id))?.mime).toBe('audio/mpeg')
+    })
+  })
+
+  describe('inline packet format', () => {
+    const header = {
+      utteranceId: 'u1',
+      speakerId: 's',
+      lang: 'en-US',
+      format: 'opus' as const,
+      speechEndedAt: 1,
+    }
+    it('round-trips, and refuses oversize clips', () => {
+      const audio = new Uint8Array(MAX_INLINE_AUDIO_BYTES).fill(9)
+      const packet = encodeInlineAudio(header, audio)
+      expect(packet.length).toBeLessThanOrEqual(MAX_PACKET_BYTES)
+      const back = decodeInlineAudio(packet)!
+      expect(back.header).toEqual(header)
+      expect(back.audio).toEqual(audio)
+      expect(() => encodeInlineAudio(header, new Uint8Array(MAX_INLINE_AUDIO_BYTES + 1))).toThrow()
+    })
+    it('treats malformed packets as nothing', () => {
+      expect(decodeInlineAudio(new Uint8Array([]))).toBeNull()
+      expect(decodeInlineAudio(new Uint8Array([0, 0, 1]))).toBeNull() // empty header
+      expect(decodeInlineAudio(new Uint8Array([0xff, 0xff, 1, 2, 3]))).toBeNull() // header too long
+      expect(decodeInlineAudio(new TextEncoder().encode('{"not":"binary"}'))).toBeNull()
+      const notJson = new Uint8Array([0, 3, 120, 120, 120, 1, 2])
+      expect(decodeInlineAudio(notJson)).toBeNull()
+    })
   })
 
   it('keeps every packet under the 15 KiB reliable limit, even for huge captions', async () => {

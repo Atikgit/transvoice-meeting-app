@@ -13,6 +13,8 @@ export interface Clip {
   speakerId: string
   utteranceId: string
   url: string
+  /** The clip itself when it arrived inside the data packet (then there is no url to fetch). */
+  data?: Uint8Array
   /** Local clock (ms) when the clip's message arrived — immune to clock differences. */
   receivedAt: number
 }

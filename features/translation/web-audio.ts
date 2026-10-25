@@ -77,3 +77,10 @@ export function onAudioStateChange(callback: () => void): () => void {
 export function audioContextState(): string {
   return context?.state ?? 'none'
 }
+
+/** Decodes a clip that arrived inside a data packet (the bytes are copied: decoding detaches them). */
+export async function decodeBytes(data: Uint8Array): Promise<AudioBuffer> {
+  const ctx = audioContext()
+  if (!ctx) throw new Error('Web Audio is not available')
+  return ctx.decodeAudioData(data.slice().buffer)
+}

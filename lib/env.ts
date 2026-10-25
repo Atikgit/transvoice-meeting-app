@@ -58,6 +58,11 @@ const serverSchema = z.object({
   // latency but sentences may be cut at a breath; longer = safer for slow speakers.
   VAD_END_SILENCE_MS: z.coerce.number().int().min(300).max(700).default(400),
 
+  // Audio format requested from the TransVoice API for translated speech. `wav` (default) is the
+  // current behaviour. `mp3` / `opus` need the API to support output_format and to say which
+  // format it returned; clips of at most 12 KiB then travel inside the LiveKit data packet.
+  TRANSVOICE_OUTPUT_FORMAT: z.enum(['wav', 'mp3', 'opus']).default('wav'),
+
   // Rate limiting (Phase 2+)
   UPSTASH_REDIS_REST_URL: z.url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),

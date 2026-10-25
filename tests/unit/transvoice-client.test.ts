@@ -85,3 +85,48 @@ describe('translateSpeech', () => {
     ).rejects.toMatchObject({ status: null, retryable: true })
   })
 })
+
+describe('compressed output (feature-detected)', () => {
+  const body = { original_text: 'o', translated_text: 't', tts_audio: 'QQ==' }
+  const captureRequest = () => {
+    const seen: { output_format?: string }[] = []
+    server.use(
+      http.post(API, async ({ request }) => {
+        seen.push((await request.json()) as { output_format?: string })
+        return HttpResponse.json({ ...body, audio_format: 'mp3' })
+      }),
+    )
+    return seen
+  }
+
+  it('asks for output_format only when it is not wav, and reads the format the API reports', async () => {
+    const seen = captureRequest()
+    const asked = await translateSpeech(input, {
+      baseUrl: TEST_ENV.TRANSVOICE_API_URL,
+      apiKey: TEST_ENV.TRANSVOICE_MASTER_API_KEY,
+      outputFormat: 'mp3',
+    })
+    expect(seen[0]).toMatchObject({ output_format: 'mp3' })
+    expect(asked).toMatchObject({ kind: 'speech', audioFormat: 'mp3' })
+
+    await translateSpeech(input, {
+      baseUrl: TEST_ENV.TRANSVOICE_API_URL,
+      apiKey: TEST_ENV.TRANSVOICE_MASTER_API_KEY,
+      outputFormat: 'wav',
+    })
+    expect(seen[1]).not.toHaveProperty('output_format') // an API without the feature never sees it
+  })
+
+  it('an API that says nothing about the format leaves audioFormat undefined (WAV path)', async () => {
+    server.use(http.post(API, () => HttpResponse.json(body)))
+    expect(await translateSpeech(input)).not.toHaveProperty('audioFormat', 'mp3')
+    const result = await translateSpeech(input)
+    expect(result.kind === 'speech' && result.audioFormat).toBeUndefined()
+  })
+
+  it('ignores a format it does not know', async () => {
+    server.use(http.post(API, () => HttpResponse.json({ ...body, output_format: 'flac' })))
+    const result = await translateSpeech(input)
+    expect(result.kind === 'speech' && result.audioFormat).toBeUndefined()
+  })
+})

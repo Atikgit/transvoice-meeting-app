@@ -10,7 +10,9 @@ import {
 import type { LanguageResult } from '@/lib/translation/fanout'
 import {
   captionMessage,
+  encodeInlineAudio,
   encodeMessage,
+  MAX_INLINE_AUDIO_BYTES,
   TOPICS,
   type AudioMessage,
   type NoticeMessage,
@@ -67,34 +69,66 @@ export async function deliverResult({
     translated: result.translatedText,
     speechEndedAt,
   })
+  let captionMs = 0
   const captionSent = send(sessionId, encodeMessage(caption), {
     destinationIdentities,
     topic: TOPICS.caption,
+  }).then(() => {
+    captionMs = now() - started
   })
 
   let audioMs = -1
   if (result.ttsAudio) {
-    const id = newAudioId()
-    await cache.put(
-      id,
-      {
-        audio: Buffer.from(result.ttsAudio, 'base64'),
-        mime: 'audio/wav',
-        recipients: destinationIdentities,
-      },
-      AUDIO_TTL_SEC,
-    )
-    const audio: AudioMessage = {
-      utteranceId,
-      speakerId,
-      lang: result.lang,
-      url: `/api/tts/${id}`,
-      speechEndedAt,
+    const bytes = Buffer.from(result.ttsAudio, 'base64')
+    // The audio goes out at the same moment as the caption (never queued behind it): one
+    // LiveKit API round trip less before the listener can start fetching.
+    let audioSent: Promise<void>
+    if (result.audioFormat && bytes.length <= MAX_INLINE_AUDIO_BYTES) {
+      // The API says what format this is and the clip is tiny: the audio travels inside the
+      // packet, the listener skips the HTTP fetch.
+      audioSent = send(
+        sessionId,
+        encodeInlineAudio(
+          {
+            utteranceId,
+            speakerId,
+            lang: result.lang,
+            format: result.audioFormat,
+            speechEndedAt,
+          },
+          bytes,
+        ),
+        { destinationIdentities, topic: TOPICS.audioInline },
+      )
+    } else {
+      const id = newAudioId()
+      await cache.put(
+        id,
+        {
+          audio: bytes,
+          mime: MIME[result.audioFormat ?? 'wav'],
+          recipients: destinationIdentities,
+        },
+        AUDIO_TTL_SEC,
+      )
+      const audio: AudioMessage = {
+        utteranceId,
+        speakerId,
+        lang: result.lang,
+        url: `/api/tts/${id}`,
+        speechEndedAt,
+      }
+      audioSent = send(sessionId, encodeMessage(audio), {
+        destinationIdentities,
+        topic: TOPICS.audio,
+      })
     }
-    await captionSent
-    await send(sessionId, encodeMessage(audio), { destinationIdentities, topic: TOPICS.audio })
+    await Promise.all([captionSent, audioSent])
     audioMs = now() - started
+    return { captionMs, audioMs }
   }
   await captionSent
-  return { captionMs: now() - started, audioMs }
+  return { captionMs, audioMs }
 }
+
+const MIME = { wav: 'audio/wav', mp3: 'audio/mpeg', opus: 'audio/ogg; codecs=opus' } as const
