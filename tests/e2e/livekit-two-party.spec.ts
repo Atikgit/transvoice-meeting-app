@@ -112,6 +112,47 @@ test.describe('two-party LiveKit call', () => {
       .deleteRoom(room)
       .catch(() => {})
   })
+
+  test('host starts first, the guest joins later: Live at once with the host’s video', async ({
+    browser,
+  }) => {
+    await api().createRoom({
+      name: room,
+      emptyTimeout: 120,
+      metadata: JSON.stringify({ status: 'ready', startedAt: null, hostId: HOST_ID }),
+    })
+    const options = { permissions: ['camera', 'microphone'] }
+    const hostCtx = await browser.newContext(options)
+    const host = await hostCtx.newPage()
+    await open(host, 'host')
+    await host.getByRole('button', { name: 'Start' }).click()
+    await expect(host.getByTestId('room-status')).toHaveText(/^Live \d\d:\d\d$/, {
+      timeout: 15_000,
+    })
+    await expect(host.getByText('Waiting for partner to join...')).toBeVisible()
+
+    // The guest arrives 3+ s after Start; the page still renders the session as "ready".
+    await host.waitForTimeout(3000)
+    const guestCtx = await browser.newContext(options)
+    const guest = await guestCtx.newPage()
+    await open(guest, 'guest')
+
+    await expect(guest.getByTestId('room-status')).toHaveText(/^Live \d\d:\d\d$/, {
+      timeout: 15_000,
+    })
+    await expect(guest.getByText('Waiting for host to start…')).toHaveCount(0)
+    await expect(host.getByText('Waiting for partner to join...')).toHaveCount(0, {
+      timeout: 30_000,
+    })
+    await remoteVideoPlaying(guest)
+    await remoteVideoPlaying(host)
+
+    await hostCtx.close()
+    await guestCtx.close()
+    await api()
+      .deleteRoom(room)
+      .catch(() => {})
+  })
 })
 
 test('the token route refuses requests without a signed-in user', async ({ request }) => {
