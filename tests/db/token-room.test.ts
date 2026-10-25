@@ -40,7 +40,7 @@ const token = async (user: string, sessionId: string) => {
   )
   const body = (await res.json()) as { token: string; room: string; role: string; status: string }
   const claims = await verifier.verify(body.token)
-  return { ...body, grantedRoom: claims.video?.room }
+  return { ...body, grantedRoom: claims.video?.room, identity: claims.sub }
 }
 
 beforeEach(async () => {
@@ -91,6 +91,9 @@ describe('host and guest get a token for the same LiveKit room', () => {
     })
     expect(guestToken.room).toBe(hostToken.room)
     expect(guestToken.grantedRoom).toBe(hostToken.grantedRoom) // the signed grant, not just the echo
+    // Data messages are addressed by LiveKit identity: it must be the user id the server fans out to.
+    expect(hostToken.identity).toBe(host)
+    expect(guestToken.identity).toBe(guest)
   })
 
   it('a token for an ended session is refused (a stale tab cannot join a dead room)', async () => {

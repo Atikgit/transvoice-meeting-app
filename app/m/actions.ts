@@ -54,6 +54,35 @@ export async function joinFromLobby(_prev: LobbyState, formData: FormData): Prom
     console.error('Saving lobby preferences failed:', error.message)
     return { error: 'Could not save your settings. Please try again.' }
   }
+  // Someone re-entering a session they are already in (left, changed languages in the lobby,
+  // came back): the stored session row would otherwise keep the old languages.
+  await syncSessionLanguages(meetingId, user.id, profile)
   const media = new URLSearchParams({ camera, mic })
   redirect(`/m/${meetingId}?${media}`)
+}
+
+/** Applies the lobby's languages to the user's row in the meeting's open session, if they have one. */
+async function syncSessionLanguages(
+  meetingId: string,
+  userId: string,
+  languages: { spoken_lang: string; listen_lang: string },
+) {
+  const admin = createAdminClient()
+  const { data: open } = await admin
+    .from('call_sessions')
+    .select('id')
+    .eq('meeting_id', meetingId)
+    .in('status', ['ready', 'live'])
+    .maybeSingle()
+  if (!open) return
+  // NOT_A_PARTICIPANT (first visit): the row is created from the profile when the token is issued.
+  const { error } = await admin.rpc('set_participant_langs', {
+    p_session: open.id,
+    p_user: userId,
+    p_spoken: languages.spoken_lang,
+    p_listen: languages.listen_lang,
+  })
+  if (error && !error.message.includes('NOT_A_PARTICIPANT')) {
+    console.error('Syncing lobby languages failed:', error.message)
+  }
 }
