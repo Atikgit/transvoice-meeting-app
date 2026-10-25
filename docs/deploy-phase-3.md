@@ -222,3 +222,112 @@ docker compose --env-file .env.production up -d --build
 **Check:** dashboard shows only _Join with link_ and _Start meeting_; Start meeting → room: the empty
 room shows a big **Invite Partner** button; the link it creates opens this same meeting for the guest.
 Old browser tabs that still show the dashboard button get an error when they use it (the action changed).
+
+## Fix — host audio, ringing, reusable links, invite email (branch `fix-audio-invite`)
+
+### Evidence and root causes
+
+**1. Host's voice not heard by the guest (original or translated).** From 24 h of production logs:
+the host's English was translated (`en-US>bn-BD`: 3 speech results + 3 "Silence"), the server
+delivered all 3 (`audioMs` ≈ 390 ms), the guest fetched all 3 clips (`/api/tts` 200 ×23 in nginx = every
+speech clip) and the guest's browser **started playing all 3** (`listen` beacons for `bn-BD`). So the
+server, LiveKit data path and fetch were fine; what is audible is decided in the browser or the
+device. The logs cannot tell which, so the code was hardened on every path that can silence a
+voice and the overlay now shows the state that was invisible:
+
+- Ducking could leave the original voice lowered if a clip hung (a suspended `AudioContext` accepts
+  `start()` and never plays or ends). The voice is now lowered only right before a clip plays and put back
+  when it ends, fails, hangs past length + 3 s, the tab is hidden or the audio context stops; a stale,
+  undecodable or blocked clip never lowers anything; `playBuffer` fails fast on a suspended context.
+- The VAD listens to a **clone** of the published microphone track (same capture, no second
+  `getUserMedia`; stopping it cannot mute/end the track LiveKit sends); a test forbids any other capture
+  in the room. A watch logs (`docker logs … | grep '"event":"client"'`) if the published track is muted or ends.
+- A guest joining a live room never presses Start: `room.startAudio()` now also runs on the first tap or key.
+- The "who is connected" cache is refreshed on join/leave webhooks.
+- `?debug=1` now shows: my mic track (published / LiveKit muted / readyState), every remote mic track
+  (subscribed, muted, **volume**), the last ducking event, and a **Play test beep** (proves sound can leave
+  this device). Next test: if the guest hears nothing, open `?debug=1` on the guest: `their mic tracks …
+volume` below 1 or `last ducking … lowered` stuck means ducking; `AudioContext suspended` or a silent
+  beep means the browser/device; `NOT subscribed` means LiveKit.
+- Also seen: 3 of 6 host sentences came back "Silence" from the API (vs 3 of 23 for the guest): check the
+  host's microphone level in the overlay (`mic level`).
+
+**2. Ringing.** In production **no `ringing` session was ever created**: `create_call` rang only a sponsored
+guest's _sponsor_, and the host pressing **Call** got `direct` (every `POST /api/calls` in the nginx log is an
+87-byte "go to the lobby" reply). The Realtime policy `user channel: receive own` is present (queried).
+Fixed: the host's Call rings the guest of the meeting (also while the host sits in the room; Accept joins
+that session), sponsors get **Call** + Open room, the callee's pages poll `/api/calls/incoming` every
+3 s on top of Realtime, the listener is mounted on the dashboard (incl. settings/billing), lobby and room,
+and one shared channel per user replaces two components fighting over supabase-js's single channel object
+(either unmounting used to remove it under the other). Logs: `{"event":"notify","type":"incoming_call","ok":true}`
+and `{"event":"call","action":"ringing"}` on the server; `[calls] channel SUBSCRIBED` / `incoming_call received`
+in the browser console; channel failures reach the server log as `{"event":"client","type":"realtime_status"}`.
+
+**3. Links usable once.** `invitations.max_uses` defaulted to 1. Now 20 by default (1–100 chosen in the
+dialog), the same user can open the link again (same meeting, no new connection/place), a new person
+can use it while places remain, revoked/expired links stop everyone but the host, "full" only stops
+new people, and a link never creates a meeting or a session: after the meeting ended, opening the room
+creates a new ready session on the same meeting for anyone with call rights. **Revoke this link** in the dialog.
+
+**4. Send Invite email.** The container has none of `RESEND_API_KEY`, `SMTP_*`, `EMAIL_FROM`, so there was no
+mailer and "Send Invite" went through Supabase's built-in "Invite user" mail (rate-limited default SMTP, only
+new addresses, creates an unconfirmed account). Now: no mailer → "Email sending is not configured on this
+server…" in the dialog (the Supabase path is opt-in: `INVITE_EMAIL_SUPABASE_FALLBACK=true`).
+
+### Email setup (pick ONE)
+
+Resend (recommended: one HTTPS call, no ports/TLS to debug; needs the `transvoice.ai` domain verified in Resend):
+
+```sh
+RESEND_API_KEY=re_xxxxxxxx
+EMAIL_FROM=TransVoice AI <no-reply@transvoice.ai>    # must be on the verified domain
+```
+
+or SMTP (the same server Supabase Auth uses is fine):
+
+```sh
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587          # 465 with SMTP_SECURE=true
+SMTP_SECURE=false
+SMTP_USER=...
+SMTP_PASS=...
+EMAIL_FROM=TransVoice AI <no-reply@transvoice.ai>    # a sender the SMTP account may use
+```
+
+Check without the app, then recreate the container:
+
+```sh
+pnpm mail:test you@example.com        # reads .env.production; prints transport + the provider's answer
+docker compose --env-file .env.production up -d --force-recreate
+docker logs transvoice_meeting_app 2>&1 | grep '"event":"mailer"'    # {"configured":true,"kind":"resend"}
+```
+
+Nothing is ever logged but `{"event":"invite_email","ok":…,"via":…}` and the provider's reason: no
+addresses, bodies or keys.
+
+### Deploy
+
+```sh
+pnpm dlx supabase db push     # 20261027000100_host_rings_guest, 20261027000200_multi_use_invitations
+pnpm db:types                 # replaces the hand-edited signatures in database.generated.ts
+docker compose --env-file .env.production up -d --build
+```
+
+The migrations replace `create_call`, `incoming_calls` and `create_invitation` (new column / argument with
+defaults, so the previous container keeps working during the switch) and add `revoke_invitation`.
+
+### Check after deploy
+
+1. Host: dashboard → Your connections → **Call** next to the guest: the guest's screen (dashboard, lobby or
+   room of another meeting) shows "… is calling" within ~3 s; Accept lands in the host's room.
+2. Open `/invite/<link>` three times as the same guest, then as a second account: all land in the same meeting;
+   revoke it in the dialog and the next open says "cancelled".
+3. Both sides `?debug=1`: `my mic track published`, `their mic tracks … subscribed, live, volume 1`, **Play test beep**
+   is audible; speak in both directions and check `last ducking … restored to 1`.
+4. `pnpm mail:test you@example.com`, then **Send Invite** in the dialog.
+
+### Not run here
+
+Real-browser/Playwright tests (no Chromium libraries on this host), anything against two real devices, a
+real mail provider (no credentials), and the live Realtime channel (the unit tests drive the hub with a
+fake client; production only shows it in the browser console).
