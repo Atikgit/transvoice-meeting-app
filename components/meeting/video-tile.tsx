@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { MicOff, Signal, SignalLow, SignalMedium, Users } from 'lucide-react'
+import { MicOff, Signal, SignalLow, SignalMedium, UserPlus, Users } from 'lucide-react'
 
 export type TileQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown'
 
@@ -24,6 +24,7 @@ export function VideoTile({
   micMuted = false,
   quality,
   isWaiting = false,
+  onInvite,
   pipOnMobile = false,
   label,
 }: {
@@ -37,6 +38,8 @@ export function VideoTile({
   micMuted?: boolean
   quality?: TileQuality
   isWaiting?: boolean
+  /** In the waiting tile: the big "Invite Partner" button (the host, while nobody else is here). */
+  onInvite?: () => void
   /** Shown as the small mobile picture-in-picture: no footer, smaller avatar. */
   pipOnMobile?: boolean
   /** Secondary line under the name ("Camera off", "Screen share"). */
@@ -60,9 +63,16 @@ export function VideoTile({
             <Users size={24} aria-hidden />
           </div>
           <p className="text-sm font-medium text-slate-200">Waiting for partner to join...</p>
-          <p className="text-xs text-slate-500">
-            Click &apos;Invite Partner&apos; below to share link
-          </p>
+          {onInvite && (
+            <button
+              type="button"
+              onClick={onInvite}
+              className="inline-flex items-center gap-2 rounded-xl bg-cyan-300 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg transition hover:bg-cyan-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+            >
+              <UserPlus size={16} aria-hidden />
+              Invite Partner
+            </button>
+          )}
         </div>
       ) : (
         <div className="flex h-full items-center justify-center">

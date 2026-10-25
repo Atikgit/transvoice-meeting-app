@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RoomState } from '@/lib/meetings/room-state'
 
@@ -119,7 +119,8 @@ vi.mock('@/features/translation/useLiveTranslation', () => ({
 }))
 vi.mock('@/components/meeting/device-menu', () => ({ DeviceMenu: () => <button>Devices</button> }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
-vi.mock('@/app/invite/actions', () => ({ createInvitation: vi.fn() }))
+const createInvitation = vi.fn()
+vi.mock('@/app/invite/actions', () => ({ createInvitation }))
 vi.mock('@/features/meeting/useMeetingChat', () => ({
   useMeetingChat: () => ({ messages: [], send: vi.fn() }),
 }))
@@ -586,6 +587,53 @@ describe('MeetingRoom tiles', () => {
     lk.tracks = [{ source: 'camera', participant: { identity: 'u1', isLocal: true, name: 'Atik' } }]
     room('host')
     expect(await screen.findByText('Waiting for partner to join...')).toBeInTheDocument()
+  })
+})
+
+describe('Invite Partner in the room', () => {
+  const alone = () => {
+    lk.remotes = []
+    lk.tracks = [{ source: 'camera', participant: { identity: 'u1', isLocal: true, name: 'Atik' } }]
+  }
+
+  it('the host sees a prominent Invite Partner button in the empty room; it opens the modal for THIS meeting', async () => {
+    alone()
+    createInvitation.mockResolvedValue({
+      ok: true,
+      url: 'https://meet.transvoice.ai/invite/x',
+      meetingId: '11111111-1111-4111-8111-111111111111',
+      expiresAt: '2026-11-01T00:00:00Z',
+      reused: true,
+    })
+    room('host')
+    await screen.findByText('Waiting for partner to join...')
+    const tile = screen.getByTestId('video-tile')
+    fireEvent.click(within(tile).getByRole('button', { name: 'Invite Partner' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Create invite link/ }))
+    await waitFor(() =>
+      expect(createInvitation).toHaveBeenCalledWith(
+        expect.objectContaining({ meetingId: '11111111-1111-4111-8111-111111111111' }),
+      ),
+    )
+    // Inside the room the link is always for the current meeting: no "go to this meeting" detour.
+    expect(screen.queryByRole('link', { name: 'Go to this meeting' })).toBeNull()
+  })
+
+  it('the control bar button opens the same modal, and a guest alone gets no big button', async () => {
+    alone()
+    room('guest')
+    await screen.findByText('Waiting for partner to join...')
+    expect(
+      within(screen.getByTestId('video-tile')).queryByRole('button', { name: 'Invite Partner' }),
+    ).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Invite Partner' }))
+    expect(await screen.findByRole('button', { name: /Create invite link/ })).toBeInTheDocument()
+  })
+
+  it('once the partner is here the big button is gone (the control bar one stays)', async () => {
+    room('host')
+    await screen.findByText('Ready')
+    expect(screen.getAllByRole('button', { name: 'Invite Partner' })).toHaveLength(1)
   })
 })
 

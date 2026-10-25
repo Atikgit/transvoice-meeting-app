@@ -451,6 +451,8 @@ function RoomView({
                 initials="?"
                 color="bg-teal-900/60"
                 isWaiting
+                // The host's call to action while the room is empty; same modal as the control bar.
+                onInvite={role === 'host' ? () => setModal('invite') : undefined}
               />,
             ]),
         ...ordered.map((trackRef, index) => (
