@@ -10,6 +10,9 @@ import { Modal } from '@/components/common/modal'
 export function joinPathFromLink(input: string): string | null {
   const value = input.trim()
   if (/^[A-Za-z0-9_-]{43}$/.test(value)) return `/invite/${value}`
+  // A link pasted inside a message ("Join me: https://… Thanks!"): find the invite in the text.
+  const embedded = /\/invite\/([A-Za-z0-9_-]{43})(?![A-Za-z0-9_-])/.exec(value)
+  if (embedded) return `/invite/${embedded[1]}`
   let path: string
   try {
     path = new URL(value, 'https://placeholder.invalid').pathname
@@ -31,7 +34,7 @@ export function JoinLinkModal({ onClose }: { onClose: () => void }) {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const path = joinPathFromLink(link)
-    if (!path) return setError('Paste the full invitation link you received.')
+    if (!path) return setError('Paste the invitation link (or just its code) you received.')
     router.push(path)
   }
 

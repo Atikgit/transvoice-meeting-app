@@ -16,7 +16,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 
 export type CreateInvitationResult =
-  | { ok: true; url: string; meetingId: string; expiresAt: string }
+  | { ok: true; url: string; meetingId: string; expiresAt: string; reused: boolean }
   | {
       ok: false
       code: 'SIGNED_OUT' | 'NO_MINUTES' | 'EMAIL_NOT_VERIFIED' | 'RATE_LIMITED' | 'FAILED'
@@ -37,7 +37,8 @@ const MESSAGES = {
 } as const
 
 /**
- * Creates an invitation (and, without meetingId, a new meeting) for the signed-in user.
+ * Creates an invitation for the signed-in user. Without meetingId it joins the host's current
+ * meeting (open session, or a fresh one not yet used) and only creates a new meeting if there is none.
  * The raw token appears only in the returned URL; the database stores its hash.
  */
 export async function createInvitation(input: {
@@ -73,6 +74,8 @@ export async function createInvitation(input: {
     url: `${await appOrigin()}/invite/${token}`,
     meetingId: data[0].meeting_id,
     expiresAt: data[0].expires_at,
+    // true: the link opens a meeting the host already has (not a new one).
+    reused: data[0].reused,
   }
 }
 

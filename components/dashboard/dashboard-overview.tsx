@@ -61,12 +61,24 @@ export function DashboardOverview({
               Get minutes to invite
             </Button>
           )}
-          <Button onClick={onMeeting} disabled={startingMeeting} aria-busy={startingMeeting}>
+          <Button
+            onClick={onMeeting}
+            disabled={startingMeeting}
+            aria-busy={startingMeeting}
+            title="Opens a new meeting"
+          >
             <Video size={15} />
             {startingMeeting ? 'Opening lobby…' : 'Start meeting'}
           </Button>
         </div>
       </div>
+
+      <p className="mt-3 text-xs text-slate-500 md:text-right">
+        <strong className="font-medium text-slate-400">Start meeting</strong> always opens a new
+        meeting. To bring your partner into the meeting you are in,{' '}
+        <strong className="font-medium text-slate-400">Invite Partner</strong> uses that same
+        meeting.
+      </p>
 
       <div className="mt-10 grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">

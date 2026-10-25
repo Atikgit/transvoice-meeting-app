@@ -27,7 +27,14 @@ beforeEach(() => {
   process.env.APP_URL = 'https://meet.transvoice.ai'
   getSessionUser.mockResolvedValue({ id: 'host-1', email: 'host@example.com' })
   rpc.mockResolvedValue({
-    data: [{ meeting_id: MEETING, invitation_id: 'i1', expires_at: '2026-10-30T10:00:00Z' }],
+    data: [
+      {
+        meeting_id: MEETING,
+        invitation_id: 'i1',
+        expires_at: '2026-10-30T10:00:00Z',
+        reused: true,
+      },
+    ],
     error: null,
   })
 })
@@ -115,6 +122,39 @@ describe('InviteModal', () => {
       /linkedin\.com\/sharing/,
     )
     expect(screen.getByRole('link', { name: /Email/ }).getAttribute('href')).toMatch(/^mailto:/)
+  })
+
+  it('says which meeting the link opens, and links the host to it from the dashboard', async () => {
+    render(<InviteModal onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
+    expect(await screen.findByText(/opens the meeting you are already in/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to this meeting' })).toHaveAttribute(
+      'href',
+      `/m/${MEETING}/lobby`,
+    )
+  })
+
+  it('says so when the link opens a NEW meeting; inside a room there is no extra link', async () => {
+    rpc.mockResolvedValue({
+      data: [
+        {
+          meeting_id: MEETING,
+          invitation_id: 'i1',
+          expires_at: '2026-10-30T10:00:00Z',
+          reused: false,
+        },
+      ],
+      error: null,
+    })
+    const { unmount } = render(<InviteModal onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
+    expect(await screen.findByText(/opens a new meeting/)).toBeInTheDocument()
+    unmount()
+
+    render(<InviteModal meetingId={MEETING} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }))
+    await screen.findByText(/opens a new meeting|already in/)
+    expect(screen.queryByRole('link', { name: 'Go to this meeting' })).toBeNull()
   })
 
   it('offers to get minutes when the balance is empty', async () => {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { Check, Copy, Link2, Mail, MessageCircle, Send, Share2 } from 'lucide-react'
 import {
   createInvitation,
@@ -93,6 +94,19 @@ export function InviteModal({
             <Mail size={14} aria-hidden /> Email app
           </a>
         </div>
+        <p className="mt-3 text-xs text-slate-400">
+          {result.reused
+            ? 'This link opens the meeting you are already in or about to start.'
+            : 'This link opens a new meeting.'}{' '}
+          {!meetingId && (
+            <Link
+              href={`/m/${result.meetingId}/lobby`}
+              className="font-semibold text-cyan-300 underline underline-offset-2"
+            >
+              Go to this meeting
+            </Link>
+          )}
+        </p>
         <SendInviteEmail inviteUrl={result.url} />
         <p className="mt-4 text-xs text-slate-500">
           Your partner signs up free ({FREE_TRIAL_MINUTES} free minutes) and joins your room. Their

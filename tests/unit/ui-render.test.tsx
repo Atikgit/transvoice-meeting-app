@@ -170,7 +170,15 @@ describe('Join with link', () => {
       'https://meet.transvoice.ai/m/11111111-1111-4111-8111-111111111111',
       '/m/11111111-1111-4111-8111-111111111111/lobby',
     ],
+    // Pasted inside a message, with a query string, a trailing dot, or surrounding spaces.
+    [
+      'Join me here: https://meet.transvoice.ai/invite/' + 'a'.repeat(43) + ' thanks!',
+      '/invite/' + 'a'.repeat(43),
+    ],
+    ['  meet.transvoice.ai/invite/' + 'b'.repeat(43) + '?utm=wa.', '/invite/' + 'b'.repeat(43)],
+    ['https://meet.transvoice.ai/invite/' + 'c'.repeat(43) + '#x', '/invite/' + 'c'.repeat(43)],
     ['https://evil.example/phish', null],
+    ['https://meet.transvoice.ai/invite/too-short', null],
     ['hello', null],
   ])('%s → %s', (input, path) => expect(joinPathFromLink(input)).toBe(path))
 })
@@ -212,5 +220,29 @@ describe('Video tile indicators', () => {
     render(<VideoTile name="Rahim" initials="RA" color="x" video={<video data-testid="v" />} />)
     expect(screen.getByTestId('v')).toBeInTheDocument()
     expect(screen.queryByText('RA')).toBeNull()
+  })
+})
+
+describe('Dashboard: Start meeting vs Invite Partner', () => {
+  it('says Start meeting opens a NEW meeting and that Invite Partner uses the current one', async () => {
+    const { DashboardOverview } = await import('@/components/dashboard/dashboard-overview')
+    render(
+      <DashboardOverview
+        greeting="Hi"
+        balance={10}
+        canInvite
+        onMeeting={() => {}}
+        startingMeeting={false}
+        onJoin={() => {}}
+        onInvite={() => {}}
+        onPricing={() => {}}
+      />,
+    )
+    expect(screen.getByRole('button', { name: /Start meeting/ })).toHaveAttribute(
+      'title',
+      'Opens a new meeting',
+    )
+    expect(screen.getByText(/always opens a new/)).toBeInTheDocument()
+    expect(screen.getByText(/uses that same/)).toBeInTheDocument()
   })
 })
