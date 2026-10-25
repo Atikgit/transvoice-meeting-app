@@ -2,7 +2,8 @@
 
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { appMailer } from '@/lib/email/mailer'
+import { appMailer, appMailerStatus } from '@/lib/email/mailer'
+import { serverEnv } from '@/lib/env'
 import {
   buildInviteEmailHtml,
   buildInviteEmailText,
@@ -141,7 +142,13 @@ export type SendInviteEmailResult =
   | {
       ok: false
       code:
-        'SIGNED_OUT' | 'INVALID' | 'RATE_LIMITED' | 'NOT_YOURS' | 'ALREADY_REGISTERED' | 'FAILED'
+        | 'SIGNED_OUT'
+        | 'INVALID'
+        | 'NOT_CONFIGURED'
+        | 'RATE_LIMITED'
+        | 'NOT_YOURS'
+        | 'ALREADY_REGISTERED'
+        | 'FAILED'
       error: string
     }
 
@@ -188,6 +195,17 @@ export async function sendInvitationEmail(input: {
   if (!user) return { ok: false, code: 'SIGNED_OUT', error: 'Please sign in again.' }
   if (user.email?.toLowerCase() === to) {
     return { ok: false, code: 'INVALID', error: 'Enter your partner’s email, not your own.' }
+  }
+  // No mailer on this server: say so plainly instead of sending nothing (or sending through
+  // Supabase's rate-limited default mail, which only reaches new addresses and team members).
+  if (!appMailerStatus().configured && !serverEnv().INVITE_EMAIL_SUPABASE_FALLBACK) {
+    console.warn(JSON.stringify({ event: 'invite_email', ok: false, reason: 'not_configured' }))
+    return {
+      ok: false,
+      code: 'NOT_CONFIGURED',
+      error:
+        'Email sending is not configured on this server. Copy the link or share it with WhatsApp or LinkedIn.',
+    }
   }
 
   const limited =
@@ -244,16 +262,23 @@ export async function sendInvitationEmail(input: {
         html: buildInviteEmailHtml(email),
         text: buildInviteEmailText(email),
       })
+      console.info(JSON.stringify({ event: 'invite_email', ok: true, via: mailer.kind }))
       return { ok: true, to, via: mailer.kind }
     } catch (error) {
+      // The provider's own sentence (e.g. "domain is not verified"); never the address or the body.
       console.error(
-        `Invite email via ${mailer.kind} failed:`,
-        error instanceof Error ? error.message : error,
+        JSON.stringify({
+          event: 'invite_email',
+          ok: false,
+          via: mailer.kind,
+          detail: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
+        }),
       )
       return {
         ok: false,
         code: 'FAILED',
-        error: 'Could not send the email. Share the link instead.',
+        error:
+          'The email could not be sent (the mail provider refused it). Share the link instead.',
       }
     }
   }
@@ -271,8 +296,16 @@ export async function sendInvitationEmail(input: {
         error: 'This person already has an account. Send them the link with Copy or WhatsApp.',
       }
     }
-    console.error('inviteUserByEmail failed:', error.code ?? error.message)
+    console.error(
+      JSON.stringify({
+        event: 'invite_email',
+        ok: false,
+        via: 'supabase',
+        detail: error.code ?? 'error',
+      }),
+    )
     return { ok: false, code: 'FAILED', error: 'Could not send the email. Share the link instead.' }
   }
+  console.info(JSON.stringify({ event: 'invite_email', ok: true, via: 'supabase' }))
   return { ok: true, to, via: 'supabase' }
 }

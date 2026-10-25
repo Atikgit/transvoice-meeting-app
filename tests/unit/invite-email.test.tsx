@@ -11,8 +11,21 @@ let mailerKind: 'resend' | 'smtp' | null = 'resend'
 let ip = '203.0.113.10'
 
 vi.mock('@/lib/supabase/server', () => ({ getSessionUser }))
+let supabaseFallback = false
 vi.mock('@/lib/email/mailer', () => ({
   appMailer: () => (mailerKind ? { kind: mailerKind, send } : null),
+  appMailerStatus: () =>
+    mailerKind
+      ? { configured: true, kind: mailerKind }
+      : {
+          configured: false,
+          kind: 'none',
+          missing: ['RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS'],
+        },
+}))
+vi.mock('@/lib/env', async (original) => ({
+  ...(await original<typeof import('@/lib/env')>()),
+  serverEnv: () => ({ INVITE_EMAIL_SUPABASE_FALLBACK: supabaseFallback }),
 }))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
@@ -56,6 +69,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   process.env.APP_URL = 'https://meet.transvoice.ai'
   mailerKind = 'resend'
+  supabaseFallback = false
   ip = `203.0.113.${++n}`
   me = `host-${n}` // the per-user limit is process-wide: one user per test
   getSessionUser.mockResolvedValue({ id: me, email: 'host@example.com' })
@@ -111,7 +125,8 @@ describe('invite email template', () => {
 })
 
 describe('sendInvitationEmail', () => {
-  it('sends the branded HTML with the app mailer to any address', async () => {
+  it('sends the branded HTML with the app mailer to any address and logs a line without the address', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     const to = recipient()
     expect(await sendInvitationEmail({ inviteUrl: URL, email: to.toUpperCase() })).toEqual({
       ok: true,
@@ -124,6 +139,9 @@ describe('sendInvitationEmail', () => {
     expect(email.html).toContain('Atik &lt;b&gt;Islam&lt;/b&gt;')
     expect(email.html).toContain(`href="https://meet.transvoice.ai/invite/${TOKEN}"`)
     expect(inviteUserByEmail).not.toHaveBeenCalled()
+    const line = String(info.mock.calls.find((c) => String(c[0]).includes('invite_email'))![0])
+    expect(JSON.parse(line)).toEqual({ event: 'invite_email', ok: true, via: 'resend' })
+    info.mockRestore()
   })
 
   it('rebuilds the link from the token: a foreign URL with the same token sends our URL', async () => {
@@ -137,8 +155,26 @@ describe('sendInvitationEmail', () => {
     expect(send.mock.calls[0]![0].html).not.toContain('evil.example')
   })
 
-  it('without a mailer, uses Supabase inviteUserByEmail with the invite in metadata', async () => {
+  it('without a mailer, says email is not configured: nothing is sent, nothing goes through Supabase', async () => {
     mailerKind = null
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const to = recipient()
+    expect(await sendInvitationEmail({ inviteUrl: URL, email: to })).toEqual({
+      ok: false,
+      code: 'NOT_CONFIGURED',
+      error:
+        'Email sending is not configured on this server. Copy the link or share it with WhatsApp or LinkedIn.',
+    })
+    expect(send).not.toHaveBeenCalled()
+    expect(inviteUserByEmail).not.toHaveBeenCalled()
+    expect(String(warn.mock.calls[0]![0])).toContain('"reason":"not_configured"')
+    expect(String(warn.mock.calls[0]![0])).not.toContain(to)
+    warn.mockRestore()
+  })
+
+  it('with INVITE_EMAIL_SUPABASE_FALLBACK=true and no mailer, uses Supabase inviteUserByEmail with the invite in metadata', async () => {
+    mailerKind = null
+    supabaseFallback = true
     const to = recipient()
     expect(await sendInvitationEmail({ inviteUrl: URL, email: to })).toEqual({
       ok: true,
@@ -153,6 +189,7 @@ describe('sendInvitationEmail', () => {
 
   it('explains that existing users need the link (Supabase only invites new users)', async () => {
     mailerKind = null
+    supabaseFallback = true
     inviteUserByEmail.mockResolvedValue({
       data: null,
       error: {
@@ -221,14 +258,21 @@ describe('sendInvitationEmail', () => {
   })
 
   it('reports a mailer failure without leaking details', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    send.mockRejectedValue(new Error('535 auth failed for smtp-user'))
-    const result = await sendInvitationEmail({ inviteUrl: URL, email: recipient() })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    send.mockRejectedValue(new Error('SMTP EAUTH 535: Authentication failed'))
+    const to = recipient()
+    const result = await sendInvitationEmail({ inviteUrl: URL, email: to })
     expect(result).toEqual({
       ok: false,
       code: 'FAILED',
-      error: 'Could not send the email. Share the link instead.',
+      error: 'The email could not be sent (the mail provider refused it). Share the link instead.',
     })
+    // The log gets the provider's reason, never the recipient or the message.
+    const line = String(error.mock.calls[0]![0])
+    expect(JSON.parse(line)).toMatchObject({ event: 'invite_email', ok: false, via: 'resend' })
+    expect(line).toContain('Authentication failed')
+    expect(line).not.toContain(to)
+    error.mockRestore()
   })
 })
 

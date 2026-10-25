@@ -92,6 +92,9 @@ const serverSchema = z.object({
   SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_SECURE: z.stringbool().default(false),
+  // Without an app mailer, "Send Invite" says email is not configured. true: fall back to Supabase's
+  // "Invite user" email (new addresses only; needs Supabase SMTP and creates an unconfirmed account).
+  INVITE_EMAIL_SUPABASE_FALLBACK: z.stringbool().default(false),
   SMTP_USER: z.string().min(1).optional(),
   SMTP_PASS: z.string().min(1).optional(),
 

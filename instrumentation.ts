@@ -9,6 +9,17 @@ export async function register() {
   const { startSweeper, stopSweeper } = await import('@/lib/sweeper')
   const { DRAIN_MAX_MS, startDraining } = await import('@/lib/draining')
   if (env.SWEEP_INTERVAL_SEC > 0) startSweeper()
+  // Is email set up? Names of missing variables only; never addresses or keys.
+  const { appMailerStatus } = await import('@/lib/email/mailer')
+  const mail = appMailerStatus()
+  console.info(
+    JSON.stringify({
+      event: 'mailer',
+      configured: mail.configured,
+      kind: mail.kind,
+      ...(mail.configured ? {} : { missing: mail.missing }),
+    }),
+  )
   // Boot ping (logs whether the API is reachable) and keep-alive while sessions are live.
   const { startWarmup, stopWarmup } = await import('@/lib/transvoice/warmup')
   startWarmup(env.TRANSVOICE_WARMUP_SEC * 1000)
