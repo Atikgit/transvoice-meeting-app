@@ -1,4 +1,4 @@
-import { shortLanguageName } from '@/lib/translation/plan'
+import { shortLanguageName } from '@/lib/translation/language-display'
 import type { TranslationStatus } from '@/features/translation/useTranslationStatus'
 
 /**

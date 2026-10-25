@@ -5,7 +5,8 @@ import { connectedIdentities } from '@/lib/livekit/connected'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 import { translationGate } from '@/lib/translation/gate'
-import { looksSwapped, planFanout } from '@/lib/translation/plan'
+import { looksSwapped } from '@/lib/translation/language-display'
+import { planFanout } from '@/lib/translation/plan'
 import { probeApiAuth } from '@/lib/transvoice/probe'
 
 /**
