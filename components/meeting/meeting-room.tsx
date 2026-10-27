@@ -84,6 +84,8 @@ export interface MeetingRoomProps {
   vadEndSilenceMs?: number
   /** UPLOAD_FORMAT from the server environment. */
   uploadFormat?: 'wav' | 'opus'
+  /** VAD_MAX_CHUNK_MS from the server environment. */
+  maxChunkMs?: number
   /** ?debug=1: show the translation overlay (any signed-in participant). */
   debug?: boolean
   /** Camera / mic choice from the lobby. */
@@ -277,6 +279,7 @@ function RoomView({
   debug = false,
   vadEndSilenceMs,
   uploadFormat,
+  maxChunkMs,
 }: MeetingRoomProps & {
   mediaProblem: MediaProblem | null
   onMediaProblemHandled: () => void
@@ -314,6 +317,7 @@ function RoomView({
     enabled: translationEnabled,
     endSilenceMs: vadEndSilenceMs,
     uploadFormat,
+    maxChunkMs,
     playingTranslation: audio.playing, // echo safety: never listen while a clip plays
     onTranscript: audio.addOwnTranscript,
   })

@@ -29,12 +29,15 @@ export async function uploadUtterance(
     utteranceId,
     utterance,
     format = 'wav',
+    chunk,
   }: {
     sessionId: string
     utteranceId: string
     utterance: Utterance
     /** UPLOAD_FORMAT. opus falls back to wav where the browser cannot encode it. */
     format?: UploadFormat
+    /** Piece of a long speech (see Utterance.chunk). */
+    chunk?: { group: string; seq: number }
   },
   onEncoded?: (encodeMs: number, sent: { format: UploadFormat; bytes: number }) => void,
 ): Promise<Response> {
@@ -53,6 +56,10 @@ export async function uploadUtterance(
   })
   form.set('sessionId', sessionId)
   form.set('utteranceId', utteranceId)
+  if (chunk) {
+    form.set('group', chunk.group)
+    form.set('seq', String(chunk.seq))
+  }
   // Wall-clock time the speaker stopped talking (listeners derive latency from it).
   form.set('clientTs', String(Math.round(Date.now() - (performance.now() - utterance.endedAt))))
   const send = () => fetch('/api/translate', { method: 'POST', body: form })
@@ -86,6 +93,7 @@ export function useLiveTranslation({
   enabled = true,
   endSilenceMs,
   uploadFormat = 'wav',
+  maxChunkMs,
   onTranscript,
 }: {
   sessionId: string
@@ -97,6 +105,8 @@ export function useLiveTranslation({
   endSilenceMs?: number
   /** UPLOAD_FORMAT: what each utterance is uploaded as. */
   uploadFormat?: UploadFormat
+  /** VAD_MAX_CHUNK_MS. */
+  maxChunkMs?: number
   /** The speaker's own transcript of an utterance. */
   onTranscript?: (utteranceId: string, original: string) => void
 }) {
@@ -106,6 +116,7 @@ export function useLiveTranslation({
   const [pending, setPending] = useState(0)
   const [blocked, setBlocked] = useState<TranslationNotice>(null)
   const [paused, setPaused] = useState(false)
+  const chains = useRef(new Map<string, Promise<void>>())
   const transcriptRef = useRef(onTranscript)
   useEffect(() => {
     transcriptRef.current = onTranscript
@@ -200,6 +211,7 @@ export function useLiveTranslation({
     track: micTrack,
     listening,
     endSilenceMs,
+    maxChunkMs,
     onUtterance: (utterance) => {
       const utteranceId = crypto.randomUUID()
       const sentAt = performance.now()
@@ -214,13 +226,31 @@ export function useLiveTranslation({
       })
       let encodeMs = 0
       let sent: { format: UploadFormat; bytes: number } | undefined
-      void uploadUtterance(
-        { sessionId, utteranceId, utterance, format: uploadFormat },
-        (ms, info) => {
-          encodeMs = ms
-          sent = info
-        },
-      )
+      const upload = () =>
+        uploadUtterance(
+          { sessionId, utteranceId, utterance, format: uploadFormat, chunk: utterance.chunk },
+          (ms, info) => {
+            encodeMs = ms
+            sent = info
+          },
+        )
+      // Pieces of one long speech go out one after the other: the server has delivered piece n
+      // before piece n+1 is sent, so the listener's per-speaker queue plays them in order.
+      const group = utterance.chunk?.group
+      const request = group
+        ? (chains.current.get(group) ?? Promise.resolve()).then(upload)
+        : upload()
+      if (group) {
+        const settled = request.then(
+          () => {},
+          () => {},
+        )
+        chains.current.set(group, settled)
+        void settled.then(() => {
+          if (chains.current.get(group) === settled) chains.current.delete(group)
+        })
+      }
+      void request
         .then((res) => {
           reportLatency({
             sessionId,

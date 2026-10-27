@@ -22,6 +22,8 @@ export const VAD_SETTINGS = {
   minSpeechMs: 300,
   preSpeechPadMs: 300,
   maxUtteranceMs: 12_000,
+  /** A speech longer than this is cut at its latest pause (VAD_MAX_CHUNK_MS). */
+  maxChunkMs: 5000,
   positiveSpeechThreshold: 0.5,
   negativeSpeechThreshold: 0.35,
 } as const
