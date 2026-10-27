@@ -51,3 +51,18 @@ describe('parseServerEnv', () => {
     expect(() => parseServerEnv({ ...TEST_ENV, BILLING_MODE: 'speech' })).toThrow(/BILLING_MODE/)
   })
 })
+
+describe('fix-dubbing settings', () => {
+  it('UPLOAD_FORMAT defaults to wav and accepts opus only', () => {
+    expect(parseServerEnv({ ...TEST_ENV }).UPLOAD_FORMAT).toBe('wav')
+    expect(parseServerEnv({ ...TEST_ENV, UPLOAD_FORMAT: 'opus' }).UPLOAD_FORMAT).toBe('opus')
+    expect(() => parseServerEnv({ ...TEST_ENV, UPLOAD_FORMAT: 'mp3' })).toThrow()
+  })
+
+  it('VAD_MAX_CHUNK_MS defaults to 5000 and must stay within 2000-12000', () => {
+    expect(parseServerEnv({ ...TEST_ENV }).VAD_MAX_CHUNK_MS).toBe(5000)
+    expect(parseServerEnv({ ...TEST_ENV, VAD_MAX_CHUNK_MS: '8000' }).VAD_MAX_CHUNK_MS).toBe(8000)
+    expect(() => parseServerEnv({ ...TEST_ENV, VAD_MAX_CHUNK_MS: '1000' })).toThrow()
+    expect(() => parseServerEnv({ ...TEST_ENV, VAD_MAX_CHUNK_MS: '20000' })).toThrow()
+  })
+})
