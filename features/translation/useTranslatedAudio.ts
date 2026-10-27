@@ -5,12 +5,15 @@ import { useRoomContext } from '@livekit/components-react'
 import { RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client'
 import { decodeInlineAudio, parseDataMessage, TOPICS } from '@/lib/translation/messages'
 import { addCaption, type CaptionEntry } from './captions'
-import { setTranslationDebug } from './debug-store'
+import { getTranslationDebug as getDebug, rememberClip, setTranslationDebug } from './debug-store'
 import { reportLatency } from './latency-beacon'
 import { LatencyTracker, type LatencySample } from './metrics'
 import { PlaybackQueues, type Clip, type OriginalAudioMode } from './playback'
 import {
+  audioContextState,
   audioIsRunning,
+  CLIP_GAIN,
+  clipStats,
   decodeBytes,
   fetchAndDecode,
   onAudioStateChange,
@@ -34,6 +37,8 @@ export function useTranslatedAudio({
   const [captions, setCaptions] = useState<CaptionEntry[]>([])
   const [playing, setPlaying] = useState(false)
   const [unavailable, setUnavailable] = useState(false)
+  /** Last utterance came as a caption only (its voice clip was empty). */
+  const [audioMissing, setAudioMissing] = useState(false)
   const [latency, setLatency] = useState<LatencySample | null>(null)
   const modeRef = useRef(originalAudioMode)
   const tracker = useRef(new LatencyTracker())
@@ -68,6 +73,17 @@ export function useTranslatedAudio({
               at: Date.now(),
             },
           })
+          const stats = clipStats(buffer)
+          rememberClip(buffer)
+          setTranslationDebug({ lastClip: { ...stats, at: Date.now() } })
+          // An undecodable-as-sound clip (empty / inaudible) is invisible to the listener but
+          // not to the log: this is how a "silent translation" shows up in production.
+          if (stats.peak < 0.01 || stats.seconds < 0.2)
+            reportDiag({
+              type: 'clip_quiet',
+              detail: `peak ${stats.peak.toFixed(3)} dur ${stats.seconds.toFixed(2)} rate ${stats.sampleRate}`,
+              sessionId,
+            })
           return buffer
         } catch (error) {
           const status = /responded (\d+)/.exec(String((error as Error)?.message))?.[1]
@@ -99,6 +115,20 @@ export function useTranslatedAudio({
       },
       onDuck: (event) => {
         setTranslationDebug({ lastDuck: { ...event, at: Date.now() } })
+        const current = getDebug().lastClip
+        if (current)
+          setTranslationDebug({
+            lastClip: {
+              ...current,
+              ...(event.reason === 'start'
+                ? {
+                    gain: CLIP_GAIN,
+                    ctxAtStart: audioContextState(),
+                    originalAtStart: event.volume,
+                  }
+                : { originalAtEnd: event.volume }),
+            },
+          })
         // A clip that hung or failed while the original was lowered is worth a line in the log.
         if (event.reason === 'timeout' || event.reason === 'failed') {
           reportDiag({ type: 'duck_restored', detail: event.reason, sessionId })
@@ -173,6 +203,7 @@ export function useTranslatedAudio({
         tracker.current.captionShown(m.utteranceId, m.speechEndedAt, Date.now())
         setLatency(tracker.current.latest())
         setUnavailable(false)
+        setAudioMissing(false)
         setCaptions((log) =>
           addCaption(log, {
             id: m.utteranceId,
@@ -198,7 +229,8 @@ export function useTranslatedAudio({
         queues.enqueue(clip)
         setTranslationDebug({ queue: queues.size() })
       } else if (parsed.topic === TOPICS.notice) {
-        setUnavailable(parsed.message.kind === 'translation_unavailable')
+        if (parsed.message.kind === 'audio_unavailable') setAudioMissing(true)
+        else setUnavailable(true)
       }
     }
 
@@ -228,5 +260,5 @@ export function useTranslatedAudio({
   const addOwnTranscript = (id: string, original: string) =>
     setCaptions((log) => addCaption(log, { id, from: 'self', original, translated: '' }))
 
-  return { captions, playing, unavailable, latency, addOwnTranscript }
+  return { captions, playing, unavailable, audioMissing, latency, addOwnTranscript }
 }

@@ -172,8 +172,24 @@ const DEFAULT_VOICE: Record<VoiceGender, string> = {
   female: 'en-US-AvaNeural',
 }
 
-/** Azure neural voice for a locale; falls back to English voices for unmapped locales. */
+export function otherGender(gender: VoiceGender): VoiceGender {
+  return gender === 'male' ? 'female' : 'male'
+}
+
+/**
+ * The voice for a locale, or null when none is configured. A locale without its own entry
+ * borrows the first listed locale of the same language ("bn" → bn-BD); it never gets an English
+ * voice: the API answers a wrong-language voice with an empty clip.
+ */
+export function findVoice(langCode: string, gender: VoiceGender = 'female'): string | null {
+  const exact = voiceMapping[langCode]
+  if (exact) return exact[gender]
+  const primary = langCode.split('-')[0]
+  const sibling = Object.keys(voiceMapping).find((code) => code.split('-')[0] === primary)
+  return sibling ? voiceMapping[sibling]![gender] : null
+}
+
+/** Azure neural voice for a locale; English voices only for English locales. */
 export function getVoiceName(langCode: string, gender: VoiceGender = 'female'): string {
-  const match = voiceMapping[langCode]
-  return match ? match[gender] : DEFAULT_VOICE[gender]
+  return findVoice(langCode, gender) ?? DEFAULT_VOICE[gender]
 }

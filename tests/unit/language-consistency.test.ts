@@ -1,3 +1,4 @@
+import { TONE_WAV_BASE64 } from '../mocks/transvoice'
 import { http, HttpResponse } from 'msw'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -138,7 +139,11 @@ beforeEach(() => {
     http.post(`${TEST_ENV.TRANSVOICE_API_URL}/`, async ({ request }) => {
       const body = (await request.json()) as { tgt_lang: string; src_lang: string }
       apiTargets.push(`${body.src_lang}>${body.tgt_lang}`)
-      return HttpResponse.json({ original_text: 'o', translated_text: 't', tts_audio: 'QQ==' })
+      return HttpResponse.json({
+        original_text: 'o',
+        translated_text: 't',
+        tts_audio: TONE_WAV_BASE64,
+      })
     }),
   )
   me = HOST

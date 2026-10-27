@@ -93,3 +93,44 @@ describe('buildReport', () => {
     expect(formatReport(buildReport([listen('a', 1000)]))).toContain('PASS')
   })
 })
+
+describe('API stage timings and upload format', () => {
+  it('reports asr_ms / mt_ms / tts_ms only when the API sends them, and splits round trips by upload format', () => {
+    const withTimings = JSON.stringify({
+      event: 'translate',
+      utteranceId: 'a',
+      totalMs: 2000,
+      languages: [
+        {
+          lang: 'en-US',
+          pair: 'bn-BD>en-US',
+          outcome: 'speech',
+          apiMs: 1800,
+          asrMs: 700,
+          mtMs: 300,
+          ttsMs: 600,
+        },
+      ],
+    })
+    const without = translate('b', 1500)
+    const speakOpus = JSON.stringify({
+      event: 'latency',
+      utteranceId: 'a',
+      kind: 'speak',
+      encodeMs: 20,
+      vadMs: 400,
+      roundTripMs: 2100,
+      bytes: 9000,
+      format: 'opus',
+    })
+    const report = buildReport([withTimings, without, speakOpus])
+    const stage = (name: string) => report.stages.find((s) => s.name === name)
+    expect(stage('API: speech recognition (asr_ms)')).toMatchObject({ n: 1, p50: 700 })
+    expect(stage('API: translation (mt_ms)')).toMatchObject({ n: 1, p50: 300 })
+    expect(stage('API: speech synthesis (tts_ms)')).toMatchObject({ n: 1, p50: 600 })
+    expect(stage('server: API call per language')).toMatchObject({ n: 2 })
+    expect(stage('speaker: round trip [opus]')).toMatchObject({ n: 1, p50: 2100 })
+    expect(stage('speaker: upload size bytes [opus]')).toMatchObject({ p50: 9000 })
+    expect(stage('speaker: VAD end-of-speech wait')).toMatchObject({ p50: 400 })
+  })
+})

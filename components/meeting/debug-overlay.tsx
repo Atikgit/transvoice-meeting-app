@@ -9,13 +9,20 @@ import {
 import { Track, type RemoteAudioTrack } from 'livekit-client'
 import {
   enableTranslationDebug,
+  lastClip,
   lastUtteranceSamples,
   useTranslationDebug,
 } from '@/features/translation/debug-store'
 import { useMicLevel } from '@/features/translation/useMicLevel'
 import { uploadUtterance } from '@/features/translation/useLiveTranslation'
 import type { TranslationStatus } from '@/features/translation/useTranslationStatus'
-import { audioContextState, playTestBeep } from '@/features/translation/web-audio'
+import { encodeWav } from '@/lib/translation/wav'
+import {
+  audioContextState,
+  playBuffer,
+  playTestBeep,
+  unlockAudio,
+} from '@/features/translation/web-audio'
 
 const ago = (at: number | undefined, now: number) =>
   at === undefined ? '—' : `${Math.max(0, Math.round((now - at) / 1000))} s ago`
@@ -64,6 +71,9 @@ export function DebugOverlay({
   const [test, setTest] = useState<string>('')
   const [testing, setTesting] = useState(false)
   const [beep, setBeep] = useState('')
+  const [replay, setReplay] = useState('')
+  const [voiceTest, setVoiceTest] = useState('')
+  const [voiceTesting, setVoiceTesting] = useState(false)
 
   const micTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track
     ?.mediaStreamTrack
@@ -110,6 +120,69 @@ export function DebugOverlay({
       enableTranslationDebug(false)
     }
   }, [])
+
+  const replayLastClip = async () => {
+    const clip = lastClip()
+    if (!clip) return setReplay('no clip yet')
+    const ok = await unlockAudio()
+    if (!ok) return setReplay(`blocked (AudioContext ${audioContextState()})`)
+    setReplay('playing…')
+    await playBuffer(clip).then(
+      () => setReplay('played'),
+      (error) => setReplay(`failed: ${error instanceof Error ? error.message : String(error)}`),
+    )
+  }
+
+  const downloadLastClip = () => {
+    const clip = lastClip()
+    if (!clip) return setReplay('no clip yet')
+    const wav = encodeWav(clip.getChannelData(0), clip.sampleRate)
+    const url = URL.createObjectURL(new Blob([wav.buffer as ArrayBuffer], { type: 'audio/wav' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'last-translated-clip.wav'
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+
+  /** Asks the server to check the voices of the languages my sentences go to (one request at a time). */
+  const runVoiceTest = async () => {
+    setVoiceTesting(true)
+    const langs = status?.fanout.targets.length
+      ? status.fanout.targets.map((t) => t.lang)
+      : [status?.me.listenLang ?? listenLang]
+    const query = langs.map((l) => `lang=${encodeURIComponent(l)}`).join('&')
+    try {
+      const res = await fetch(`/api/translate/voices?${query}`, { cache: 'no-store' })
+      const body = (await res.json()) as {
+        config?: { ok: boolean; problems: string[] }
+        live?: {
+          lang: string
+          voices: { voice: string; ok: boolean; status: number | null; bytes: number }[]
+        }[]
+        error?: string
+      }
+      setVoiceTest(
+        res.ok
+          ? `config ${body.config?.ok ? 'ok' : `PROBLEMS ${body.config?.problems.slice(0, 3).join('; ')}`}; ` +
+              (body.live ?? [])
+                .map((l) =>
+                  l.voices
+                    .map(
+                      (v) =>
+                        `${v.voice} ${v.ok ? 'ok' : `FAIL (${v.status ?? 'no answer'}, ${v.bytes} B)`}`,
+                    )
+                    .join(', '),
+                )
+                .join('; ')
+          : `${res.status}: ${body.error ?? 'failed'}`,
+      )
+    } catch (error) {
+      setVoiceTest(`network error: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setVoiceTesting(false)
+    }
+  }
 
   const sendTestClip = async () => {
     setTesting(true)
@@ -227,6 +300,12 @@ export function DebugOverlay({
         ? `${d.lastAudio.via} ${d.lastAudio.status} in ${d.lastAudio.ms} ms, ${ago(d.lastAudio.at, now)}`
         : '—',
     ],
+    [
+      'last clip',
+      d.lastClip
+        ? `${d.lastClip.seconds.toFixed(2)} s, ${d.lastClip.sampleRate} Hz ×${d.lastClip.channels}, peak ${d.lastClip.peak.toFixed(3)}, rms ${d.lastClip.rms.toFixed(3)}${d.lastClip.peak < 0.01 ? ' ⚠ INAUDIBLE' : ''}; gain ${d.lastClip.gain ?? '—'}, context ${d.lastClip.ctxAtStart ?? '—'}, original voice ${d.lastClip.originalAtStart ?? '—'} → ${d.lastClip.originalAtEnd ?? '—'}; ${ago(d.lastClip.at, now)}`
+        : '—',
+    ],
     ['playback queue', String(d.queue)],
     ['AudioContext', audio],
   ]
@@ -263,6 +342,38 @@ export function DebugOverlay({
       >
         Play test beep
       </button>
+      <button
+        type="button"
+        onClick={() => void replayLastClip()}
+        className="mt-1.5 ml-2 rounded border border-cyan-300/40 px-2 py-0.5 text-cyan-200"
+      >
+        Replay last clip
+      </button>
+      <button
+        type="button"
+        onClick={downloadLastClip}
+        className="mt-1.5 ml-2 rounded border border-cyan-300/40 px-2 py-0.5 text-cyan-200"
+      >
+        Download last clip
+      </button>
+      <button
+        type="button"
+        onClick={() => void runVoiceTest()}
+        disabled={voiceTesting}
+        className="mt-1.5 ml-2 rounded border border-cyan-300/40 px-2 py-0.5 text-cyan-200 disabled:opacity-50"
+      >
+        {voiceTesting ? 'Testing voices…' : 'Voice self-test'}
+      </button>
+      {voiceTest && (
+        <p data-testid="debug-voice-result" className="mt-1 break-words text-amber-200">
+          {voiceTest}
+        </p>
+      )}
+      {replay && (
+        <span data-testid="debug-replay-result" className="ml-2 text-amber-200">
+          {replay}
+        </span>
+      )}
       {beep && (
         <span data-testid="debug-beep-result" className="ml-2 text-amber-200">
           {beep}

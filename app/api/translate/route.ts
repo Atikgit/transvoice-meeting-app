@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
     groups,
     sessionId: upload.sessionId,
     speakerId: user.id,
+    utteranceId: upload.utteranceId,
     onResult: async (result) => {
       delivered.set(
         result.lang,
@@ -115,6 +116,8 @@ export async function POST(request: NextRequest) {
     sessionId: upload.sessionId,
     utteranceId: upload.utteranceId,
     audioBytes: upload.audio.length,
+    audioFormat: upload.format,
+    ...(upload.seq !== undefined ? { seq: upload.seq } : {}),
     intakeMs: Math.round(contextStartedAt - startedAt),
     contextMs,
     languages: results.map((r) => {
@@ -127,6 +130,9 @@ export async function POST(request: NextRequest) {
         status: r.kind === 'failed' ? r.status : undefined,
         detail: r.kind === 'failed' ? r.detail : undefined,
         apiMs: r.ms,
+        asrMs: r.kind === 'speech' ? r.timings?.asrMs : undefined,
+        mtMs: r.kind === 'speech' ? r.timings?.mtMs : undefined,
+        ttsMs: r.kind === 'speech' ? r.timings?.ttsMs : undefined,
         captionMs: d?.captionMs,
         // deliverResult reports -1 when there was no audio to send.
         audioMs: d && d.audioMs >= 0 ? d.audioMs : undefined,

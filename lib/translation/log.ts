@@ -1,4 +1,5 @@
 import 'server-only'
+import type { WavStats } from '@/lib/translation/wav'
 
 /**
  * One structured line per utterance with stage timings (ms). Deliberately free of anything
@@ -9,6 +10,10 @@ export interface TranslateLog {
   /** Random per utterance: joins this line with the clients' latency lines. */
   utteranceId: string
   audioBytes: number
+  /** wav | opus: what the browser uploaded. */
+  audioFormat?: string
+  /** Piece of a long speech: seq within its group (absent for a single utterance). */
+  seq?: number
   /** Auth, rate limit, upload parsing. */
   intakeMs: number
   /** translation_context + LiveKit participants. */
@@ -24,6 +29,10 @@ export interface TranslateLog {
     detail?: string
     /** TransVoice API round trip (incl. retry). */
     apiMs: number
+    /** The API's own stage timings, when it reports them. */
+    asrMs?: number
+    mtMs?: number
+    ttsMs?: number
     /** API result → caption sent. */
     captionMs?: number
     /** API result → audio message sent (TTS cached). */
@@ -46,11 +55,15 @@ export interface LatencyLog {
   kind: 'speak' | 'listen'
   /** Listener's language (kind listen). */
   lang?: string
-  /** speak: WAV encoding. */
+  /** speak: WAV / Opus encoding. */
   encodeMs?: number
+  /** speak: the VAD's end-of-speech wait (speech really ended this long before the upload). */
+  vadMs?: number
   /** speak: upload start → answer received (includes the server's totalMs). */
   roundTripMs?: number
   bytes?: number
+  /** speak: wav | opus. */
+  format?: string
   /** listen: speech end → caption shown / first sound of the translated clip. */
   captionMs?: number
   audioMs?: number
@@ -83,4 +96,36 @@ export interface DecisionLog {
 
 export function logDecision(entry: DecisionLog): void {
   console.info(JSON.stringify({ event: 'translate_decision', ...entry }))
+}
+
+/**
+ * One line per TTS clip the API returned (and per retry): how big, how long, how loud, and which
+ * voice. This is what shows a "silent" clip: bytes 44 / seconds 0 / peak 0 means the API sent an
+ * empty clip. No text and no audio.
+ */
+export function logClip(entry: {
+  sessionId: string
+  utteranceId: string
+  lang: string
+  voice: string
+  gender: string
+  retry: boolean
+  format: string
+  bytes: number
+  stats: WavStats | null
+  issue: string | null
+}): void {
+  const { stats, issue, ...rest } = entry
+  const line = JSON.stringify({
+    event: 'translate_decision',
+    decision: issue ? `clip:${issue}` : 'clip:ok',
+    ...rest,
+    rate: stats?.sampleRate,
+    channels: stats?.channels,
+    seconds: stats ? Math.round(stats.seconds * 100) / 100 : undefined,
+    peak: stats ? Math.round(stats.peak * 1000) / 1000 : undefined,
+    rms: stats ? Math.round(stats.rms * 1000) / 1000 : undefined,
+  })
+  if (issue) console.warn(line)
+  else console.info(line)
 }

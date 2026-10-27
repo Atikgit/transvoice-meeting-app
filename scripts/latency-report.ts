@@ -28,6 +28,9 @@ interface TranslateLine {
     pair?: string
     outcome: string
     apiMs?: number
+    asrMs?: number
+    mtMs?: number
+    ttsMs?: number
     captionMs?: number
     audioMs?: number
   }[]
@@ -38,6 +41,9 @@ interface LatencyLine {
   kind: 'speak' | 'listen'
   lang?: string
   encodeMs?: number
+  vadMs?: number
+  bytes?: number
+  format?: string
   roundTripMs?: number
   captionMs?: number
   audioMs?: number
@@ -124,6 +130,10 @@ export function buildReport(lines: Iterable<string>): Report {
     for (const l of t.languages ?? []) {
       if (l.outcome !== 'speech') continue
       sample('server: API call per language', l.apiMs, l.pair)
+      // Only when the API reports its own stage timings.
+      sample('API: speech recognition (asr_ms)', l.asrMs, l.pair)
+      sample('API: translation (mt_ms)', l.mtMs, l.pair)
+      sample('API: speech synthesis (tts_ms)', l.ttsMs, l.pair)
       sample('server: API result → caption sent', l.captionMs, l.pair)
       sample('server: API result → audio sent', l.audioMs, l.pair)
     }
@@ -131,7 +141,12 @@ export function buildReport(lines: Iterable<string>): Report {
   for (const l of latency) {
     const server = l.utteranceId ? byUtterance.get(l.utteranceId) : undefined
     if (l.kind === 'speak') {
-      sample('speaker: WAV encode', l.encodeMs)
+      sample('speaker: encode (wav/opus)', l.encodeMs)
+      sample('speaker: VAD end-of-speech wait', l.vadMs)
+      if (l.format) {
+        sample(`speaker: round trip [${l.format}]`, l.roundTripMs)
+        sample(`speaker: upload size bytes [${l.format}]`, l.bytes)
+      }
       sample('speaker: upload → answer (round trip)', l.roundTripMs)
       if (l.roundTripMs !== undefined && server?.totalMs !== undefined) {
         sample('network: round trip − server total', Math.max(0, l.roundTripMs - server.totalMs))

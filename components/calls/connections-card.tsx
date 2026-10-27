@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { MessageCircle, Phone, PhoneOff, Video, Wallet } from 'lucide-react'
 import { Button } from '@/components/common/button'
 import { Modal } from '@/components/common/modal'
+import { startRingback } from '@/features/calls/call-sounds'
 import { secondsUntil, useUserChannel } from '@/features/calls/useUserChannel'
 
 export interface ConnectionItem {
@@ -69,6 +70,13 @@ export function ConnectionsCard({
   useEffect(() => {
     if (ringing && left === 0) void hangUp('timeout')
   })
+
+  // Ringback while the other person's phone rings: ends on answer, decline, cancel or timeout.
+  const ringingNow = Boolean(ringing) && left > 0
+  useEffect(() => {
+    if (!ringingNow) return
+    return startRingback()
+  }, [ringingNow])
 
   const call = async (item: ConnectionItem) => {
     setNotice(undefined)

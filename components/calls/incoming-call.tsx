@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Phone, PhoneOff } from 'lucide-react'
+import { BellOff, Phone, PhoneOff } from 'lucide-react'
 import { Button } from '@/components/common/button'
 import { Modal } from '@/components/common/modal'
+import { useCallSoundsMuted, useUnlockCallSounds } from '@/components/calls/enable-call-sounds'
+import { startCallAlerts } from '@/features/calls/call-alerts'
+import { setCallSoundsMuted, startRingtone } from '@/features/calls/call-sounds'
 import { secondsUntil, useUserChannel } from '@/features/calls/useUserChannel'
 
 interface IncomingCall {
@@ -82,6 +85,23 @@ export function IncomingCallListener({
   }, [call])
 
   const left = call ? secondsUntil(call.expiresAt, now) : 0
+  const muted = useCallSoundsMuted()
+  useUnlockCallSounds() // the first tap or key on any signed-in page lets the ringtone play
+
+  // Rings (and flashes the tab, vibrates, notifies) exactly while the modal is open and not yet
+  // answered: stops on accept, decline, a cancelled call and when the 30 s are over.
+  const ringing = Boolean(call) && left > 0 && !busy
+  const callerName = call?.callerName
+  useEffect(() => {
+    if (!ringing || !callerName) return
+    const stopSound = startRingtone()
+    const stopAlerts = startCallAlerts(callerName)
+    return () => {
+      stopSound()
+      stopAlerts()
+    }
+  }, [ringing, callerName])
+
   if (!call || left === 0) return null
 
   const answer = async (accept: boolean) => {
@@ -91,8 +111,9 @@ export function IncomingCallListener({
     }).catch(() => null)
     const body = (await res?.json().catch(() => ({}))) as { redirect?: string; error?: string }
     setBusy(false)
+    if (res?.ok) setCall(null) // the ring ends the moment the call is answered
     if (res?.ok && body.redirect) return router.push(body.redirect)
-    if (res?.ok) return setCall(null)
+    if (res?.ok) return
     setError(body.error ?? 'Could not answer the call.')
   }
 
@@ -116,6 +137,13 @@ export function IncomingCallListener({
             {error}
           </p>
         )}
+        <button
+          type="button"
+          onClick={() => setCallSoundsMuted(!muted)}
+          className="mt-3 inline-flex items-center gap-1.5 text-xs text-slate-500 underline hover:text-slate-300"
+        >
+          <BellOff size={12} aria-hidden /> {muted ? 'Unmute ringtone' : 'Mute ringtone'}
+        </button>
         <div className="mt-6 grid grid-cols-2 gap-3">
           <Button variant="danger" disabled={busy} onClick={() => void answer(false)}>
             <PhoneOff size={15} /> Decline

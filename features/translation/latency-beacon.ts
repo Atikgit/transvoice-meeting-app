@@ -8,8 +8,10 @@ export interface LatencyReport {
   kind: 'speak' | 'listen'
   lang?: string
   encodeMs?: number
+  vadMs?: number
   roundTripMs?: number
   bytes?: number
+  format?: 'wav' | 'opus'
   captionMs?: number
   audioMs?: number
   fetchMs?: number

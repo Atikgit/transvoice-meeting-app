@@ -48,6 +48,45 @@ export async function fetchAndDecode(url: string): Promise<AudioBuffer> {
   return ctx.decodeAudioData(await res.arrayBuffer())
 }
 
+/**
+ * Gain applied to every translated clip. Always 1: no mode, ducking or mute setting scales the
+ * translated voice (they only change the speaker's ORIGINAL voice in LiveKit). Explicit so the
+ * debug overlay can show it and a test can pin it.
+ */
+export const CLIP_GAIN = 1
+
+export interface ClipStats {
+  seconds: number
+  sampleRate: number
+  channels: number
+  /** 0..1 */
+  peak: number
+  rms: number
+}
+
+/** Length, format and loudness of a decoded clip (a silent clip has peak ≈ 0). */
+export function clipStats(buffer: AudioBuffer): ClipStats {
+  let peak = 0
+  let sum = 0
+  let count = 0
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const data = buffer.getChannelData(c)
+    for (let i = 0; i < data.length; i++) {
+      const v = Math.abs(data[i]!)
+      if (v > peak) peak = v
+      sum += v * v
+    }
+    count += data.length
+  }
+  return {
+    seconds: buffer.duration,
+    sampleRate: buffer.sampleRate,
+    channels: buffer.numberOfChannels,
+    peak,
+    rms: count > 0 ? Math.sqrt(sum / count) : 0,
+  }
+}
+
 /** Plays a decoded clip; resolves when it ends. */
 export function playBuffer(buffer: AudioBuffer): Promise<void> {
   const ctx = audioContext()
@@ -57,7 +96,9 @@ export function playBuffer(buffer: AudioBuffer): Promise<void> {
   return new Promise((resolve) => {
     const source = ctx.createBufferSource()
     source.buffer = buffer
-    source.connect(ctx.destination)
+    const gain = ctx.createGain()
+    gain.gain.value = CLIP_GAIN
+    source.connect(gain).connect(ctx.destination)
     source.onended = () => resolve()
     source.start()
   })

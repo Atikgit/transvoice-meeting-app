@@ -54,4 +54,23 @@ describe('uploadUtterance', () => {
     expect((await uploadUtterance(args)).status).toBe(status)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
+
+  it('sends the group and sequence number of a piece of a long speech, and wav by default', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, {}))
+    const group = crypto.randomUUID()
+    await uploadUtterance({ ...args, chunk: { group, seq: 2 } })
+    const form = (fetchMock.mock.calls[0]![1] as { body: FormData }).body
+    expect(form.get('group')).toBe(group)
+    expect(form.get('seq')).toBe('2')
+    expect((form.get('audio') as Blob).type).toBe('audio/wav')
+  })
+
+  it('falls back to wav when the browser cannot encode opus', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, {}))
+    const sent = vi.fn()
+    await uploadUtterance({ ...args, format: 'opus' }, sent) // jsdom has no AudioEncoder
+    expect(sent).toHaveBeenCalledWith(expect.any(Number), { format: 'wav', bytes: 44 + 3200 })
+    const form = (fetchMock.mock.calls[0]![1] as { body: FormData }).body
+    expect((form.get('audio') as Blob).type).toBe('audio/wav')
+  })
 })

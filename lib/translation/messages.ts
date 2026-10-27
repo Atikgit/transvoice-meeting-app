@@ -41,7 +41,8 @@ export interface InlineAudioHeader {
 export const MAX_INLINE_AUDIO_BYTES = 12 * 1024
 
 export interface NoticeMessage {
-  kind: 'translation_unavailable'
+  /** audio_unavailable: the caption arrived but its voice clip was empty (captions only). */
+  kind: 'translation_unavailable' | 'audio_unavailable'
 }
 
 /** LiveKit reliable packets carry at most ~15 KiB of user data. */
@@ -80,7 +81,7 @@ const audioSchema = z.object({
   url: z.string().regex(/^\/api\/tts\/[A-Za-z0-9_-]{24}$/),
   speechEndedAt: z.number(),
 })
-const noticeSchema = z.object({ kind: z.literal('translation_unavailable') })
+const noticeSchema = z.object({ kind: z.enum(['translation_unavailable', 'audio_unavailable']) })
 
 /** Decodes a data message by topic; null for unknown topics and malformed payloads. */
 export function parseDataMessage(

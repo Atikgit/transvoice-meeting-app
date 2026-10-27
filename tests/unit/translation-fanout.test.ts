@@ -1,8 +1,14 @@
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { encodeWav } from '@/lib/translation/wav'
 import { server } from '../mocks/server'
 import { TEST_ENV } from '../mocks/env'
-import { SILENT_AUDIO, transvoiceHandlers, type TransVoiceRequestBody } from '../mocks/transvoice'
+import {
+  SILENT_AUDIO,
+  TONE_WAV_BASE64,
+  transvoiceHandlers,
+  type TransVoiceRequestBody,
+} from '../mocks/transvoice'
 import { CircuitBreaker } from '@/lib/translation/breaker'
 import { groupListeners, sourceLang, translateForListeners } from '@/lib/translation/fanout'
 
@@ -107,7 +113,11 @@ describe('translateForListeners (TransVoice API contract)', () => {
         calls += 1
         return calls === 1
           ? HttpResponse.json({ error: 'busy' }, { status: 503 })
-          : HttpResponse.json({ original_text: 'o', translated_text: 't', tts_audio: 'QQ==' })
+          : HttpResponse.json({
+              original_text: 'o',
+              translated_text: 't',
+              tts_audio: TONE_WAV_BASE64,
+            })
       }),
     )
     const [ok] = await translateForListeners({
@@ -158,7 +168,11 @@ describe('translateForListeners (TransVoice API contract)', () => {
         const body = (await request.json()) as TransVoiceRequestBody
         return body.tgt_lang === 'es'
           ? HttpResponse.json({ error: 'x' }, { status: 400 })
-          : HttpResponse.json({ original_text: 'o', translated_text: 'Hello', tts_audio: 'QQ==' })
+          : HttpResponse.json({
+              original_text: 'o',
+              translated_text: 'Hello',
+              tts_audio: TONE_WAV_BASE64,
+            })
       }),
     )
     const results = await translateForListeners({
@@ -194,7 +208,7 @@ describe('CircuitBreaker', () => {
     expect(breaker.state).toBe('half-open')
     server.use(
       http.post(API, () =>
-        HttpResponse.json({ original_text: 'o', translated_text: 't', tts_audio: 'QQ==' }),
+        HttpResponse.json({ original_text: 'o', translated_text: 't', tts_audio: TONE_WAV_BASE64 }),
       ),
     )
     expect(await once()).toMatchObject({ kind: 'speech' })
@@ -224,5 +238,79 @@ describe('failure details for the log', () => {
       status: 401,
       detail: 'TransVoice API responded 401',
     })
+  })
+})
+
+describe('empty or inaudible TTS clips', () => {
+  const EMPTY_WAV = Buffer.from(encodeWav(new Float32Array(0))).toString('base64')
+  const QUIET_WAV = Buffer.from(encodeWav(new Float32Array(8000).fill(0.001))).toString('base64')
+
+  /** First answer for a voice name from `bad`, the default contract answer otherwise. */
+  function badFor(voiceStartsWith: string, ttsAudio: string | null) {
+    const voices: string[] = []
+    server.use(
+      http.post(API, async ({ request, requestId }) => {
+        const body = (await request.clone().json()) as TransVoiceRequestBody
+        voices.push(body.azure_voice)
+        if (body.azure_voice.startsWith(voiceStartsWith))
+          return HttpResponse.json({
+            original_text: 'a',
+            translated_text: 'b',
+            tts_audio: ttsAudio,
+          })
+        return transvoiceHandlers[0]!.run({ request, requestId }).then((r) => r!.response!)
+      }),
+    )
+    return voices
+  }
+
+  it.each([
+    ['a 44-byte empty WAV', EMPTY_WAV],
+    ['a near-silent clip', QUIET_WAV],
+    ['a null tts_audio', null],
+  ])('retries once with the other gender after %s', async (_name, bad) => {
+    const voices = badFor('bn-BD-Pradeep', bad)
+    const [result] = await translateForListeners({
+      ...base,
+      spokenLang: 'en-US',
+      voiceGender: 'male',
+      groups: new Map([['bn-BD', ['a']]]),
+    })
+    expect(voices).toEqual(['bn-BD-PradeepNeural', 'bn-BD-NabanitaNeural'])
+    expect(result).toMatchObject({ kind: 'speech' })
+    expect(result!.kind === 'speech' && result!.ttsAudio).toBeTruthy()
+    expect(result).not.toHaveProperty('audioIssue')
+  })
+
+  it('falls back to a caption only when both voices give no audio', async () => {
+    const voices = badFor('bn-BD', EMPTY_WAV)
+    const [result] = await translateForListeners({
+      ...base,
+      spokenLang: 'en-US',
+      groups: new Map([['bn-BD', ['a']]]),
+    })
+    expect(voices).toHaveLength(2)
+    expect(result).toMatchObject({ kind: 'speech', ttsAudio: '', audioIssue: 'empty' })
+  })
+
+  it('does not retry for a good clip', async () => {
+    const voices = badFor('zz', null)
+    await translateForListeners({
+      ...base,
+      spokenLang: 'en-US',
+      groups: new Map([['bn-BD', ['a']]]),
+    })
+    expect(voices).toHaveLength(1)
+  })
+
+  it('never asks for an English voice for a non-English language without a voice', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const [result] = await translateForListeners({
+      ...base,
+      spokenLang: 'en-US',
+      groups: new Map([['xx-XX', ['a']]]),
+    })
+    expect(result).toMatchObject({ kind: 'speech', ttsAudio: '', audioIssue: 'no_voice' })
+    warn.mockRestore()
   })
 })

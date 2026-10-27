@@ -130,3 +130,27 @@ describe('compressed output (feature-detected)', () => {
     expect(result.kind === 'speech' && result.audioFormat).toBeUndefined()
   })
 })
+
+describe('optional API stage timings', () => {
+  it('reads nested or flat asr_ms / mt_ms / tts_ms, and none when absent', async () => {
+    const answer = (extra: object) =>
+      server.use(
+        http.post(`${TEST_ENV.TRANSVOICE_API_URL}/`, () =>
+          HttpResponse.json({
+            original_text: 'o',
+            translated_text: 't',
+            tts_audio: 'QQ==',
+            ...extra,
+          }),
+        ),
+      )
+    const call = () =>
+      translateSpeech({ audio: 'x', srcLang: 'bn', tgtLang: 'en', azureVoice: 'v' })
+    answer({ timings: { asr_ms: 5, mt_ms: 6, tts_ms: 7 } })
+    expect(await call()).toMatchObject({ timings: { asrMs: 5, mtMs: 6, ttsMs: 7 } })
+    answer({ asr_ms: 1, tts_ms: 3 })
+    expect(await call()).toMatchObject({ timings: { asrMs: 1, ttsMs: 3 } })
+    answer({})
+    expect(await call()).not.toHaveProperty('timings')
+  })
+})

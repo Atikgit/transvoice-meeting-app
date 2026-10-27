@@ -8,7 +8,7 @@ import {
   spokenLanguageOptions,
   toApiLang,
 } from '@/lib/transvoice/languages'
-import { getVoiceName, voiceMapping } from '@/lib/transvoice/voices'
+import { findVoice, getVoiceName, otherGender, voiceMapping } from '@/lib/transvoice/voices'
 
 // Same pattern as the profiles.spoken_lang / listen_lang checks (migration 20261022000600).
 const DB_LANG_FORMAT = /^[a-z]{2,3}(-[A-Z][a-z]{3})?(-[A-Z]{2})?(-[a-z]{4,8})?$/
@@ -62,9 +62,16 @@ describe('voices', () => {
     expect(getVoiceName('bn-BD')).toBe('bn-BD-NabanitaNeural')
   })
 
-  it('falls back to English voices for unmapped locales', () => {
+  it('falls back to English voices for unmapped English locales', () => {
     expect(getVoiceName('xx-XX')).toBe('en-US-AvaNeural')
     expect(getVoiceName('xx-XX', 'male')).toBe('en-US-AndrewNeural')
+  })
+
+  it('finds a voice by language, and never gives a non-English language an English one', () => {
+    expect(findVoice('bn', 'male')).toBe('bn-BD-PradeepNeural')
+    expect(findVoice('bn-IN', 'female')).toBe('bn-IN-TanishaaNeural')
+    expect(findVoice('xx-XX')).toBeNull()
+    expect(otherGender('male')).toBe('female')
   })
 
   it('has a native voice of each gender for every listed language', () => {
