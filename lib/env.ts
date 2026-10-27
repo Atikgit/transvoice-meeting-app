@@ -69,6 +69,15 @@ const serverSchema = z.object({
   // pieces, in order (ms; 2000-12000). Shorter pieces start translating sooner.
   VAD_MAX_CHUNK_MS: z.coerce.number().int().min(2000).max(12000).default(5000),
 
+  // `single` (default): one POST / call per listener language. `split`: speech-to-text once, then per
+  // language streamed translation -> text-to-speech per sentence; any failure falls back to `single`.
+  TRANSLATION_PIPELINE: z.enum(['single', 'split']).default('single'),
+  // Translation in the split pipeline: OpenAI directly when OPENAI_API_KEY is set, else the API's
+  // /v1/chat when TRANSLATE_PROVIDER=api-chat (only for keys listed in its CHAT_ALLOWED_USER_IDS).
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_TRANSLATE_MODEL: z.string().min(1).default('gpt-4o-mini'),
+  TRANSLATE_PROVIDER: z.enum(['openai', 'api-chat']).default('openai'),
+
   // Audio format requested from the TransVoice API for translated speech. `wav` (default) is the
   // current behaviour. `mp3` / `opus` need the API to support output_format and to say which
   // format it returned; clips of at most 12 KiB then travel inside the LiveKit data packet.

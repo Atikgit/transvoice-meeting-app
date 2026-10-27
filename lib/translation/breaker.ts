@@ -45,3 +45,6 @@ export class CircuitBreaker {
 
 /** One breaker per server process for the TransVoice API. */
 export const transvoiceBreaker = new CircuitBreaker()
+
+/** Guards the split pipeline separately: while open, utterances go straight to the single call. */
+export const splitBreaker = new CircuitBreaker()

@@ -141,3 +141,101 @@ export async function deliverResult({
 }
 
 const MIME = { wav: 'audio/wav', mp3: 'audio/mpeg', opus: 'audio/ogg; codecs=opus' } as const
+
+/** One sentence's caption (cumulative text so far) for the listeners of one language. */
+export async function deliverSentenceCaption({
+  sessionId,
+  utteranceId,
+  speakerId,
+  speechEndedAt,
+  lang,
+  listeners,
+  original,
+  translated,
+  send = sendReliable,
+}: {
+  sessionId: string
+  utteranceId: string
+  speakerId: string
+  speechEndedAt: number
+  lang: string
+  listeners: string[]
+  original: string
+  translated: string
+  send?: Send
+}): Promise<void> {
+  if (listeners.length === 0) return
+  const caption = captionMessage({
+    utteranceId,
+    speakerId,
+    lang,
+    original,
+    translated,
+    speechEndedAt,
+  })
+  await send(sessionId, encodeMessage(caption), {
+    destinationIdentities: listeners,
+    topic: TOPICS.caption,
+  })
+}
+
+/**
+ * One mp3 sentence clip, served as it came from the API (audio/mpeg): inline in the LiveKit packet
+ * when it is at most 12 KiB, else through the short-lived /api/tts/<id> URL. Carries {seq, last}.
+ */
+export async function deliverSentenceClip({
+  sessionId,
+  utteranceId,
+  speakerId,
+  speechEndedAt,
+  lang,
+  listeners,
+  seq,
+  last,
+  audio,
+  send = sendReliable,
+  cache = audioCache(),
+}: {
+  sessionId: string
+  utteranceId: string
+  speakerId: string
+  speechEndedAt: number
+  lang: string
+  listeners: string[]
+  seq: number
+  last: boolean
+  audio: Uint8Array
+  send?: Send
+  cache?: AudioCache
+}): Promise<'inline' | 'url'> {
+  if (listeners.length === 0) return 'inline'
+  const destinationIdentities = listeners
+  if (audio.length <= MAX_INLINE_AUDIO_BYTES) {
+    await send(
+      sessionId,
+      encodeInlineAudio(
+        { utteranceId, speakerId, lang, format: 'mp3', speechEndedAt, seq, last },
+        audio,
+      ),
+      { destinationIdentities, topic: TOPICS.audioInline },
+    )
+    return 'inline'
+  }
+  const id = newAudioId()
+  await cache.put(
+    id,
+    { audio: Buffer.from(audio), mime: MIME.mp3, recipients: destinationIdentities },
+    AUDIO_TTL_SEC,
+  )
+  const message: AudioMessage = {
+    utteranceId,
+    speakerId,
+    lang,
+    url: `/api/tts/${id}`,
+    speechEndedAt,
+    seq,
+    last,
+  }
+  await send(sessionId, encodeMessage(message), { destinationIdentities, topic: TOPICS.audio })
+  return 'url'
+}

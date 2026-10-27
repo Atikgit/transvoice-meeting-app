@@ -26,6 +26,9 @@ export interface AudioMessage {
   /** Same-origin, short-lived, only for this message's recipients: /api/tts/<id> */
   url: string
   speechEndedAt: number
+  /** Split pipeline: position of this clip within the utterance, and whether it is the last. */
+  seq?: number
+  last?: boolean
 }
 
 /** Header of an inline clip; the audio bytes follow it in the same packet. */
@@ -35,6 +38,8 @@ export interface InlineAudioHeader {
   lang: string
   format: 'wav' | 'mp3' | 'opus'
   speechEndedAt: number
+  seq?: number
+  last?: boolean
 }
 
 /** Largest clip sent inline. 12 KiB + a ~250 byte header stays under the 15 KiB packet limit. */
@@ -80,6 +85,8 @@ const audioSchema = z.object({
   // Same-origin TTS path only: never fetch an arbitrary URL from a data message.
   url: z.string().regex(/^\/api\/tts\/[A-Za-z0-9_-]{24}$/),
   speechEndedAt: z.number(),
+  seq: z.number().int().min(0).optional(),
+  last: z.boolean().optional(),
 })
 const noticeSchema = z.object({ kind: z.enum(['translation_unavailable', 'audio_unavailable']) })
 
@@ -135,6 +142,8 @@ const inlineHeaderSchema = z.object({
   lang: z.string(),
   format: z.enum(['wav', 'mp3', 'opus']),
   speechEndedAt: z.number(),
+  seq: z.number().int().min(0).optional(),
+  last: z.boolean().optional(),
 })
 
 /** Null for anything that is not a well-formed inline clip. */

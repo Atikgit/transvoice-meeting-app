@@ -3,9 +3,17 @@ import { DRAIN_RETRY_MS, isDraining } from '@/lib/draining'
 import { serverEnv } from '@/lib/env'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { loadTranslationContext } from '@/lib/translation/context'
-import { deliverResult } from '@/lib/translation/deliver'
+import {
+  deliverResult,
+  deliverSentenceCaption,
+  deliverSentenceClip,
+} from '@/lib/translation/deliver'
 import { translationGate } from '@/lib/translation/gate'
-import { translateForListeners } from '@/lib/translation/fanout'
+import { sourceLang, translateForListeners, type LanguageResult } from '@/lib/translation/fanout'
+import { splitBreaker } from '@/lib/translation/breaker'
+import { runSplitPipeline, type SplitLanguageResult } from '@/lib/translation/split/pipeline'
+import { splitStats } from '@/lib/translation/split/stats'
+import { splitConfig, translatorKind } from '@/lib/transvoice/split-client'
 import { planFanout } from '@/lib/translation/plan'
 import { logDecision, logTranslate } from '@/lib/translation/log'
 import { parseTranslateUpload } from '@/lib/translation/request'
@@ -91,27 +99,111 @@ export async function POST(request: NextRequest) {
   logDecision({ ...decisionLog, decision: 'translate' })
 
   const delivered = new Map<string, { captionMs: number; audioMs: number } | null>()
-  const results = await translateForListeners({
-    audioBase64: Buffer.from(upload.audio).toString('base64'),
-    spokenLang: context.speaker.spokenLang,
-    voiceGender: context.speaker.voiceGender,
-    groups,
-    sessionId: upload.sessionId,
-    speakerId: user.id,
-    utteranceId: upload.utteranceId,
-    onResult: async (result) => {
-      delivered.set(
-        result.lang,
-        await deliverResult({
+
+  // Split pipeline (TRANSLATION_PIPELINE=split): speech-to-text once, then per language streamed
+  // translation → per-sentence speech. Whatever it cannot do runs through the single call below.
+  const cfg = splitConfig()
+  const useSplit =
+    serverEnv().TRANSLATION_PIPELINE === 'split' &&
+    translatorKind(cfg) !== null &&
+    splitBreaker.allow()
+  let split: Awaited<ReturnType<typeof runSplitPipeline>> | undefined
+  let singleGroups = groups
+  let splitOriginal: string | null = null
+  if (useSplit) {
+    const clipVia = new Map<string, number>()
+    split = await runSplitPipeline({
+      audioBase64: Buffer.from(upload.audio).toString('base64'),
+      ext: upload.format === 'wav' ? 'wav' : upload.audio[0] === 0x4f ? 'ogg' : 'webm',
+      spokenSrcLang: sourceLang(context.speaker.spokenLang),
+      voiceGender: context.speaker.voiceGender,
+      groups,
+      startedAt,
+      deps: {
+        config: cfg,
+        deliverCaption: (lang, listeners, caption) => {
+          splitOriginal ??= caption.original
+          return deliverSentenceCaption({
+            sessionId: upload.sessionId,
+            utteranceId: upload.utteranceId,
+            speakerId: user.id,
+            speechEndedAt: upload.clientTs,
+            lang,
+            listeners,
+            original: caption.original,
+            translated: caption.translated,
+          })
+        },
+        deliverClip: async (lang, listeners, clip) => {
+          await deliverSentenceClip({
+            sessionId: upload.sessionId,
+            utteranceId: upload.utteranceId,
+            speakerId: user.id,
+            speechEndedAt: upload.clientTs,
+            lang,
+            listeners,
+            ...clip,
+          })
+          clipVia.set(lang, (clipVia.get(lang) ?? 0) + 1)
+        },
+        log: (event) => console.warn(JSON.stringify({ event: 'split_step', ...event })),
+      },
+    })
+    const fallbackLangs = split.languages.filter((l) => l.kind === 'fallback')
+    if (fallbackLangs.length > 0) {
+      splitStats.failures += 1
+      splitBreaker.failure()
+      singleGroups = new Map(fallbackLangs.map((l) => [l.lang, groups.get(l.lang) ?? []]))
+    } else {
+      splitBreaker.success()
+      singleGroups = new Map()
+    }
+  }
+
+  const singleResults: LanguageResult[] =
+    singleGroups.size === 0
+      ? []
+      : await translateForListeners({
+          audioBase64: Buffer.from(upload.audio).toString('base64'),
+          spokenLang: context.speaker.spokenLang,
+          voiceGender: context.speaker.voiceGender,
+          groups: singleGroups,
           sessionId: upload.sessionId,
-          utteranceId: upload.utteranceId,
           speakerId: user.id,
-          speechEndedAt: upload.clientTs,
-          result,
-        }),
-      )
-    },
-  })
+          utteranceId: upload.utteranceId,
+          onResult: async (result) => {
+            delivered.set(
+              result.lang,
+              await deliverResult({
+                sessionId: upload.sessionId,
+                utteranceId: upload.utteranceId,
+                speakerId: user.id,
+                speechEndedAt: upload.clientTs,
+                result,
+              }),
+            )
+          },
+        })
+  const splitDone = (split?.languages ?? []).filter(
+    (l): l is Exclude<SplitLanguageResult, { kind: 'fallback' }> => l.kind !== 'fallback',
+  )
+  // One list for the log and the answer: single-call results plus the split ones.
+  const results: LanguageResult[] = [
+    ...splitDone.map((l): LanguageResult =>
+      l.kind === 'silence'
+        ? { lang: l.lang, listeners: l.listeners, kind: 'silence', ms: 0 }
+        : {
+            lang: l.lang,
+            listeners: l.listeners,
+            kind: 'speech',
+            originalText: splitOriginal ?? '',
+            translatedText: '',
+            ttsAudio: '',
+            ms: l.timings.toFirstAudioMs ?? 0,
+          },
+    ),
+    ...singleResults,
+  ]
   logTranslate({
     sessionId: upload.sessionId,
     utteranceId: upload.utteranceId,
@@ -122,7 +214,22 @@ export async function POST(request: NextRequest) {
     contextMs,
     languages: results.map((r) => {
       const d = delivered.get(r.lang)
+      const sp = splitDone.find((l) => l.lang === r.lang)
+      const fb = split?.languages.find((l) => l.lang === r.lang && l.kind === 'fallback')
+      const speech = sp?.kind === 'speech' ? sp : undefined
       return {
+        pipeline: sp ? ('split' as const) : ('single' as const),
+        fallback: fb && fb.kind === 'fallback' ? fb.step : undefined,
+        sttMs: sp ? split?.sttMs : undefined,
+        translateFirstTokenMs: speech?.timings.translateFirstTokenMs,
+        firstSentenceMs: speech?.timings.firstSentenceMs,
+        ttsFirstByteMs: speech?.timings.ttsFirstByteMs,
+        sentences: speech?.sentences,
+        toFirstAudioMs: speech
+          ? speech.timings.toFirstAudioMs
+          : d && d.audioMs >= 0
+            ? Math.round(contextStartedAt - startedAt) + contextMs + r.ms + d.audioMs
+            : undefined,
         lang: r.lang,
         pair: `${context.speaker.spokenLang}>${r.lang}`,
         outcome: r.kind,
@@ -139,6 +246,7 @@ export async function POST(request: NextRequest) {
       }
     }),
     totalMs: Math.round(performance.now() - startedAt),
+    ...(useSplit ? { splitFailures: splitStats.failures } : {}),
   })
   const speech = results.find((r) => r.kind === 'speech')
   const failed = results.filter((r) => r.kind === 'failed')

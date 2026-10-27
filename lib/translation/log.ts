@@ -29,6 +29,17 @@ export interface TranslateLog {
     detail?: string
     /** TransVoice API round trip (incl. retry). */
     apiMs: number
+    /** single (POST /) or split (stt once → translate → tts per sentence). */
+    pipeline?: 'single' | 'split'
+    /** split: why this language ran the single path instead (stt | translate | tts). */
+    fallback?: string
+    sttMs?: number
+    translateFirstTokenMs?: number
+    firstSentenceMs?: number
+    ttsFirstByteMs?: number
+    /** Request start → first translated audio handed to the listener (both pipelines). */
+    toFirstAudioMs?: number
+    sentences?: number
     /** The API's own stage timings, when it reports them. */
     asrMs?: number
     mtMs?: number
@@ -39,6 +50,8 @@ export interface TranslateLog {
     audioMs?: number
   }[]
   totalMs: number
+  /** Split pipeline runs that had to fall back to the single call, since the server started. */
+  splitFailures?: number
 }
 
 export function logTranslate(entry: TranslateLog): void {
