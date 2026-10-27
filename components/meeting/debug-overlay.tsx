@@ -72,6 +72,8 @@ export function DebugOverlay({
   const [testing, setTesting] = useState(false)
   const [beep, setBeep] = useState('')
   const [replay, setReplay] = useState('')
+  const [voiceTest, setVoiceTest] = useState('')
+  const [voiceTesting, setVoiceTesting] = useState(false)
 
   const micTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track
     ?.mediaStreamTrack
@@ -141,6 +143,45 @@ export function DebugOverlay({
     link.download = 'last-translated-clip.wav'
     link.click()
     setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+
+  /** Asks the server to check the voices of the languages my sentences go to (one request at a time). */
+  const runVoiceTest = async () => {
+    setVoiceTesting(true)
+    const langs = status?.fanout.targets.length
+      ? status.fanout.targets.map((t) => t.lang)
+      : [status?.me.listenLang ?? listenLang]
+    const query = langs.map((l) => `lang=${encodeURIComponent(l)}`).join('&')
+    try {
+      const res = await fetch(`/api/translate/voices?${query}`, { cache: 'no-store' })
+      const body = (await res.json()) as {
+        config?: { ok: boolean; problems: string[] }
+        live?: {
+          lang: string
+          voices: { voice: string; ok: boolean; status: number | null; bytes: number }[]
+        }[]
+        error?: string
+      }
+      setVoiceTest(
+        res.ok
+          ? `config ${body.config?.ok ? 'ok' : `PROBLEMS ${body.config?.problems.slice(0, 3).join('; ')}`}; ` +
+              (body.live ?? [])
+                .map((l) =>
+                  l.voices
+                    .map(
+                      (v) =>
+                        `${v.voice} ${v.ok ? 'ok' : `FAIL (${v.status ?? 'no answer'}, ${v.bytes} B)`}`,
+                    )
+                    .join(', '),
+                )
+                .join('; ')
+          : `${res.status}: ${body.error ?? 'failed'}`,
+      )
+    } catch (error) {
+      setVoiceTest(`network error: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setVoiceTesting(false)
+    }
   }
 
   const sendTestClip = async () => {
@@ -315,6 +356,19 @@ export function DebugOverlay({
       >
         Download last clip
       </button>
+      <button
+        type="button"
+        onClick={() => void runVoiceTest()}
+        disabled={voiceTesting}
+        className="mt-1.5 ml-2 rounded border border-cyan-300/40 px-2 py-0.5 text-cyan-200 disabled:opacity-50"
+      >
+        {voiceTesting ? 'Testing voices…' : 'Voice self-test'}
+      </button>
+      {voiceTest && (
+        <p data-testid="debug-voice-result" className="mt-1 break-words text-amber-200">
+          {voiceTest}
+        </p>
+      )}
       {replay && (
         <span data-testid="debug-replay-result" className="ml-2 text-amber-200">
           {replay}
