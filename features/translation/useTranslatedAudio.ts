@@ -183,6 +183,8 @@ export function useTranslatedAudio({
           utteranceId: header.utteranceId,
           url: '',
           data: audio,
+          seq: header.seq,
+          last: header.last,
           receivedAt: performance.now(),
         })
         setTranslationDebug({ queue: queues.size() })
@@ -224,6 +226,8 @@ export function useTranslatedAudio({
           speakerId: m.speakerId,
           utteranceId: m.utteranceId,
           url: m.url,
+          seq: m.seq,
+          last: m.last,
           receivedAt: performance.now(),
         }
         queues.enqueue(clip)
