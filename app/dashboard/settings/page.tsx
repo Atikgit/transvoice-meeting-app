@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
+import { CallSoundsSetting } from '@/components/calls/enable-call-sounds'
 import { SettingsForm } from '@/components/settings/settings-form'
 import { createClient } from '@/lib/supabase/server'
 
@@ -38,6 +39,7 @@ export default async function SettingsPage() {
           </p>
         )}
       </div>
+      <CallSoundsSetting />
     </div>
   )
 }
