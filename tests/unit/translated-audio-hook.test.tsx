@@ -18,6 +18,7 @@ vi.mock('livekit-client', () => ({
 
 const ctx = { running: true, listeners: [] as (() => void)[] }
 const decoded = { duration: 1 } as AudioBuffer
+let stats = { seconds: 1, sampleRate: 24000, channels: 1, peak: 0.5, rms: 0.08 }
 const decodeBytes = vi.fn(async () => decoded)
 const fetchAndDecode = vi.fn(async () => decoded)
 const playBuffer = vi.fn(async () => {})
@@ -25,6 +26,9 @@ vi.mock('@/features/translation/web-audio', () => ({
   decodeBytes,
   fetchAndDecode,
   playBuffer,
+  CLIP_GAIN: 1,
+  clipStats: () => stats,
+  audioContextState: () => 'running',
   audioIsRunning: () => ctx.running,
   onAudioStateChange: (cb: () => void) => {
     ctx.listeners.push(cb)
@@ -47,6 +51,7 @@ beforeEach(() => {
   ctx.listeners.length = 0
   room.remoteParticipants.clear()
   vi.clearAllMocks()
+  stats = { seconds: 1, sampleRate: 24000, channels: 1, peak: 0.5, rms: 0.08 }
 })
 
 describe('useTranslatedAudio', () => {
@@ -162,5 +167,25 @@ describe('the speaker’s original voice, end to end through the hook', () => {
     ctx.running = false
     act(() => ctx.listeners.forEach((cb) => cb()))
     await vi.waitFor(() => expect(setVolume).toHaveBeenLastCalledWith(1))
+  })
+
+  it('reports a decoded clip that is empty or inaudible, and stays quiet for a normal one', async () => {
+    renderHook(() => useTranslatedAudio({ sessionId: 's1', originalAudioMode: 'off' }))
+    const inline = (id: string) =>
+      encodeInlineAudio(
+        { utteranceId: id, speakerId: 'sp', lang: 'bn-BD', format: 'wav', speechEndedAt: 1 },
+        new Uint8Array([1, 2, 3, 4]),
+      )
+    send(TOPICS.audioInline, inline('u1'))
+    await vi.waitFor(() => expect(playBuffer).toHaveBeenCalledTimes(1))
+    expect(reportDiag).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'clip_quiet' }))
+
+    stats = { seconds: 0, sampleRate: 24000, channels: 1, peak: 0, rms: 0 }
+    send(TOPICS.audioInline, inline('u2'))
+    await vi.waitFor(() =>
+      expect(reportDiag).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'clip_quiet', detail: 'peak 0.000 dur 0.00 rate 24000' }),
+      ),
+    )
   })
 })

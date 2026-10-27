@@ -25,6 +25,19 @@ export interface TranslationDebug {
   lastCaption?: { lang: string; at: number }
   lastAudio?: { via: 'url' | 'inline'; status: 'ok' | number | 'error'; ms: number; at: number }
   queue: number
+  /** The last translated clip: decode result, gain, context state, original-voice volume. */
+  lastClip?: {
+    seconds: number
+    sampleRate: number
+    channels: number
+    peak: number
+    rms: number
+    gain?: number
+    ctxAtStart?: string
+    originalAtStart?: number
+    originalAtEnd?: number
+    at: number
+  }
   /** The last change of a speaker's original-voice volume (translation ducking). */
   lastDuck?: { speakerId: string; volume: number; reason: string; at: number }
   /** Languages the server translated into for the last utterance (listener languages). */
@@ -54,6 +67,7 @@ export function enableTranslationDebug(on: boolean) {
   if (!on) {
     state = INITIAL
     lastSamples = null
+    lastClipBuffer = null
   }
 }
 
@@ -61,6 +75,10 @@ export function setTranslationDebug(patch: Partial<TranslationDebug>) {
   if (!enabled) return
   state = { ...state, ...patch }
   for (const listener of listeners) listener()
+}
+
+export function getTranslationDebug(): TranslationDebug {
+  return state
 }
 
 export function useTranslationDebug(): TranslationDebug {
@@ -81,4 +99,13 @@ export function rememberUtterance(samples: Float32Array) {
 }
 export function lastUtteranceSamples(): Float32Array | null {
   return lastSamples
+}
+
+/** The last decoded translated clip, kept only while the overlay is mounted ("Download / Replay last clip"). */
+let lastClipBuffer: AudioBuffer | null = null
+export function rememberClip(buffer: AudioBuffer) {
+  if (enabled) lastClipBuffer = buffer
+}
+export function lastClip(): AudioBuffer | null {
+  return lastClipBuffer
 }

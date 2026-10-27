@@ -11,6 +11,7 @@ const body = z.object({
     'audio_blocked',
     'duck_restored',
     'realtime_status',
+    'clip_quiet',
   ]),
   detail: z.string().max(60).optional(),
   sessionId: z.uuid().optional(),

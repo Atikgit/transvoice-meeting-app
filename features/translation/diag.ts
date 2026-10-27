@@ -11,6 +11,7 @@ export type DiagType =
   | 'audio_blocked'
   | 'duck_restored'
   | 'realtime_status'
+  | 'clip_quiet'
 
 export function reportDiag(event: { type: DiagType; detail?: string; sessionId?: string }): void {
   void fetch('/api/diag', {
