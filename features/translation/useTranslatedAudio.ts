@@ -21,6 +21,7 @@ import {
   unlockAudioOnFirstGesture,
 } from './web-audio'
 import { reportDiag } from './diag'
+import { serverNow, syncServerClock } from './clock'
 
 /**
  * Receives the server's captions and translated clips (LiveKit data, topics tvx.*) and plays
@@ -47,6 +48,11 @@ export function useTranslatedAudio({
   const clipInfo = useRef(
     new Map<string, { lang?: string; fetchMs?: number; via?: 'url' | 'inline' }>(),
   )
+
+  // Join: measure this device's clock against the server's (5 pings, lowest round trip).
+  useEffect(() => {
+    void syncServerClock()
+  }, [])
 
   useEffect(() => {
     modeRef.current = originalAudioMode
@@ -147,7 +153,7 @@ export function useTranslatedAudio({
       onStart: (clip) => {
         const endedAt = speechEnds.current.get(clip.utteranceId)
         if (endedAt !== undefined) {
-          tracker.current.audioStarted(clip.utteranceId, endedAt, Date.now())
+          tracker.current.audioStarted(clip.utteranceId, endedAt, serverNow())
           setLatency(tracker.current.latest())
           const sample = tracker.current.get(clip.utteranceId)
           const info = clipInfo.current.get(clip.utteranceId)
@@ -202,7 +208,7 @@ export function useTranslatedAudio({
         if (clipInfo.current.size > 50)
           clipInfo.current.delete(clipInfo.current.keys().next().value!)
         setTranslationDebug({ lastCaption: { lang: m.lang, at: Date.now() } })
-        tracker.current.captionShown(m.utteranceId, m.speechEndedAt, Date.now())
+        tracker.current.captionShown(m.utteranceId, m.speechEndedAt, serverNow())
         setLatency(tracker.current.latest())
         setUnavailable(false)
         setAudioMissing(false)

@@ -7,6 +7,7 @@ import { DRAIN_RETRY_MS } from '@/lib/draining'
 import { reportLatency } from './latency-beacon'
 import { encodeWav } from '@/lib/translation/wav'
 import { encodeOpus } from './opus-upload'
+import { serverNow } from './clock'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
 import { rememberUtterance, setTranslationDebug } from './debug-store'
 import { useLocalAudioWatch } from './useLocalAudioWatch'
@@ -61,7 +62,7 @@ export async function uploadUtterance(
     form.set('seq', String(chunk.seq))
   }
   // Wall-clock time the speaker stopped talking (listeners derive latency from it).
-  form.set('clientTs', String(Math.round(Date.now() - (performance.now() - utterance.endedAt))))
+  form.set('clientTs', String(Math.round(serverNow() - (performance.now() - utterance.endedAt))))
   const send = () => fetch('/api/translate', { method: 'POST', body: form })
   const res = await send()
   // The server is restarting (SIGTERM drain): one retry, which lands on the new container.
