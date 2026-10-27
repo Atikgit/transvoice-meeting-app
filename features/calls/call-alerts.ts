@@ -1,5 +1,7 @@
 'use client'
 
+import { BRAND } from '@/lib/brand'
+
 /**
  * Alerts for a ringing call that do not need sound: the tab title flashes, a phone vibrates, and
  * (once the user allowed it) the system shows a notification while the tab is in the background.
@@ -45,7 +47,7 @@ export function startCallAlerts(callerName: string, deps: AlertDeps = browserDep
   if (deps.Notification?.permission === 'granted' && (doc.hidden || !doc.hasFocus())) {
     try {
       notification = new deps.Notification('Incoming call', {
-        body: `${callerName} is calling you on TransVoice`,
+        body: `${callerName} is calling you on ${BRAND.name}`,
         tag: 'incoming-call',
         requireInteraction: true,
       })
