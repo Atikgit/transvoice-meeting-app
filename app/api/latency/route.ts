@@ -11,6 +11,7 @@ const body = z.object({
   kind: z.enum(['speak', 'listen']),
   lang: z.string().max(16).optional(),
   encodeMs: ms.optional(),
+  vadMs: ms.optional(),
   roundTripMs: ms.optional(),
   bytes: z.number().int().min(0).max(4_000_000).optional(),
   format: z.enum(['wav', 'opus']).optional(),

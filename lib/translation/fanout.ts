@@ -10,6 +10,7 @@ import { analyseWav, clipIssue, isWav, type ClipIssue } from '@/lib/translation/
 import { logClip } from '@/lib/translation/log'
 import {
   TransVoiceApiError,
+  type ApiTimings,
   type AudioFormat,
   translateSpeech,
   type TranslateSpeechInput,
@@ -50,6 +51,7 @@ export type LanguageResult =
       audioFormat?: AudioFormat
       /** Why the audio was dropped, if it was. */
       audioIssue?: ClipIssue | 'no_voice'
+      timings?: ApiTimings
       ms: number
     }
   | { lang: string; listeners: string[]; kind: 'silence'; ms: number }

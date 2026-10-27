@@ -257,6 +257,7 @@ export function useLiveTranslation({
             utteranceId,
             kind: 'speak',
             encodeMs,
+            vadMs: Math.max(0, Math.round(sentAt - utterance.endedAt)),
             roundTripMs: Math.round(performance.now() - sentAt),
             bytes: sent?.bytes ?? 44 + utterance.samples.length * 2,
             format: sent?.format,
