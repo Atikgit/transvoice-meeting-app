@@ -4,9 +4,21 @@ import { run, configFromEnv } from '../../scripts/mail-test'
 import { server } from '../mocks/server'
 
 const sendMail = vi.fn()
-vi.mock('nodemailer', () => ({ default: { createTransport: () => ({ sendMail }) } }))
+const { createTransport } = vi.hoisted(() => ({
+  createTransport: vi.fn((_opts: Record<string, unknown>) => ({
+    sendMail: (...a: unknown[]) => sendMail(...a),
+  })),
+}))
+vi.mock('nodemailer', () => ({ default: { createTransport } }))
 
-const { createMailTransport, mailerStatus } = await import('@/lib/email/transport')
+const {
+  classifyMailFailure,
+  createMailTransport,
+  MailError,
+  mailFailureMessage,
+  mailerStatus,
+  parseSender,
+} = await import('@/lib/email/transport')
 
 const email = {
   to: 'private.person@example.com',
@@ -36,7 +48,7 @@ describe('mailerStatus (what the boot log and the modal rely on)', () => {
     })
     expect(mailerStatus({ from: 'a', smtp })).toMatchObject({
       configured: false,
-      missing: ['RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS'],
+      missing: ['BREVO_API_KEY, RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS'],
     })
     expect(createMailTransport({ from: 'a', smtp })).toBeNull()
   })
@@ -122,7 +134,7 @@ describe('pnpm mail:test', () => {
     const { out, write } = lines()
     expect(await run('me@example.com', { EMAIL_FROM: 'x' }, write)).toBe(1)
     expect(out.join('\n')).toContain(
-      'Email is NOT configured. Set RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS',
+      'Email is NOT configured. Set BREVO_API_KEY, RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS',
     )
   })
 
@@ -157,5 +169,120 @@ describe('pnpm mail:test', () => {
       resendApiKey: undefined,
       smtp: { host: undefined, port: 465, secure: true, user: undefined, pass: undefined },
     })
+  })
+})
+
+describe('Brevo', () => {
+  const config = {
+    from: 'TransVoice AI <no-reply@transvoice.ai>',
+    brevoApiKey: 'xkeysib-secret',
+    resendApiKey: 're_x',
+    smtp,
+  }
+
+  it('BREVO_API_KEY wins over Resend and SMTP', () => {
+    expect(mailerStatus(config)).toEqual({ configured: true, kind: 'brevo' })
+  })
+
+  it('posts to api.brevo.com/v3/smtp/email with the api-key header and a parsed sender', async () => {
+    let seen: { key: string | null; body: Record<string, unknown> } | undefined
+    server.use(
+      http.post('https://api.brevo.com/v3/smtp/email', async ({ request }) => {
+        seen = { key: request.headers.get('api-key'), body: (await request.json()) as never }
+        return HttpResponse.json({ messageId: 'm1' }, { status: 201 })
+      }),
+    )
+    await createMailTransport(config)!.send(email)
+    expect(seen?.key).toBe('xkeysib-secret')
+    expect(seen?.body).toMatchObject({
+      sender: { name: 'TransVoice AI', email: 'no-reply@transvoice.ai' },
+      to: [{ email: email.to }],
+      subject: 'S',
+      htmlContent: email.html,
+      textContent: email.text,
+    })
+  })
+
+  it.each([
+    [401, { code: 'unauthorized', message: 'Key not found' }, 'auth'],
+    [400, { code: 'invalid_parameter', message: 'Sender is not valid' }, 'sender'],
+    [403, { code: 'permission_denied', message: 'Sender domain not verified' }, 'sender'],
+    [429, { code: 'too_many_requests', message: 'Rate limit exceeded' }, 'quota'],
+  ])(
+    'maps a %i answer to a clear failure without the address or body',
+    async (status, body, failure) => {
+      server.use(
+        http.post('https://api.brevo.com/v3/smtp/email', () => HttpResponse.json(body, { status })),
+      )
+      const error = await createMailTransport(config)!
+        .send(email)
+        .catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(MailError)
+      expect((error as InstanceType<typeof MailError>).failure).toBe(failure)
+      expect(String((error as Error).message)).not.toContain('private.person')
+      expect(String((error as Error).message)).not.toContain('secret body')
+      expect(String((error as Error).message)).not.toContain('xkeysib')
+    },
+  )
+})
+
+describe('SMTP (Brevo relay on 587)', () => {
+  it('uses STARTTLS and refuses to continue without it on port 587; 465 uses implicit TLS', () => {
+    createMailTransport({
+      from: 'a',
+      smtp: { host: 'smtp-relay.brevo.com', port: 587, secure: false, user: 'u', pass: 'p' },
+    })
+    expect(createTransport.mock.calls.at(-1)![0]).toMatchObject({
+      host: 'smtp-relay.brevo.com',
+      port: 587,
+      secure: false,
+      requireTLS: true,
+    })
+    createMailTransport({
+      from: 'a',
+      smtp: { host: 'h', port: 465, secure: true, user: 'u', pass: 'p' },
+    })
+    expect(createTransport.mock.calls.at(-1)![0]).toMatchObject({ secure: true, requireTLS: false })
+  })
+
+  it('classifies SMTP answers', async () => {
+    sendMail.mockRejectedValueOnce(
+      Object.assign(new Error('Invalid login: 535 Authentication failed'), {
+        code: 'EAUTH',
+        responseCode: 535,
+      }),
+    )
+    const t = createMailTransport({
+      from: 'a',
+      smtp: { host: 'h', port: 587, secure: false, user: 'u', pass: 'p' },
+    })!
+    expect(((await t.send(email).catch((e) => e)) as InstanceType<typeof MailError>).failure).toBe(
+      'auth',
+    )
+    sendMail.mockRejectedValueOnce(
+      Object.assign(new Error('Sender is not valid. Validate your sender'), { responseCode: 554 }),
+    )
+    expect(((await t.send(email).catch((e) => e)) as InstanceType<typeof MailError>).failure).toBe(
+      'sender',
+    )
+    sendMail.mockRejectedValueOnce(
+      Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+    )
+    expect(((await t.send(email).catch((e) => e)) as InstanceType<typeof MailError>).failure).toBe(
+      'network',
+    )
+  })
+})
+
+describe('helpers', () => {
+  it('parses senders and words every failure', () => {
+    expect(parseSender('TransVoice AI <no-reply@transvoice.ai>')).toEqual({
+      name: 'TransVoice AI',
+      email: 'no-reply@transvoice.ai',
+    })
+    expect(parseSender('no-reply@transvoice.ai')).toEqual({ email: 'no-reply@transvoice.ai' })
+    expect(classifyMailFailure(500, 'boom')).toBe('rejected')
+    for (const f of ['auth', 'sender', 'quota', 'network', 'rejected'] as const)
+      expect(mailFailureMessage(f)).toMatch(/\.$/)
   })
 })

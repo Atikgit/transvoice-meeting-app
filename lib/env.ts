@@ -96,6 +96,7 @@ const serverSchema = z.object({
   // Branded emails sent by the app (invites). Resend or SMTP; without either, invites to new
   // users fall back to Supabase's "Invite user" email.
   EMAIL_FROM: z.string().min(3).default('TransVoice AI <no-reply@transvoice.ai>'),
+  BREVO_API_KEY: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
   SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),

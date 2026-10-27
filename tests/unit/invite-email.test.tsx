@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { createHash } from 'node:crypto'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { maskEmail } from '@/lib/email/mask'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getSessionUser = vi.fn()
@@ -130,7 +131,7 @@ describe('sendInvitationEmail', () => {
     const to = recipient()
     expect(await sendInvitationEmail({ inviteUrl: URL, email: to.toUpperCase() })).toEqual({
       ok: true,
-      to,
+      to: maskEmail(to),
       via: 'resend',
     })
     const email = send.mock.calls[0]![0]
@@ -178,7 +179,7 @@ describe('sendInvitationEmail', () => {
     const to = recipient()
     expect(await sendInvitationEmail({ inviteUrl: URL, email: to })).toEqual({
       ok: true,
-      to,
+      to: maskEmail(to),
       via: 'supabase',
     })
     expect(inviteUserByEmail).toHaveBeenCalledWith(to, {
