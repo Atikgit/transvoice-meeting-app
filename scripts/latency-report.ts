@@ -31,6 +31,13 @@ interface TranslateLine {
     asrMs?: number
     mtMs?: number
     ttsMs?: number
+    pipeline?: 'single' | 'split'
+    fallback?: string
+    sttMs?: number
+    translateFirstTokenMs?: number
+    firstSentenceMs?: number
+    ttsFirstByteMs?: number
+    toFirstAudioMs?: number
     captionMs?: number
     audioMs?: number
   }[]
@@ -96,6 +103,10 @@ export interface Report {
   utterances: number
   stages: Stage[]
   pairs: { pair: string; stages: Stage[] }[]
+  /** Server-side stages per pipeline, for the single vs split comparison. */
+  pipelines: { pipeline: string; stages: Stage[] }[]
+  /** Split runs that fell back to the single call. */
+  fallbacks: number
   verdict: 'pass' | 'fail' | 'no-data'
 }
 
@@ -121,6 +132,14 @@ export function buildReport(lines: Iterable<string>): Report {
     }
   }
 
+  const byPipeline = new Map<string, Map<string, Samples>>()
+  let fallbacks = 0
+  const pipelineSample = (pipeline: string, name: string, value: Num) => {
+    if (!byPipeline.has(pipeline)) byPipeline.set(pipeline, new Map())
+    const stages = byPipeline.get(pipeline)!
+    if (!stages.has(name)) stages.set(name, new Samples())
+    stages.get(name)!.add(value)
+  }
   const byUtterance = new Map<string, TranslateLine>()
   for (const t of translate) {
     if (t.utteranceId) byUtterance.set(t.utteranceId, t)
@@ -128,6 +147,16 @@ export function buildReport(lines: Iterable<string>): Report {
     sample('server: context (db + livekit)', t.contextMs)
     sample('server: total', t.totalMs)
     for (const l of t.languages ?? []) {
+      if (l.fallback) fallbacks++
+      if (l.outcome === 'speech') {
+        const pipeline = l.pipeline ?? 'single'
+        pipelineSample(pipeline, 'stt (stt_ms)', l.sttMs)
+        pipelineSample(pipeline, 'translate first token', l.translateFirstTokenMs)
+        pipelineSample(pipeline, 'first sentence ready', l.firstSentenceMs)
+        pipelineSample(pipeline, 'tts first byte', l.ttsFirstByteMs)
+        pipelineSample(pipeline, 'request → first audio sent', l.toFirstAudioMs)
+        if (pipeline === 'single') pipelineSample(pipeline, 'POST / call (stt+mt+tts)', l.apiMs)
+      }
       if (l.outcome !== 'speech') continue
       sample('server: API call per language', l.apiMs, l.pair)
       // Only when the API reports its own stage timings.
@@ -172,6 +201,11 @@ export function buildReport(lines: Iterable<string>): Report {
     pairs: [...byPair]
       .map(([pair, stages]) => ({ pair, stages: toStages(stages) }))
       .sort((a, b) => a.pair.localeCompare(b.pair)),
+    pipelines: [...byPipeline].map(([pipeline, stages]) => ({
+      pipeline,
+      stages: toStages(stages),
+    })),
+    fallbacks,
     verdict:
       !end || end.n === 0
         ? 'no-data'
@@ -193,6 +227,29 @@ export function formatReport(report: Report): string {
       .join('\n')
   const out = [`Utterances in the log: ${report.utterances}`, '', table(report.stages)]
   for (const { pair, stages } of report.pairs) out.push('', `Language pair ${pair}`, table(stages))
+  const single = report.pipelines.find((p) => p.pipeline === 'single')
+  const split = report.pipelines.find((p) => p.pipeline === 'split')
+  if (single || split) {
+    const names = [
+      ...new Set([...(single?.stages ?? []), ...(split?.stages ?? [])].map((s) => s.name)),
+    ]
+    const cell = (stages: Stage[] | undefined, name: string) => {
+      const s = stages?.find((x) => x.name === name)
+      return s && s.n > 0
+        ? `n=${String(s.n).padStart(3)} p50 ${fmt(s.p50)} p95 ${fmt(s.p95)}`
+        : '—'.padEnd(26)
+    }
+    out.push(
+      '',
+      'Single vs split (server side, ms)',
+      `  ${''.padEnd(30)}${'single'.padEnd(30)}split`,
+    )
+    for (const name of names)
+      out.push(
+        `  ${name.padEnd(30)}${cell(single?.stages, name).padEnd(30)}${cell(split?.stages, name)}`,
+      )
+    out.push(`  split runs that fell back to the single call: ${report.fallbacks}`)
+  }
   out.push(
     '',
     report.verdict === 'no-data'

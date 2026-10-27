@@ -134,3 +134,51 @@ describe('API stage timings and upload format', () => {
     expect(stage('speaker: VAD end-of-speech wait')).toMatchObject({ p50: 400 })
   })
 })
+
+describe('single vs split side by side', () => {
+  it('collects server stages per pipeline and prints both columns, counting fallbacks', () => {
+    const line = (id: string, language: object) =>
+      JSON.stringify({ event: 'translate', utteranceId: id, totalMs: 100, languages: [language] })
+    const report = buildReport([
+      line('a', {
+        lang: 'bn-BD',
+        pair: 'en-US>bn-BD',
+        outcome: 'speech',
+        pipeline: 'single',
+        apiMs: 2500,
+        audioMs: 10,
+        toFirstAudioMs: 2900,
+      }),
+      line('b', {
+        lang: 'bn-BD',
+        pair: 'en-US>bn-BD',
+        outcome: 'speech',
+        pipeline: 'split',
+        sttMs: 400,
+        translateFirstTokenMs: 250,
+        firstSentenceMs: 600,
+        ttsFirstByteMs: 350,
+        toFirstAudioMs: 1500,
+      }),
+      line('c', {
+        lang: 'bn-BD',
+        pair: 'en-US>bn-BD',
+        outcome: 'speech',
+        pipeline: 'single',
+        fallback: 'stt',
+        apiMs: 2600,
+        audioMs: 10,
+        toFirstAudioMs: 7000,
+      }),
+    ])
+    expect(report.fallbacks).toBe(1)
+    const stage = (p: string, name: string) =>
+      report.pipelines.find((x) => x.pipeline === p)!.stages.find((s) => s.name === name)
+    expect(stage('split', 'request → first audio sent')).toMatchObject({ n: 1, p50: 1500 })
+    expect(stage('split', 'stt (stt_ms)')).toMatchObject({ p50: 400 })
+    expect(stage('single', 'request → first audio sent')).toMatchObject({ n: 2 })
+    const text = formatReport(report)
+    expect(text).toContain('Single vs split')
+    expect(text).toContain('split runs that fell back to the single call: 1')
+  })
+})
