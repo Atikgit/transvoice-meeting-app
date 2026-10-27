@@ -78,6 +78,15 @@ export async function deliverResult({
   })
 
   let audioMs = -1
+  if (!result.ttsAudio) {
+    // The API gave no usable audio: the caption stands alone and the listener is told why.
+    const notice: NoticeMessage = { kind: 'audio_unavailable' }
+    await Promise.all([
+      captionSent,
+      send(sessionId, encodeMessage(notice), { destinationIdentities, topic: TOPICS.notice }),
+    ])
+    return { captionMs, audioMs }
+  }
   if (result.ttsAudio) {
     const bytes = Buffer.from(result.ttsAudio, 'base64')
     // The audio goes out at the same moment as the caption (never queued behind it): one

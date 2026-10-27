@@ -1,4 +1,5 @@
 import 'server-only'
+import type { WavStats } from '@/lib/translation/wav'
 
 /**
  * One structured line per utterance with stage timings (ms). Deliberately free of anything
@@ -83,4 +84,36 @@ export interface DecisionLog {
 
 export function logDecision(entry: DecisionLog): void {
   console.info(JSON.stringify({ event: 'translate_decision', ...entry }))
+}
+
+/**
+ * One line per TTS clip the API returned (and per retry): how big, how long, how loud, and which
+ * voice. This is what shows a "silent" clip: bytes 44 / seconds 0 / peak 0 means the API sent an
+ * empty clip. No text and no audio.
+ */
+export function logClip(entry: {
+  sessionId: string
+  utteranceId: string
+  lang: string
+  voice: string
+  gender: string
+  retry: boolean
+  format: string
+  bytes: number
+  stats: WavStats | null
+  issue: string | null
+}): void {
+  const { stats, issue, ...rest } = entry
+  const line = JSON.stringify({
+    event: 'translate_decision',
+    decision: issue ? `clip:${issue}` : 'clip:ok',
+    ...rest,
+    rate: stats?.sampleRate,
+    channels: stats?.channels,
+    seconds: stats ? Math.round(stats.seconds * 100) / 100 : undefined,
+    peak: stats ? Math.round(stats.peak * 1000) / 1000 : undefined,
+    rms: stats ? Math.round(stats.rms * 1000) / 1000 : undefined,
+  })
+  if (issue) console.warn(line)
+  else console.info(line)
 }

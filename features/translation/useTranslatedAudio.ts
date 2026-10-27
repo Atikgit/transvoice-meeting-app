@@ -34,6 +34,8 @@ export function useTranslatedAudio({
   const [captions, setCaptions] = useState<CaptionEntry[]>([])
   const [playing, setPlaying] = useState(false)
   const [unavailable, setUnavailable] = useState(false)
+  /** Last utterance came as a caption only (its voice clip was empty). */
+  const [audioMissing, setAudioMissing] = useState(false)
   const [latency, setLatency] = useState<LatencySample | null>(null)
   const modeRef = useRef(originalAudioMode)
   const tracker = useRef(new LatencyTracker())
@@ -173,6 +175,7 @@ export function useTranslatedAudio({
         tracker.current.captionShown(m.utteranceId, m.speechEndedAt, Date.now())
         setLatency(tracker.current.latest())
         setUnavailable(false)
+        setAudioMissing(false)
         setCaptions((log) =>
           addCaption(log, {
             id: m.utteranceId,
@@ -198,7 +201,8 @@ export function useTranslatedAudio({
         queues.enqueue(clip)
         setTranslationDebug({ queue: queues.size() })
       } else if (parsed.topic === TOPICS.notice) {
-        setUnavailable(parsed.message.kind === 'translation_unavailable')
+        if (parsed.message.kind === 'audio_unavailable') setAudioMissing(true)
+        else setUnavailable(true)
       }
     }
 
@@ -228,5 +232,5 @@ export function useTranslatedAudio({
   const addOwnTranscript = (id: string, original: string) =>
     setCaptions((log) => addCaption(log, { id, from: 'self', original, translated: '' }))
 
-  return { captions, playing, unavailable, latency, addOwnTranscript }
+  return { captions, playing, unavailable, audioMissing, latency, addOwnTranscript }
 }

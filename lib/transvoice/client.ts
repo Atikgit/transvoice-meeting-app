@@ -49,7 +49,8 @@ export class TransVoiceApiError extends Error {
 const speechResponse = z.object({
   original_text: z.string(),
   translated_text: z.string(),
-  tts_audio: z.string(),
+  // null/absent when the API had no usable voice: handled as "no audio", not as a bad payload.
+  tts_audio: z.string().nullish(),
   // Optional: only an API that supports output_format says which one it used.
   audio_format: z.string().optional(),
   output_format: z.string().optional(),
@@ -126,7 +127,7 @@ export async function translateSpeech(
     kind: 'speech',
     originalText: parsed.data.original_text,
     translatedText: parsed.data.translated_text,
-    ttsAudio: parsed.data.tts_audio,
+    ttsAudio: parsed.data.tts_audio ?? '',
     audioFormat: knownFormat(parsed.data.audio_format ?? parsed.data.output_format),
   }
 }

@@ -5,7 +5,9 @@ import {
   sameLanguage,
   toApiLang,
 } from '@/lib/transvoice/languages'
-import { getVoiceName, type VoiceGender } from '@/lib/transvoice/voices'
+import { findVoice, getVoiceName, otherGender, type VoiceGender } from '@/lib/transvoice/voices'
+import { analyseWav, clipIssue, isWav, type ClipIssue } from '@/lib/translation/wav'
+import { logClip } from '@/lib/translation/log'
 import {
   TransVoiceApiError,
   type AudioFormat,
@@ -43,8 +45,11 @@ export type LanguageResult =
       kind: 'speech'
       originalText: string
       translatedText: string
+      /** Base64 audio; '' when no usable clip came back (see audioIssue): caption only. */
       ttsAudio: string
       audioFormat?: AudioFormat
+      /** Why the audio was dropped, if it was. */
+      audioIssue?: ClipIssue | 'no_voice'
       ms: number
     }
   | { lang: string; listeners: string[]; kind: 'silence'; ms: number }
@@ -86,6 +91,7 @@ export async function translateForListeners({
   groups,
   sessionId,
   speakerId,
+  utteranceId = '',
   translate = translateSpeech,
   breaker = transvoiceBreaker,
   onResult,
@@ -96,28 +102,94 @@ export async function translateForListeners({
   groups: Map<string, string[]>
   sessionId: string
   speakerId: string
+  /** Joins the clip log lines with the utterance's other log lines. */
+  utteranceId?: string
   translate?: Translate
   breaker?: CircuitBreaker
   /** Called as soon as each language finishes (deliver without waiting for the slowest). */
   onResult?: (result: LanguageResult) => Promise<unknown> | void
 }): Promise<LanguageResult[]> {
+  const audioProblem = (r: Extract<TranslateSpeechResult, { kind: 'speech' }>) => {
+    const bytes = Buffer.from(r.ttsAudio, 'base64')
+    // Only WAV can be measured here; a compressed format is judged by size alone.
+    if (bytes.length > 0 && !isWav(bytes) && r.audioFormat && r.audioFormat !== 'wav')
+      return bytes.length < 200 ? ('empty' as const) : null
+    return clipIssue(analyseWav(bytes), bytes.length)
+  }
   const translateOne = async (lang: string, listeners: string[]): Promise<LanguageResult> => {
     const started = performance.now()
     const ms = () => Math.round(performance.now() - started)
+    const logClipOf = (
+      r: Extract<TranslateSpeechResult, { kind: 'speech' }>,
+      voice: string | null,
+      gender: VoiceGender,
+      retry: boolean,
+      issue: ClipIssue | 'no_voice' | null,
+    ) => {
+      const bytes = Buffer.from(r.ttsAudio, 'base64')
+      logClip({
+        sessionId,
+        utteranceId,
+        lang,
+        voice: voice ?? 'none',
+        gender,
+        retry,
+        format: r.audioFormat ?? 'wav',
+        bytes: bytes.length,
+        stats: analyseWav(bytes),
+        issue,
+      })
+    }
     if (!breaker.allow()) return { lang, listeners, kind: 'failed', reason: 'circuit_open', ms: 0 }
     try {
-      const result = await translateWithRetry(translate, {
-        audio: audioBase64,
-        srcLang: sourceLang(spokenLang),
-        tgtLang: toApiLang(lang),
-        azureVoice: getVoiceName(normalizeLocale(lang), voiceGender),
-        sessionId,
-        speakerId,
-      })
+      const request = (gender: VoiceGender) => {
+        const voice = findVoice(normalizeLocale(lang), gender)
+        return {
+          voice,
+          input: {
+            audio: audioBase64,
+            srcLang: sourceLang(spokenLang),
+            tgtLang: toApiLang(lang),
+            // No voice for this language: still translate (captions) with a placeholder, drop its audio.
+            azureVoice: voice ?? getVoiceName(normalizeLocale(lang), gender),
+            sessionId,
+            speakerId,
+          },
+        }
+      }
+      const first = request(voiceGender)
+      let result = await translateWithRetry(translate, first.input)
       breaker.success()
-      return result.kind === 'silence'
-        ? { lang, listeners, kind: 'silence', ms: ms() }
-        : { lang, listeners, ...result, ms: ms() }
+      if (result.kind === 'silence') return { lang, listeners, kind: 'silence', ms: ms() }
+
+      let issue: ClipIssue | 'no_voice' | null = first.voice ? audioProblem(result) : 'no_voice'
+      logClipOf(result, first.voice, voiceGender, false, issue)
+      const second = request(otherGender(voiceGender))
+      if (issue && issue !== 'no_voice' && second.voice && second.voice !== first.voice) {
+        const usedGender = otherGender(voiceGender)
+        // Empty or inaudible clip: one more try with the other gender's voice for this language.
+        try {
+          const again = await translateWithRetry(translate, second.input)
+          if (again.kind === 'speech') {
+            const againIssue = audioProblem(again)
+            logClipOf(again, second.voice, usedGender, true, againIssue)
+            if (!againIssue) {
+              result = again
+              issue = null
+            }
+          }
+        } catch {
+          // the retry is best effort: the caption we already have is still delivered
+        }
+      }
+      return {
+        lang,
+        listeners,
+        ...result,
+        ttsAudio: issue ? '' : result.ttsAudio,
+        ...(issue ? { audioIssue: issue } : {}),
+        ms: ms(),
+      }
     } catch (error) {
       breaker.failure()
       const timeout = error instanceof TransVoiceApiError && /timeout|aborted/i.test(error.message)

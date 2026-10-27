@@ -352,6 +352,11 @@ function RoomView({
       }}
       notices={
         <>
+          {audio.audioMissing && (
+            <RoomNotice tone="info" floating>
+              Audio unavailable for this utterance — showing captions.
+            </RoomNotice>
+          )}
           {session.problem && (
             <RoomNotice
               tone="error"

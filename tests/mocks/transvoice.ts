@@ -1,5 +1,13 @@
 import { http, HttpResponse } from 'msw'
 import { TEST_ENV } from './env'
+import { encodeWav } from '@/lib/translation/wav'
+
+/** Half a second of a 440 Hz tone (16 kHz mono WAV, base64): audible, like a real TTS clip. */
+export const TONE_WAV_BASE64 = Buffer.from(
+  encodeWav(
+    Float32Array.from({ length: 8000 }, (_, i) => 0.5 * Math.sin((2 * Math.PI * 440 * i) / 16000)),
+  ),
+).toString('base64')
 
 /** Request body the TransVoice Speech API receives (see docs/PROMPT.md §2). */
 export interface TransVoiceRequestBody {
@@ -32,7 +40,7 @@ export const transvoiceHandlers = [
     return HttpResponse.json({
       original_text: 'হ্যালো, আপনি কেমন আছেন?',
       translated_text: FAKE_TRANSLATIONS[body.tgt_lang] ?? `[${body.tgt_lang}] translation`,
-      tts_audio: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=',
+      tts_audio: TONE_WAV_BASE64,
     })
   }),
 ]

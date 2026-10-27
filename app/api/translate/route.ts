@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
     groups,
     sessionId: upload.sessionId,
     speakerId: user.id,
+    utteranceId: upload.utteranceId,
     onResult: async (result) => {
       delivered.set(
         result.lang,

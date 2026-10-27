@@ -38,3 +38,55 @@ export function isWav(bytes: Uint8Array): boolean {
 export function wavSeconds(byteLength: number, sampleRate = WAV_SAMPLE_RATE): number {
   return Math.max(0, byteLength - 44) / 2 / sampleRate
 }
+
+export interface WavStats {
+  sampleRate: number
+  channels: number
+  bitsPerSample: number
+  seconds: number
+  /** Largest absolute sample, 0..1. */
+  peak: number
+  /** Root-mean-square level, 0..1. */
+  rms: number
+}
+
+/** Header fields and loudness of a 16-bit PCM WAV; null when it is not one. Never throws. */
+export function analyseWav(bytes: Uint8Array): WavStats | null {
+  if (!isWav(bytes)) return null
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const channels = view.getUint16(22, true)
+  const sampleRate = view.getUint32(24, true)
+  const bitsPerSample = view.getUint16(34, true)
+  if (bitsPerSample !== 16 || channels < 1 || sampleRate < 1) return null
+  const frames = Math.floor((bytes.length - 44) / 2)
+  let peak = 0
+  let sum = 0
+  for (let i = 0; i < frames; i++) {
+    const v = Math.abs(view.getInt16(44 + i * 2, true)) / 0x8000
+    if (v > peak) peak = v
+    sum += v * v
+  }
+  return {
+    sampleRate,
+    channels,
+    bitsPerSample,
+    seconds: frames / channels / sampleRate,
+    peak,
+    rms: frames > 0 ? Math.sqrt(sum / frames) : 0,
+  }
+}
+
+/** Below this the clip is inaudible; shorter than MIN_CLIP_SECONDS it is a click, not speech. */
+export const MIN_CLIP_PEAK = 0.01
+export const MIN_CLIP_SECONDS = 0.2
+
+export type ClipIssue = 'missing' | 'empty' | 'silent' | 'invalid'
+
+/** Why a clip must not be played, or null when it is usable. */
+export function clipIssue(stats: WavStats | null, bytes: number): ClipIssue | null {
+  if (bytes === 0) return 'missing'
+  if (!stats) return 'invalid'
+  if (stats.seconds < MIN_CLIP_SECONDS) return 'empty'
+  if (stats.peak < MIN_CLIP_PEAK) return 'silent'
+  return null
+}
