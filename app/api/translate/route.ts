@@ -116,6 +116,8 @@ export async function POST(request: NextRequest) {
     sessionId: upload.sessionId,
     utteranceId: upload.utteranceId,
     audioBytes: upload.audio.length,
+    audioFormat: upload.format,
+    ...(upload.seq !== undefined ? { seq: upload.seq } : {}),
     intakeMs: Math.round(contextStartedAt - startedAt),
     contextMs,
     languages: results.map((r) => {

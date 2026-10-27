@@ -95,6 +95,7 @@ export default async function MeetingPage({
         balance={balance ? availableMinutes(balance) : 0}
         minutesLabel={balance ? minutesLabel(balance) : undefined}
         vadEndSilenceMs={serverEnv().VAD_END_SILENCE_MS}
+        uploadFormat={serverEnv().UPLOAD_FORMAT}
         // Any signed-in participant of the meeting may open the overlay: it shows only their own
         // browser's state and what the server stores about this session.
         debug={query.debug === '1'}

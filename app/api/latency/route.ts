@@ -13,6 +13,7 @@ const body = z.object({
   encodeMs: ms.optional(),
   roundTripMs: ms.optional(),
   bytes: z.number().int().min(0).max(4_000_000).optional(),
+  format: z.enum(['wav', 'opus']).optional(),
   captionMs: ms.optional(),
   audioMs: ms.optional(),
   fetchMs: ms.optional(),

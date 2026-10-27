@@ -6,10 +6,13 @@ import { Track } from 'livekit-client'
 import { DRAIN_RETRY_MS } from '@/lib/draining'
 import { reportLatency } from './latency-beacon'
 import { encodeWav } from '@/lib/translation/wav'
+import { encodeOpus } from './opus-upload'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
 import { rememberUtterance, setTranslationDebug } from './debug-store'
 import { useLocalAudioWatch } from './useLocalAudioWatch'
 import { shouldListen } from './vad-gate'
+
+export type UploadFormat = 'wav' | 'opus'
 
 export type TranslationNotice = {
   tone: 'info' | 'error'
@@ -25,21 +28,29 @@ export async function uploadUtterance(
     sessionId,
     utteranceId,
     utterance,
+    format = 'wav',
   }: {
     sessionId: string
     utteranceId: string
     utterance: Utterance
+    /** UPLOAD_FORMAT. opus falls back to wav where the browser cannot encode it. */
+    format?: UploadFormat
   },
-  onEncoded?: (encodeMs: number) => void,
+  onEncoded?: (encodeMs: number, sent: { format: UploadFormat; bytes: number }) => void,
 ): Promise<Response> {
   const form = new FormData()
   const encodeStarted = performance.now()
+  const opus = format === 'opus' ? await encodeOpus(utterance.samples) : null
+  const audio = opus ?? encodeWav(utterance.samples)
   form.set(
     'audio',
-    new Blob([encodeWav(utterance.samples)], { type: 'audio/wav' }),
-    'utterance.wav',
+    new Blob([audio as Uint8Array<ArrayBuffer>], { type: opus ? 'audio/ogg' : 'audio/wav' }),
+    opus ? 'utterance.ogg' : 'utterance.wav',
   )
-  onEncoded?.(Math.round(performance.now() - encodeStarted))
+  onEncoded?.(Math.round(performance.now() - encodeStarted), {
+    format: opus ? 'opus' : 'wav',
+    bytes: audio.length,
+  })
   form.set('sessionId', sessionId)
   form.set('utteranceId', utteranceId)
   // Wall-clock time the speaker stopped talking (listeners derive latency from it).
@@ -74,6 +85,7 @@ export function useLiveTranslation({
   playingTranslation = false,
   enabled = true,
   endSilenceMs,
+  uploadFormat = 'wav',
   onTranscript,
 }: {
   sessionId: string
@@ -83,6 +95,8 @@ export function useLiveTranslation({
   enabled?: boolean
   /** Silence that ends an utterance (VAD_END_SILENCE_MS). */
   endSilenceMs?: number
+  /** UPLOAD_FORMAT: what each utterance is uploaded as. */
+  uploadFormat?: UploadFormat
   /** The speaker's own transcript of an utterance. */
   onTranscript?: (utteranceId: string, original: string) => void
 }) {
@@ -199,7 +213,14 @@ export function useLiveTranslation({
         },
       })
       let encodeMs = 0
-      void uploadUtterance({ sessionId, utteranceId, utterance }, (ms) => (encodeMs = ms))
+      let sent: { format: UploadFormat; bytes: number } | undefined
+      void uploadUtterance(
+        { sessionId, utteranceId, utterance, format: uploadFormat },
+        (ms, info) => {
+          encodeMs = ms
+          sent = info
+        },
+      )
         .then((res) => {
           reportLatency({
             sessionId,
@@ -207,7 +228,8 @@ export function useLiveTranslation({
             kind: 'speak',
             encodeMs,
             roundTripMs: Math.round(performance.now() - sentAt),
-            bytes: 44 + utterance.samples.length * 2,
+            bytes: sent?.bytes ?? 44 + utterance.samples.length * 2,
+            format: sent?.format,
           })
           setTranslationDebug({
             lastTranslate: {

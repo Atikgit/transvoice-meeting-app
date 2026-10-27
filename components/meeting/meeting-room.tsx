@@ -82,6 +82,8 @@ export interface MeetingRoomProps {
   minutesLabel?: string
   /** VAD_END_SILENCE_MS from the server environment (300–700, default 400). */
   vadEndSilenceMs?: number
+  /** UPLOAD_FORMAT from the server environment. */
+  uploadFormat?: 'wav' | 'opus'
   /** ?debug=1: show the translation overlay (any signed-in participant). */
   debug?: boolean
   /** Camera / mic choice from the lobby. */
@@ -274,6 +276,7 @@ function RoomView({
   onMediaProblemHandled,
   debug = false,
   vadEndSilenceMs,
+  uploadFormat,
 }: MeetingRoomProps & {
   mediaProblem: MediaProblem | null
   onMediaProblemHandled: () => void
@@ -310,6 +313,7 @@ function RoomView({
     status: session.state.status,
     enabled: translationEnabled,
     endSilenceMs: vadEndSilenceMs,
+    uploadFormat,
     playingTranslation: audio.playing, // echo safety: never listen while a clip plays
     onTranscript: audio.addOwnTranscript,
   })

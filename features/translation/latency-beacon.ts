@@ -10,6 +10,7 @@ export interface LatencyReport {
   encodeMs?: number
   roundTripMs?: number
   bytes?: number
+  format?: 'wav' | 'opus'
   captionMs?: number
   audioMs?: number
   fetchMs?: number

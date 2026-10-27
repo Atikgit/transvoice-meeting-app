@@ -10,6 +10,10 @@ export interface TranslateLog {
   /** Random per utterance: joins this line with the clients' latency lines. */
   utteranceId: string
   audioBytes: number
+  /** wav | opus: what the browser uploaded. */
+  audioFormat?: string
+  /** Piece of a long speech: seq within its group (absent for a single utterance). */
+  seq?: number
   /** Auth, rate limit, upload parsing. */
   intakeMs: number
   /** translation_context + LiveKit participants. */
@@ -52,6 +56,8 @@ export interface LatencyLog {
   /** speak: upload start → answer received (includes the server's totalMs). */
   roundTripMs?: number
   bytes?: number
+  /** speak: wav | opus. */
+  format?: string
   /** listen: speech end → caption shown / first sound of the translated clip. */
   captionMs?: number
   audioMs?: number
