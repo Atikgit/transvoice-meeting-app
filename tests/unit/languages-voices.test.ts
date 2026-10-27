@@ -83,3 +83,19 @@ describe('voices', () => {
     }
   })
 })
+
+describe('voices the API refuses', () => {
+  it('are never chosen: the other gender stands in, or there is no voice', () => {
+    expect(findVoice('zh-CN-liaoning', 'male')).toBe('zh-CN-liaoning-XiaobeiNeural')
+    expect(findVoice('zh-CN-liaoning', 'female')).toBe('zh-CN-liaoning-XiaobeiNeural')
+    expect(findVoice('zh-CN-guangxi', 'male')).toBeNull()
+    expect(findVoice('zh-CN-guangxi', 'female')).toBeNull()
+  })
+
+  it('confirms the Bangla voices (checked live: 200, 12-13 KB mp3)', () => {
+    expect(findVoice('bn-BD', 'female')).toBe('bn-BD-NabanitaNeural')
+    expect(findVoice('bn-BD', 'male')).toBe('bn-BD-PradeepNeural')
+    expect(findVoice('bn-IN', 'female')).toBe('bn-IN-TanishaaNeural')
+    expect(findVoice('bn-IN', 'male')).toBe('bn-IN-BashkarNeural')
+  })
+})
