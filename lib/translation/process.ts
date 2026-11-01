@@ -20,6 +20,7 @@ import {
   startSpeechToText,
   type PreStarted,
 } from '@/lib/translation/stt-overlap'
+import { GATE_REASON, refusalFromFailures } from '@/lib/translation/refusal'
 import { planFanout } from '@/lib/translation/plan'
 import { logDecision, logTranslate } from '@/lib/translation/log'
 import type { TranslateUpload } from '@/lib/translation/request'
@@ -76,12 +77,14 @@ export async function admitUtterance({
       listenerLangs: context.participants.map((p) => p.listenLang),
       targets: [...plan.groups.keys()],
       decision: `blocked:${gate.code}`,
+      reason: GATE_REASON[gate.code],
     })
     return {
       ok: false,
       response: NextResponse.json(
         {
           code: gate.code,
+          reason: GATE_REASON[gate.code],
           error: gate.error,
           // Lets the room offer "Subscribe" to the payer and "Message host" to everyone else.
           payerIsSpeaker: context.speaker.payerId === user.id,
@@ -311,6 +314,9 @@ export async function translateUtterance({
   })
   const speech = results.find((r) => r.kind === 'speech')
   const failed = results.filter((r) => r.kind === 'failed')
+  // Every language failed: say exactly why (also in translate_decision, next to the earlier line).
+  const refusal = failed.length === results.length ? refusalFromFailures(failed) : null
+  if (refusal) logDecision({ ...decisionLog, decision: `failed:${refusal}`, reason: refusal })
 
   return NextResponse.json({
     utteranceId: upload.utteranceId,
@@ -322,6 +328,7 @@ export async function translateUtterance({
       result: r.kind === 'failed' ? r.reason : r.kind,
     })),
     unavailable: failed.length === results.length,
+    ...(refusal ? { refusal } : {}),
     // 401/403 from the API: our key is wrong or revoked, which no retry will fix.
     serviceKeyRejected: failed.some((f) => f.status === 401 || f.status === 403),
     // 402 from the Speech API: the account is out of credit; every call fails until it is topped up.

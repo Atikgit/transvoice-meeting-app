@@ -8,6 +8,7 @@ import { reportLatency } from './latency-beacon'
 import { encodeWav } from '@/lib/translation/wav'
 import { encodeOpus } from './opus-upload'
 import { serverNow } from './clock'
+import { describeRefusal, type RefusalReason } from '@/lib/translation/refusal'
 import { measureLeg, observeLongTasks } from './net-timing'
 import { ChunkUpload } from './chunk-upload'
 import type { StreamEvent } from './chunk-stream'
@@ -167,7 +168,11 @@ export function useLiveTranslation({
         serviceNoBalance?: boolean
         languages?: { lang: string }[]
         reason?: 'same_language' | 'no_listeners'
+        refusal?: RefusalReason
       }
+      setTranslationDebug({
+        lastRefusal: body.refusal ? { reason: body.refusal, at: Date.now() } : undefined,
+      })
       setTranslationDebug({ listenerLanguages: (body.languages ?? []).map((l) => l.lang) })
       if (body.original) transcriptRef.current?.(utteranceId, body.original)
       if (body.reason === 'same_language') {
@@ -175,6 +180,10 @@ export function useLiveTranslation({
           tone: 'info',
           text: 'You and your partner use the same language, so there is nothing to translate. Change a language in the Languages menu.',
         })
+        return
+      }
+      if (body.refusal) {
+        setNotice({ tone: 'error', text: describeRefusal(body.refusal) })
         return
       }
       setNotice(
@@ -201,13 +210,17 @@ export function useLiveTranslation({
       code?: string
       error?: string
       payerIsSpeaker?: boolean
+      reason?: RefusalReason
     }
+    if (body.reason) setTranslationDebug({ lastRefusal: { reason: body.reason, at: Date.now() } })
     if (body.code === 'BETA') {
-      setBlocked({ tone: 'info', text: body.error ?? 'Live translation is in private beta.' })
+      setBlocked({ tone: 'info', text: describeRefusal('allowlist') })
+    } else if (body.code === 'DISABLED') {
+      setBlocked({ tone: 'info', text: describeRefusal('switched_off') })
     } else if (body.code === 'PAYER_NO_MINUTES') {
       setNotice({
         tone: 'error',
-        text: body.error ?? "The host's minutes have run out. Translation is paused.",
+        text: describeRefusal('payer_minutes', { payerIsSpeaker: body.payerIsSpeaker === true }),
         code: 'PAYER_NO_MINUTES',
         payerIsSpeaker: body.payerIsSpeaker === true,
       })

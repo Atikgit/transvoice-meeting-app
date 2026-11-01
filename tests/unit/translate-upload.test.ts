@@ -318,6 +318,40 @@ describe('POST /api/translate admission', () => {
     info.mockRestore()
   })
 
+  it('names the exact refusal reason in the response and in translate_decision', async () => {
+    const decisions = async (run: () => Promise<Response>) => {
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+      const res = await run()
+      const lines = info.mock.calls.map((c) => JSON.parse(String(c[0])))
+      info.mockRestore()
+      return { res, decisions: lines.filter((l) => l.event === 'translate_decision') }
+    }
+    // allowlist
+    rpc.mockResolvedValue({ data: { ...context, hostEmail: 'stranger@example.com' }, error: null })
+    let r = await decisions(() => post(upload(SESSION())))
+    expect(await r.res.json()).toMatchObject({ code: 'BETA', reason: 'allowlist' })
+    expect(r.decisions[0]).toMatchObject({ decision: 'blocked:BETA', reason: 'allowlist' })
+    // payer minutes
+    rpc.mockResolvedValue({
+      data: { ...context, speaker: { ...context.speaker, payerHasMinutes: false } },
+      error: null,
+    })
+    r = await decisions(() => post(upload(SESSION())))
+    expect(await r.res.json()).toMatchObject({ code: 'PAYER_NO_MINUTES', reason: 'payer_minutes' })
+    expect(r.decisions[0]).toMatchObject({ reason: 'payer_minutes' })
+    // API credit (402 from the Speech API)
+    rpc.mockResolvedValue({ data: context, error: null })
+    server.use(
+      http.post(`${TEST_ENV.TRANSVOICE_API_URL}/`, () =>
+        HttpResponse.json({ detail: 'Insufficient Balance' }, { status: 402 }),
+      ),
+    )
+    r = await decisions(() => post(upload(SESSION())))
+    expect(await r.res.json()).toMatchObject({ unavailable: true, refusal: 'api_credit' })
+    expect(r.decisions.map((d) => d.decision)).toEqual(['translate', 'failed:api_credit'])
+    expect(r.decisions[1]).toMatchObject({ reason: 'api_credit' })
+  })
+
   it('503 (not 403) when LiveKit cannot be asked, and the failure is not remembered', async () => {
     const session = SESSION()
     vi.spyOn(console, 'error').mockImplementation(() => {})

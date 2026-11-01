@@ -117,6 +117,8 @@ export interface DecisionLog {
   listenerLangs?: string[]
   /** The locales the utterance is translated into. */
   targets?: string[]
+  /** Why nothing was translated: allowlist | switched_off | payer_minutes | api_credit | ... */
+  reason?: string
 }
 
 export function logDecision(entry: DecisionLog): void {

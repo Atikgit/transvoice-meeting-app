@@ -293,6 +293,10 @@ export function DebugOverlay({
         ? `${d.lastTranslate.status} in ${d.lastTranslate.ms} ms${d.lastTranslate.note ? ` (${d.lastTranslate.note})` : ''}, ${ago(d.lastTranslate.at, now)}`
         : '—',
     ],
+    [
+      'last refusal',
+      d.lastRefusal ? `${d.lastRefusal.reason}, ${ago(d.lastRefusal.at, now)}` : '—',
+    ],
     ['last caption', d.lastCaption ? `${d.lastCaption.lang}, ${ago(d.lastCaption.at, now)}` : '—'],
     [
       'last audio',

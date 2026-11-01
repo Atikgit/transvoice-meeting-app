@@ -23,6 +23,8 @@ export interface TranslationDebug {
   lastUtterance?: { ms: number; bytes: number; at: number }
   lastTranslate?: { status: number | 'network'; ms: number; at: number; note?: string }
   lastCaption?: { lang: string; at: number }
+  /** Why the last utterance was not translated (allowlist, payer_minutes, api_credit, ...). */
+  lastRefusal?: { reason: string; at: number }
   lastAudio?: { via: 'url' | 'inline'; status: 'ok' | number | 'error'; ms: number; at: number }
   queue: number
   /** The last 20 steps of translated clips on this device, newest last (the clip trace). */
