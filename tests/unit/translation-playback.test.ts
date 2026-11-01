@@ -458,3 +458,31 @@ describe('split pipeline clips (seq / last)', () => {
     expect(h.events.filter((e) => e.startsWith('vol:')).at(-1)).toBe('vol:sp1=1')
   })
 })
+
+describe('ducking across the clips of one utterance (first-clause TTS)', () => {
+  it('stays lowered from the first clip start to the last clip end, through gaps shorter than the hold', async () => {
+    const h = harness('duck')
+    const part = (seq: number, last: boolean): Clip => ({
+      ...h.clip(`u:${seq}`, 'sp1'),
+      utteranceId: 'u',
+      seq,
+      last,
+    })
+    h.queues.enqueue(part(0, false))
+    await h.tick()
+    await h.finish() // clip 0 ended; clip 1 (a clause later) has not arrived yet
+    expect(h.queues.duckedSpeakers()).toEqual(['sp1']) // held for the next clip
+    h.queues.enqueue(part(1, false))
+    await h.tick()
+    await h.finish()
+    h.queues.enqueue(part(2, true))
+    await h.tick()
+    await h.finish() // last clip ended: restored now, without waiting for the hold
+    expect(h.queues.duckedSpeakers()).toEqual([])
+    const vols = h.events.filter((e) => e.startsWith('vol:'))
+    // the lowered volume is re-applied at each clip start, but restored once, after the last clip
+    expect(vols.filter((v) => v === 'vol:sp1=1')).toHaveLength(1)
+    expect(vols.at(-1)).toBe('vol:sp1=1')
+    expect(vols.slice(0, -1).every((v) => v === 'vol:sp1=0.15')).toBe(true)
+  })
+})

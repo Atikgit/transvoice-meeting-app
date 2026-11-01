@@ -233,7 +233,7 @@ export async function runSplitPipeline({
 
     let held = ''
     let released = false
-    const splitter = new SentenceSplitter()
+    const splitter = new SentenceSplitter({ eagerFirst: true })
     const release = (text: string) => {
       released = true
       for (const s of splitter.push(text)) addSentence(s)

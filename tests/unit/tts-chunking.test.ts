@@ -74,3 +74,46 @@ describe('TTS chunking for inline delivery', () => {
     )
   })
 })
+
+describe('first-clause TTS', () => {
+  const streamed = (text: string, eagerFirst: boolean) => {
+    const s = new SentenceSplitter({ eagerFirst })
+    const out: { piece: string; atChars: number }[] = []
+    let fed = 0
+    for (const word of text.split(/(?<= )/)) {
+      fed += word.length
+      for (const piece of s.push(word)) out.push({ piece, atChars: fed })
+    }
+    for (const piece of s.flush()) out.push({ piece, atChars: fed })
+    return out
+  }
+
+  it('cuts the first piece at the first clause mark once 25 characters are there', () => {
+    const text = 'Good morning everyone, thank you for joining us today, we will start now.'
+    const [first] = streamed(text, true)
+    expect(first!.piece).toBe('Good morning everyone, thank you for joining us today,')
+    expect(first!.piece.length).toBeGreaterThanOrEqual(MIN_CLAUSE_CHARS)
+  })
+
+  it('a clause mark before 25 characters does not cut', () => {
+    const [first] = streamed('Yes, we can do that, and more besides, right now.', true)
+    expect(first!.piece.length).toBeGreaterThanOrEqual(MIN_CLAUSE_CHARS)
+  })
+
+  it('only the first piece is eager; the rest keep their order and the full text', () => {
+    const text = 'Good morning everyone, thank you for joining us today, we will start now.'
+    const pieces = streamed(text, true).map((p) => p.piece)
+    expect(pieces.join(' ')).toBe(text)
+  })
+
+  it('speech can start earlier: with eagerFirst the first piece is ready sooner (before/after, in characters streamed)', () => {
+    const text =
+      'Before we begin the meeting today, I would like to share the agenda with everyone here.'
+    const eager = streamed(text, true)[0]!
+    const lazy = streamed(text, false)[0]!
+    console.log(
+      `first piece ready after ${lazy.atChars} streamed characters -> ${eager.atChars} with first-clause TTS`,
+    )
+    expect(eager.atChars).toBeLessThan(lazy.atChars)
+  })
+})

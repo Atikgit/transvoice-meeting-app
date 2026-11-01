@@ -20,6 +20,13 @@ const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '
  */
 export class SentenceSplitter {
   private buffer = ''
+  private emitted = 0
+
+  /**
+   * `eagerFirst`: the first piece is cut at the first clause mark once MIN_CLAUSE_CHARS characters
+   * are there, so its speech starts before the rest of the sentence has been translated.
+   */
+  constructor(private readonly options: { eagerFirst?: boolean } = {}) {}
 
   push(chunk: string): string[] {
     this.buffer += chunk
@@ -37,7 +44,10 @@ export class SentenceSplitter {
       if (cut === -1) break
       const sentence = this.buffer.slice(0, cut).trim()
       this.buffer = this.buffer.slice(cut)
-      if (sentence) out.push(sentence)
+      if (sentence) {
+        out.push(sentence)
+        this.emitted++
+      }
     }
     if (final) {
       const rest = this.buffer.trim()
@@ -65,6 +75,16 @@ export class SentenceSplitter {
       return end > MAX_SENTENCE_CHARS ? this.findOverflowCut() : end
     }
     if (b.length > MAX_SENTENCE_CHARS) return this.findOverflowCut()
+    if (this.options.eagerFirst && this.emitted === 0) return this.findFirstClause()
+    return -1
+  }
+
+  /** First clause mark at least MIN_CLAUSE_CHARS in (not a decimal comma), or -1. */
+  private findFirstClause(): number {
+    const b = this.buffer
+    for (let i = MIN_CLAUSE_CHARS - 1; i < b.length; i++) {
+      if (CLAUSE_MARKS.has(b[i]!) && !(isDigit(b[i - 1]) && isDigit(b[i + 1]))) return i + 1
+    }
     return -1
   }
 
