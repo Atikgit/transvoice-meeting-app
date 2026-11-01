@@ -22,7 +22,7 @@ export interface TranslationStatus {
   decision: { allowed: boolean; reason: string; message?: string }
   allowlist: 'everyone' | 'list'
   translationEnabled: boolean
-  api: 'ok' | 'rejected' | 'unreachable'
+  api: 'ok' | 'rejected' | 'no_balance' | 'unreachable'
 }
 
 /** Other people's changes reach the room within this long (no push channel needed). */

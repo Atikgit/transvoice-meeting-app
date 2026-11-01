@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { BUILD_ID, PROTOCOL_VERSION } from '@/lib/build-id'
 
 /** Server → client data messages (LiveKit sendData, reliable). Shared by server and client. */
 export const TOPICS = {
@@ -10,6 +11,9 @@ export const TOPICS = {
 } as const
 
 export interface CaptionMessage {
+  /** Sender's protocol version and build (added by encodeMessage). */
+  v?: number
+  build?: string
   utteranceId: string
   speakerId: string
   lang: string
@@ -20,6 +24,9 @@ export interface CaptionMessage {
 }
 
 export interface AudioMessage {
+  /** Sender's protocol version and build (added by encodeMessage). */
+  v?: number
+  build?: string
   utteranceId: string
   speakerId: string
   lang: string
@@ -33,6 +40,9 @@ export interface AudioMessage {
 
 /** Header of an inline clip; the audio bytes follow it in the same packet. */
 export interface InlineAudioHeader {
+  /** Sender's protocol version and build (added by encodeMessage). */
+  v?: number
+  build?: string
   utteranceId: string
   speakerId: string
   lang: string
@@ -42,10 +52,19 @@ export interface InlineAudioHeader {
   last?: boolean
 }
 
-/** Largest clip sent inline. 12 KiB + a ~250 byte header stays under the 15 KiB packet limit. */
-export const MAX_INLINE_AUDIO_BYTES = 12 * 1024
+/**
+ * Largest WHOLE inline packet (2-byte length + JSON header + raw audio, no base64), so a clip is
+ * inline only when the packet as it goes on the wire is at most 12 KiB. LiveKit's reliable data
+ * limit is about 15 KiB; the margin covers the transport's own framing.
+ */
+export const MAX_INLINE_PACKET_BYTES = 12 * 1024
+/** Kept for callers that only know the clip: the audio alone can never exceed the packet cap. */
+export const MAX_INLINE_AUDIO_BYTES = MAX_INLINE_PACKET_BYTES
 
 export interface NoticeMessage {
+  /** Sender's protocol version and build (added by encodeMessage). */
+  v?: number
+  build?: string
   /** audio_unavailable: the caption arrived but its voice clip was empty (captions only). */
   kind: 'translation_unavailable' | 'audio_unavailable'
 }
@@ -55,8 +74,11 @@ export const MAX_PACKET_BYTES = 15 * 1024
 /** Caption text cap per field (an utterance is ≤ 12 s, so real captions are far shorter). */
 export const MAX_CAPTION_CHARS = 2000
 
+/** Protocol version and build of the sender, added to every message. */
+export const messageMeta = () => ({ v: PROTOCOL_VERSION, build: BUILD_ID })
+
 export function encodeMessage(message: object): Uint8Array {
-  const bytes = new TextEncoder().encode(JSON.stringify(message))
+  const bytes = new TextEncoder().encode(JSON.stringify({ ...message, ...messageMeta() }))
   if (bytes.length > MAX_PACKET_BYTES)
     throw new Error(`Data packet too large: ${bytes.length} bytes`)
   return bytes
@@ -71,6 +93,8 @@ export function captionMessage(input: CaptionMessage): CaptionMessage {
 }
 
 const captionSchema = z.object({
+  v: z.number().int().optional(),
+  build: z.string().max(40).optional(),
   utteranceId: z.string(),
   speakerId: z.string(),
   lang: z.string(),
@@ -79,6 +103,8 @@ const captionSchema = z.object({
   speechEndedAt: z.number(),
 })
 const audioSchema = z.object({
+  v: z.number().int().optional(),
+  build: z.string().max(40).optional(),
   utteranceId: z.string(),
   speakerId: z.string(),
   lang: z.string(),
@@ -88,7 +114,11 @@ const audioSchema = z.object({
   seq: z.number().int().min(0).optional(),
   last: z.boolean().optional(),
 })
-const noticeSchema = z.object({ kind: z.enum(['translation_unavailable', 'audio_unavailable']) })
+const noticeSchema = z.object({
+  v: z.number().int().optional(),
+  build: z.string().max(40).optional(),
+  kind: z.enum(['translation_unavailable', 'audio_unavailable']),
+})
 
 /** Decodes a data message by topic; null for unknown topics and malformed payloads. */
 export function parseDataMessage(
@@ -125,8 +155,9 @@ export function parseDataMessage(
  * (Base64 inside JSON would make a 12 KiB clip 16 KiB, over the packet limit.)
  */
 export function encodeInlineAudio(header: InlineAudioHeader, audio: Uint8Array): Uint8Array {
-  if (audio.length > MAX_INLINE_AUDIO_BYTES) throw new Error('Inline clip too large')
-  const head = new TextEncoder().encode(JSON.stringify(header))
+  const head = new TextEncoder().encode(JSON.stringify({ ...header, ...messageMeta() }))
+  if (2 + head.length + audio.length > MAX_INLINE_PACKET_BYTES)
+    throw new Error('Inline clip too large')
   const packet = new Uint8Array(2 + head.length + audio.length)
   new DataView(packet.buffer).setUint16(0, head.length)
   packet.set(head, 2)
@@ -136,7 +167,18 @@ export function encodeInlineAudio(header: InlineAudioHeader, audio: Uint8Array):
   return packet
 }
 
+/** Size of the packet encodeInlineAudio would build, to decide inline vs URL before building it. */
+export function inlinePacketSize(header: InlineAudioHeader, audioBytes: number): number {
+  return (
+    2 +
+    new TextEncoder().encode(JSON.stringify({ ...header, ...messageMeta() })).length +
+    audioBytes
+  )
+}
+
 const inlineHeaderSchema = z.object({
+  v: z.number().int().optional(),
+  build: z.string().max(40).optional(),
   utteranceId: z.string(),
   speakerId: z.string(),
   lang: z.string(),

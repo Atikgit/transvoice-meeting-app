@@ -142,3 +142,25 @@ export function logClip(entry: {
   if (issue) console.warn(line)
   else console.info(line)
 }
+
+/**
+ * One line per step of a translated clip's way to the listener (server side): `created` (bytes,
+ * inline|url) and `sent` (LiveKit result, ms). The browser logs the other steps (client_trace in
+ * the debug overlay, drops through /api/diag). Ids and sizes only: no text, no audio.
+ */
+export function logClipTrace(entry: {
+  stage: 'created' | 'sent'
+  utteranceId: string
+  seq: number
+  lang: string
+  via?: 'inline' | 'url'
+  bytes?: number
+  packetBytes?: number
+  ok?: boolean
+  ms?: number
+  error?: string
+}): void {
+  const line = JSON.stringify({ event: 'clip_trace', ...entry })
+  if (entry.ok === false) console.warn(line)
+  else console.info(line)
+}

@@ -344,9 +344,10 @@ describe('runSplitPipeline', () => {
     })
     const result = await run(two.deps)
     expect(result.languages[0]).toMatchObject({ kind: 'speech', clips: 2, audioMissing: true })
+    // clip numbers count delivered clips only: the listener never waits for a gap
     expect(two.clips.map((c) => [c.seq, c.last])).toEqual([
       [0, false],
-      [2, true],
+      [1, true],
     ])
     expect(two.captions).toHaveLength(3)
   })

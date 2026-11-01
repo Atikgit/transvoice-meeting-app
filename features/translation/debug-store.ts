@@ -25,6 +25,8 @@ export interface TranslationDebug {
   lastCaption?: { lang: string; at: number }
   lastAudio?: { via: 'url' | 'inline'; status: 'ok' | number | 'error'; ms: number; at: number }
   queue: number
+  /** The last 20 steps of translated clips on this device, newest last (the clip trace). */
+  clipTrace: ClipTraceEvent[]
   /** The last translated clip: decode result, gain, context state, original-voice volume. */
   lastClip?: {
     seconds: number
@@ -44,6 +46,23 @@ export interface TranslationDebug {
   listenerLanguages?: string[]
 }
 
+export interface ClipTraceEvent {
+  at: number
+  stage:
+    | 'received'
+    | 'fetch'
+    | 'decoded'
+    | 'enqueued'
+    | 'dropped'
+    | 'play-start'
+    | 'play-end'
+    | 'ignored'
+  utteranceId: string
+  seq?: number
+  lang?: string
+  detail?: string
+}
+
 const INITIAL: TranslationDebug = {
   vad: 'off',
   vadListening: false,
@@ -56,6 +75,7 @@ const INITIAL: TranslationDebug = {
     translationEnabled: true,
   },
   queue: 0,
+  clipTrace: [],
 }
 
 let state = INITIAL
@@ -79,6 +99,12 @@ export function setTranslationDebug(patch: Partial<TranslationDebug>) {
 
 export function getTranslationDebug(): TranslationDebug {
   return state
+}
+
+/** Adds a step to the clip trace (kept only while the overlay is mounted; last 20). */
+export function traceClip(event: Omit<ClipTraceEvent, 'at'>) {
+  if (!enabled) return
+  setTranslationDebug({ clipTrace: [...state.clipTrace, { ...event, at: Date.now() }].slice(-20) })
 }
 
 export function useTranslationDebug(): TranslationDebug {

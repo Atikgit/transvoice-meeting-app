@@ -59,6 +59,9 @@ function contentSecurityPolicy() {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Identifies this build in every translation data message, so an older open tab can tell it is
+  // out of date (lib/build-id.ts). Inlined into server and client code at build time.
+  env: { NEXT_PUBLIC_BUILD_ID: process.env.NEXT_PUBLIC_BUILD_ID ?? Date.now().toString(36) },
   // Self-contained server bundle (.next/standalone) for the Docker image; ignored by Vercel previews.
   output: 'standalone',
   images: {

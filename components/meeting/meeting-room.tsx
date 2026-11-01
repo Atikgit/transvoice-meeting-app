@@ -86,6 +86,8 @@ export interface MeetingRoomProps {
   uploadFormat?: 'wav' | 'opus'
   /** VAD_MAX_CHUNK_MS from the server environment. */
   maxChunkMs?: number
+  /** STALE_CLIP_MS from the server environment. */
+  staleClipMs?: number
   /** ?debug=1: show the translation overlay (any signed-in participant). */
   debug?: boolean
   /** Camera / mic choice from the lobby. */
@@ -280,6 +282,7 @@ function RoomView({
   vadEndSilenceMs,
   uploadFormat,
   maxChunkMs,
+  staleClipMs,
 }: MeetingRoomProps & {
   mediaProblem: MediaProblem | null
   onMediaProblemHandled: () => void
@@ -310,7 +313,7 @@ function RoomView({
   const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
 
   const languages = useTranslationStatus(sessionId)
-  const audio = useTranslatedAudio({ sessionId, originalAudioMode })
+  const audio = useTranslatedAudio({ sessionId, originalAudioMode, staleClipMs })
   const translation = useLiveTranslation({
     sessionId,
     status: session.state.status,
@@ -360,6 +363,15 @@ function RoomView({
       }}
       notices={
         <>
+          {audio.outdated && (
+            <RoomNotice
+              tone="info"
+              floating
+              action={{ label: 'Reload', onClick: () => window.location.reload() }}
+            >
+              New version available - reload. Until then you see captions only.
+            </RoomNotice>
+          )}
           {audio.audioMissing && (
             <RoomNotice tone="info" floating>
               Audio unavailable for this utterance — showing captions.

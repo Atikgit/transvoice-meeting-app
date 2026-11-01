@@ -263,5 +263,7 @@ export async function POST(request: NextRequest) {
     unavailable: failed.length === results.length,
     // 401/403 from the API: our key is wrong or revoked, which no retry will fix.
     serviceKeyRejected: failed.some((f) => f.status === 401 || f.status === 403),
+    // 402 from the Speech API: the account is out of credit; every call fails until it is topped up.
+    serviceNoBalance: failed.some((f) => f.status === 402),
   })
 }

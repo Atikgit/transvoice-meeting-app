@@ -8,7 +8,7 @@ import { transvoiceFetch } from '@/lib/transvoice/http'
  * so 401/403 mean "key rejected" and any other answer means the key was accepted. Cached for a
  * minute. Used only by the status endpoint / debug overlay.
  */
-export type ApiAuth = 'ok' | 'rejected' | 'unreachable'
+export type ApiAuth = 'ok' | 'rejected' | 'no_balance' | 'unreachable'
 
 let cached: { at: number; value: ApiAuth } | undefined
 
@@ -27,7 +27,13 @@ export async function probeApiAuth(now = Date.now()): Promise<ApiAuth> {
       signal: AbortSignal.timeout(3000),
     })
     await res.arrayBuffer().catch(() => {})
-    value = res.status === 401 || res.status === 403 ? 'rejected' : 'ok'
+    // 402 "Insufficient Balance": the key is fine, the account has no credit left (every call fails).
+    value =
+      res.status === 401 || res.status === 403
+        ? 'rejected'
+        : res.status === 402
+          ? 'no_balance'
+          : 'ok'
   } catch {
     value = 'unreachable'
   }

@@ -189,3 +189,79 @@ describe('the speaker’s original voice, end to end through the hook', () => {
     )
   })
 })
+
+describe('protocol version and build', () => {
+  const raw = (topic: string, body: object) =>
+    send(topic, new TextEncoder().encode(JSON.stringify(body)))
+  const caption = {
+    utteranceId: 'c1',
+    speakerId: 'sp',
+    lang: 'bn-BD',
+    original: 'hello',
+    translated: 'নমস্কার',
+    speechEndedAt: 1,
+  }
+  const inline = (meta: object) =>
+    encodeInlineAudio(
+      {
+        utteranceId: 'c1',
+        speakerId: 'sp',
+        lang: 'bn-BD',
+        format: 'mp3',
+        speechEndedAt: 1,
+        ...meta,
+      },
+      new Uint8Array([1, 2, 3]),
+    )
+
+  it('a server on a NEWER message format: captions still show, clips are ignored, "reload" is offered, nothing breaks', async () => {
+    const { result } = renderHook(() =>
+      useTranslatedAudio({ sessionId: 's1', originalAudioMode: 'off' }),
+    )
+    raw(TOPICS.caption, { ...caption, v: 99, build: 'newer' })
+    // a newer inline packet: header fields this tab does not know are simply ignored
+    const packet = inline({})
+    const header = JSON.parse(
+      new TextDecoder().decode(packet.subarray(2, 2 + new DataView(packet.buffer).getUint16(0))),
+    )
+    const head = new TextEncoder().encode(
+      JSON.stringify({ ...header, v: 99, build: 'newer', future: true }),
+    )
+    const newer = new Uint8Array(2 + head.length + 3)
+    new DataView(newer.buffer).setUint16(0, head.length)
+    newer.set(head, 2)
+    newer.set([1, 2, 3], 2 + head.length)
+    send(TOPICS.audioInline, newer)
+    await vi.waitFor(() => expect(result.current.outdated).toBe(true))
+    expect(result.current.captions.map((c) => c.translated)).toEqual(['নমস্কার'])
+    expect(playBuffer).not.toHaveBeenCalled()
+    expect(decodeBytes).not.toHaveBeenCalled()
+    expect(reportDiag).toHaveBeenCalledWith(expect.objectContaining({ type: 'version_mismatch' }))
+  })
+
+  it('a different build with the SAME format: reload is offered but the voice still plays', async () => {
+    const { result } = renderHook(() =>
+      useTranslatedAudio({ sessionId: 's1', originalAudioMode: 'off' }),
+    )
+    const packet = inline({})
+    const headLength = new DataView(packet.buffer).getUint16(0)
+    const header = JSON.parse(new TextDecoder().decode(packet.subarray(2, 2 + headLength)))
+    const head = new TextEncoder().encode(JSON.stringify({ ...header, build: 'another-build' }))
+    const other = new Uint8Array(2 + head.length + 3)
+    new DataView(other.buffer).setUint16(0, head.length)
+    other.set(head, 2)
+    other.set([1, 2, 3], 2 + head.length)
+    send(TOPICS.audioInline, other)
+    await vi.waitFor(() => expect(playBuffer).toHaveBeenCalledTimes(1))
+    expect(result.current.outdated).toBe(true)
+  })
+
+  it('a message from the same build does not raise the banner', async () => {
+    const { result } = renderHook(() =>
+      useTranslatedAudio({ sessionId: 's1', originalAudioMode: 'off' }),
+    )
+    send(TOPICS.audioInline, inline({}))
+    await vi.waitFor(() => expect(playBuffer).toHaveBeenCalledTimes(1))
+    expect(result.current.outdated).toBe(false)
+  })
+})

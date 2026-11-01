@@ -11,7 +11,11 @@
  */
 export type OriginalAudioMode = 'off' | 'duck' | 'mute'
 
-export const MAX_CLIP_AGE_MS = 6000
+/**
+ * Default for STALE_CLIP_MS. A clip is stale when it has waited this long since it ARRIVED at the
+ * listener (receivedAt is the listener's own clock at arrival; the speaker's speech end plays no part).
+ */
+export const MAX_CLIP_AGE_MS = 15_000
 export const DUCK_VOLUME: Record<OriginalAudioMode, number> = { off: 1, duck: 0.15, mute: 0 }
 /** A clip that has not finished this long after it should have is treated as hung. */
 export const PLAY_GRACE_MS = 3000
@@ -51,11 +55,16 @@ export interface PlaybackDeps<Prepared> {
   /** Sets the volume of a speaker's original LiveKit audio (1 = full). */
   setOriginalVolume: (speakerId: string, volume: number) => void
   mode: () => OriginalAudioMode
+  /** STALE_CLIP_MS (default MAX_CLIP_AGE_MS). */
+  staleMs?: number
   /** True while any translated clip is playing (feeds the VAD echo gate). */
   onPlayingChange: (playing: boolean) => void
   /** Called with the first-sound time of each clip (latency metrics) or when one is dropped. */
   onStart?: (clip: Clip, at: number) => void
-  onDrop?: (clip: Clip, reason: DropReason) => void
+  /** `ageMs` = time since the clip arrived at this listener. */
+  onDrop?: (clip: Clip, reason: DropReason, ageMs: number) => void
+  /** A clip finished (or failed / timed out / was interrupted). */
+  onEnd?: (clip: Clip, outcome: DuckReason) => void
   /** Every change of a speaker's original volume, for the debug overlay. */
   onDuck?: (event: { speakerId: string; volume: number; reason: DuckReason }) => void
 }
@@ -130,6 +139,10 @@ export class PlaybackQueues<Prepared> {
     }
   }
 
+  private staleMs(): number {
+    return this.deps.staleMs ?? MAX_CLIP_AGE_MS
+  }
+
   private clearHolds() {
     for (const timer of this.holds.values()) clearTimeout(timer)
     this.holds.clear()
@@ -158,8 +171,8 @@ export class PlaybackQueues<Prepared> {
     try {
       while (queue.length > 0) {
         const { clip, prepared } = queue.shift()!
-        if (this.deps.now() - clip.receivedAt > MAX_CLIP_AGE_MS) {
-          this.deps.onDrop?.(clip, 'stale')
+        if (this.deps.now() - clip.receivedAt > this.staleMs()) {
+          this.deps.onDrop?.(clip, 'stale', this.deps.now() - clip.receivedAt)
           this.markDone(clip)
           continue
         }
@@ -167,18 +180,18 @@ export class PlaybackQueues<Prepared> {
         try {
           ready = await prepared
         } catch {
-          this.deps.onDrop?.(clip, 'failed')
+          this.deps.onDrop?.(clip, 'failed', this.deps.now() - clip.receivedAt)
           this.markDone(clip)
           continue
         }
         // Preparing may have taken long: a clip that is stale now would talk over the present.
-        if (this.deps.now() - clip.receivedAt > MAX_CLIP_AGE_MS) {
-          this.deps.onDrop?.(clip, 'stale')
+        if (this.deps.now() - clip.receivedAt > this.staleMs()) {
+          this.deps.onDrop?.(clip, 'stale', this.deps.now() - clip.receivedAt)
           continue
         }
         // Nothing could be heard (audio blocked): do not lower the person who IS audible.
         if (this.deps.canPlay && !this.deps.canPlay()) {
-          this.deps.onDrop?.(clip, 'blocked')
+          this.deps.onDrop?.(clip, 'blocked', this.deps.now() - clip.receivedAt)
           continue
         }
         if (await this.waitForPredecessor(clip)) {
@@ -228,7 +241,12 @@ export class PlaybackQueues<Prepared> {
     clearTimeout(timer)
     this.interrupts.delete(speakerId)
     if (outcome === 'failed' || outcome === 'timeout')
-      this.deps.onDrop?.(clip, outcome === 'failed' ? 'failed' : 'timeout')
+      this.deps.onDrop?.(
+        clip,
+        outcome === 'failed' ? 'failed' : 'timeout',
+        this.deps.now() - clip.receivedAt,
+      )
+    this.deps.onEnd?.(clip, outcome)
     // Restored right here, per clip: between two clips the original voice is at full volume.
     // Split pipeline: within one utterance the voice stays lowered from the first clip's start to
     // the last clip's end (clips not marked last wait DUCK_HOLD_MS for their successor).

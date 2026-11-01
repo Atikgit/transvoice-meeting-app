@@ -21,6 +21,12 @@ export function describeTranslation(status: TranslationStatus | null): {
       tone: 'warn',
     }
   }
+  if (status.api === 'no_balance') {
+    return {
+      text: 'The translation service has no credit left, so nothing can be translated. Please tell support.',
+      tone: 'warn',
+    }
+  }
   if (fanout.reason === 'no_listeners') {
     return { text: 'Waiting for your partner to connect.', tone: 'info' }
   }

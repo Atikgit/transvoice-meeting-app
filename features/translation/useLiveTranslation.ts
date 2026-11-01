@@ -155,6 +155,7 @@ export function useLiveTranslation({
         original?: string | null
         unavailable?: boolean
         serviceKeyRejected?: boolean
+        serviceNoBalance?: boolean
         languages?: { lang: string }[]
         reason?: 'same_language' | 'no_listeners'
       }
@@ -168,17 +169,22 @@ export function useLiveTranslation({
         return
       }
       setNotice(
-        body.serviceKeyRejected
+        body.serviceNoBalance
           ? {
               tone: 'error',
-              text: 'Translation is unavailable: the translation service rejected our access key. Please tell support.',
+              text: 'Translation is unavailable: the translation service has no credit left. Please tell support.',
             }
-          : body.unavailable
+          : body.serviceKeyRejected
             ? {
                 tone: 'error',
-                text: 'Translation is temporarily unavailable. It resumes by itself.',
+                text: 'Translation is unavailable: the translation service rejected our access key. Please tell support.',
               }
-            : null,
+            : body.unavailable
+              ? {
+                  tone: 'error',
+                  text: 'Translation is temporarily unavailable. It resumes by itself.',
+                }
+              : null,
       )
       return
     }

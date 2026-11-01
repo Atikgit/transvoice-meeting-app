@@ -8,11 +8,13 @@ import {
   type AudioCache,
 } from '@/lib/translation/audio-cache'
 import type { LanguageResult } from '@/lib/translation/fanout'
+import { logClipTrace } from '@/lib/translation/log'
 import {
   captionMessage,
   encodeInlineAudio,
   encodeMessage,
-  MAX_INLINE_AUDIO_BYTES,
+  inlinePacketSize,
+  MAX_INLINE_PACKET_BYTES,
   TOPICS,
   type AudioMessage,
   type NoticeMessage,
@@ -92,7 +94,13 @@ export async function deliverResult({
     // The audio goes out at the same moment as the caption (never queued behind it): one
     // LiveKit API round trip less before the listener can start fetching.
     let audioSent: Promise<void>
-    if (result.audioFormat && bytes.length <= MAX_INLINE_AUDIO_BYTES) {
+    if (
+      result.audioFormat &&
+      inlinePacketSize(
+        { utteranceId, speakerId, lang: result.lang, format: result.audioFormat, speechEndedAt },
+        bytes.length,
+      ) <= MAX_INLINE_PACKET_BYTES
+    ) {
       // The API says what format this is and the clip is tiny: the audio travels inside the
       // packet, the listener skips the HTTP fetch.
       audioSent = send(
@@ -210,17 +218,43 @@ export async function deliverSentenceClip({
 }): Promise<'inline' | 'url'> {
   if (listeners.length === 0) return 'inline'
   const destinationIdentities = listeners
-  if (audio.length <= MAX_INLINE_AUDIO_BYTES) {
-    await send(
-      sessionId,
-      encodeInlineAudio(
-        { utteranceId, speakerId, lang, format: 'mp3', speechEndedAt, seq, last },
-        audio,
-      ),
-      { destinationIdentities, topic: TOPICS.audioInline },
-    )
+  const header = { utteranceId, speakerId, lang, format: 'mp3' as const, speechEndedAt, seq, last }
+  // Inline only when the whole packet (length + JSON header + audio) is at most 12 KiB.
+  const packetBytes = inlinePacketSize(header, audio.length)
+  const via = packetBytes <= MAX_INLINE_PACKET_BYTES ? 'inline' : 'url'
+  logClipTrace({ stage: 'created', utteranceId, seq, lang, via, bytes: audio.length, packetBytes })
+  const sentAt = Date.now()
+  const traced = async (data: Uint8Array, topic: string) => {
+    try {
+      await send(sessionId, data, { destinationIdentities, topic })
+      logClipTrace({
+        stage: 'sent',
+        utteranceId,
+        seq,
+        lang,
+        via,
+        ok: true,
+        ms: Date.now() - sentAt,
+      })
+    } catch (error) {
+      logClipTrace({
+        stage: 'sent',
+        utteranceId,
+        seq,
+        lang,
+        via,
+        ok: false,
+        ms: Date.now() - sentAt,
+        error: error instanceof Error ? error.message.slice(0, 100) : 'error',
+      })
+      throw error
+    }
+  }
+  if (via === 'inline') {
+    await traced(encodeInlineAudio(header, audio), TOPICS.audioInline)
     return 'inline'
   }
+  // The whole mp3 is in the cache BEFORE its URL is announced.
   const id = newAudioId()
   await cache.put(
     id,
@@ -236,6 +270,6 @@ export async function deliverSentenceClip({
     seq,
     last,
   }
-  await send(sessionId, encodeMessage(message), { destinationIdentities, topic: TOPICS.audio })
+  await traced(encodeMessage(message), TOPICS.audio)
   return 'url'
 }

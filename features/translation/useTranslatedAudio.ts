@@ -5,7 +5,12 @@ import { useRoomContext } from '@livekit/components-react'
 import { RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client'
 import { decodeInlineAudio, parseDataMessage, TOPICS } from '@/lib/translation/messages'
 import { addCaption, type CaptionEntry } from './captions'
-import { getTranslationDebug as getDebug, rememberClip, setTranslationDebug } from './debug-store'
+import {
+  getTranslationDebug as getDebug,
+  rememberClip,
+  setTranslationDebug,
+  traceClip,
+} from './debug-store'
 import { reportLatency } from './latency-beacon'
 import { LatencyTracker, type LatencySample } from './metrics'
 import { PlaybackQueues, type Clip, type OriginalAudioMode } from './playback'
@@ -22,6 +27,7 @@ import {
 } from './web-audio'
 import { reportDiag } from './diag'
 import { serverNow, syncServerClock } from './clock'
+import { BUILD_ID, PROTOCOL_VERSION } from '@/lib/build-id'
 
 /**
  * Receives the server's captions and translated clips (LiveKit data, topics tvx.*) and plays
@@ -30,9 +36,12 @@ import { serverNow, syncServerClock } from './clock'
 export function useTranslatedAudio({
   sessionId,
   originalAudioMode,
+  staleClipMs,
 }: {
   sessionId: string
   originalAudioMode: OriginalAudioMode
+  /** STALE_CLIP_MS: a clip that waited this long since it arrived is dropped (and logged). */
+  staleClipMs?: number
 }) {
   const room = useRoomContext()
   const [captions, setCaptions] = useState<CaptionEntry[]>([])
@@ -40,6 +49,8 @@ export function useTranslatedAudio({
   const [unavailable, setUnavailable] = useState(false)
   /** Last utterance came as a caption only (its voice clip was empty). */
   const [audioMissing, setAudioMissing] = useState(false)
+  /** The server sends a newer message format or build than this tab runs: show "reload". */
+  const [outdated, setOutdated] = useState(false)
   const [latency, setLatency] = useState<LatencySample | null>(null)
   const modeRef = useRef(originalAudioMode)
   const tracker = useRef(new LatencyTracker())
@@ -61,11 +72,19 @@ export function useTranslatedAudio({
   useEffect(() => {
     const queues = new PlaybackQueues<AudioBuffer>({
       now: () => performance.now(),
+      staleMs: staleClipMs,
       prepare: async (clip) => {
         const started = performance.now()
         try {
           const via = clip.data ? 'inline' : 'url'
           const buffer = clip.data ? await decodeBytes(clip.data) : await fetchAndDecode(clip.url)
+          if (via === 'url')
+            traceClip({
+              stage: 'fetch',
+              utteranceId: clip.utteranceId,
+              seq: clip.seq,
+              detail: '200',
+            })
           clipInfo.current.set(clip.utteranceId, {
             ...clipInfo.current.get(clip.utteranceId),
             fetchMs: Math.round(performance.now() - started),
@@ -80,6 +99,12 @@ export function useTranslatedAudio({
             },
           })
           const stats = clipStats(buffer)
+          traceClip({
+            stage: 'decoded',
+            utteranceId: clip.utteranceId,
+            seq: clip.seq,
+            detail: `${stats.seconds.toFixed(2)} s, peak ${stats.peak.toFixed(2)}`,
+          })
           rememberClip(buffer)
           setTranslationDebug({ lastClip: { ...stats, at: Date.now() } })
           // An undecodable-as-sound clip (empty / inaudible) is invisible to the listener but
@@ -93,6 +118,17 @@ export function useTranslatedAudio({
           return buffer
         } catch (error) {
           const status = /responded (\d+)/.exec(String((error as Error)?.message))?.[1]
+          traceClip({
+            stage: clip.data ? 'decoded' : 'fetch',
+            utteranceId: clip.utteranceId,
+            seq: clip.seq,
+            detail: `FAILED ${status ?? (error as Error)?.message?.slice(0, 40)}`,
+          })
+          reportDiag({
+            type: 'clip_fetch_failed',
+            detail: `${clip.data ? 'decode' : 'fetch'} ${status ?? 'error'} seq ${clip.seq ?? '-'}`,
+            sessionId,
+          })
           setTranslationDebug({
             lastAudio: {
               via: 'url',
@@ -140,7 +176,19 @@ export function useTranslatedAudio({
           reportDiag({ type: 'duck_restored', detail: event.reason, sessionId })
         }
       },
-      onDrop: (clip, reason) => {
+      onDrop: (clip, reason, ageMs) => {
+        traceClip({
+          stage: 'dropped',
+          utteranceId: clip.utteranceId,
+          seq: clip.seq,
+          detail: `${reason}, ${Math.round(ageMs)} ms since arrival`,
+        })
+        // Every drop is logged on the server (clip_drop) with its reason and age.
+        reportDiag({
+          type: 'clip_drop',
+          detail: `${reason} age ${Math.round(ageMs)} seq ${clip.seq ?? '-'}`,
+          sessionId,
+        })
         if (reason === 'blocked') {
           reportDiag({
             type: 'audio_blocked',
@@ -150,7 +198,20 @@ export function useTranslatedAudio({
         }
         void clip
       },
-      onStart: (clip) => {
+      onEnd: (clip, outcome) =>
+        traceClip({
+          stage: 'play-end',
+          utteranceId: clip.utteranceId,
+          seq: clip.seq,
+          detail: outcome,
+        }),
+      onStart: (clip, at) => {
+        traceClip({
+          stage: 'play-start',
+          utteranceId: clip.utteranceId,
+          seq: clip.seq,
+          detail: `${Math.round(at - clip.receivedAt)} ms after arrival`,
+        })
         const endedAt = speechEnds.current.get(clip.utteranceId)
         if (endedAt !== undefined) {
           tracker.current.audioStarted(clip.utteranceId, endedAt, serverNow())
@@ -172,6 +233,36 @@ export function useTranslatedAudio({
       },
     })
 
+    // Version check on every server message. A server on a newer MESSAGE FORMAT than this tab
+    // understands: captions still work, clips are ignored and the tab asks for a reload. A newer
+    // build with the same format only asks for a reload.
+    const compatible = (meta: { v?: number; build?: string }): boolean => {
+      const newerFormat = (meta.v ?? PROTOCOL_VERSION) > PROTOCOL_VERSION
+      const otherBuild = meta.build !== undefined && meta.build !== BUILD_ID
+      if (newerFormat || otherBuild) {
+        setOutdated((was) => {
+          if (!was)
+            reportDiag({
+              type: 'version_mismatch',
+              detail:
+                `proto ${meta.v ?? '-'}/${PROTOCOL_VERSION} build ${meta.build ?? '-'}/${BUILD_ID}`.slice(
+                  0,
+                  60,
+                ),
+              sessionId,
+            })
+          return true
+        })
+      }
+      if (newerFormat)
+        traceClip({
+          stage: 'ignored',
+          utteranceId: '-',
+          detail: 'newer message format: captions only',
+        })
+      return !newerFormat
+    }
+
     const onData = (payload: Uint8Array, participant: unknown, _kind: unknown, topic?: string) => {
       // Only the server sends tvx.* messages (clients cannot publish data): ignore the rest.
       if (participant) return
@@ -179,11 +270,20 @@ export function useTranslatedAudio({
         const inline = decodeInlineAudio(payload)
         if (!inline) return
         const { header, audio } = inline
+        traceClip({
+          stage: 'received',
+          utteranceId: header.utteranceId,
+          seq: header.seq,
+          lang: header.lang,
+          detail: `inline ${audio.length} B`,
+        })
+        if (!compatible(header)) return
         speechEnds.current.set(header.utteranceId, header.speechEndedAt)
         clipInfo.current.set(header.utteranceId, {
           ...clipInfo.current.get(header.utteranceId),
           lang: header.lang,
         })
+        traceClip({ stage: 'enqueued', utteranceId: header.utteranceId, seq: header.seq })
         queues.enqueue({
           speakerId: header.speakerId,
           utteranceId: header.utteranceId,
@@ -198,6 +298,7 @@ export function useTranslatedAudio({
       }
       const parsed = parseDataMessage(topic, payload)
       if (!parsed) return
+      compatible(parsed.message)
       if (parsed.topic === TOPICS.caption) {
         const m = parsed.message
         speechEnds.current.set(m.utteranceId, m.speechEndedAt)
@@ -228,6 +329,15 @@ export function useTranslatedAudio({
           ...clipInfo.current.get(m.utteranceId),
           lang: m.lang,
         })
+        traceClip({
+          stage: 'received',
+          utteranceId: m.utteranceId,
+          seq: m.seq,
+          lang: m.lang,
+          detail: 'url',
+        })
+        if (!compatible(m)) return
+        traceClip({ stage: 'enqueued', utteranceId: m.utteranceId, seq: m.seq })
         const clip: Clip = {
           speakerId: m.speakerId,
           utteranceId: m.utteranceId,
@@ -264,11 +374,11 @@ export function useTranslatedAudio({
       offContext()
       queues.clear()
     }
-  }, [room, sessionId])
+  }, [room, sessionId, staleClipMs])
 
   /** My own transcript, shown to me as the speaker. */
   const addOwnTranscript = (id: string, original: string) =>
     setCaptions((log) => addCaption(log, { id, from: 'self', original, translated: '' }))
 
-  return { captions, playing, unavailable, audioMissing, latency, addOwnTranscript }
+  return { captions, playing, unavailable, audioMissing, outdated, latency, addOwnTranscript }
 }

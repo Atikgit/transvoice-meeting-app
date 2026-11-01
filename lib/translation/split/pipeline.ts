@@ -150,6 +150,8 @@ export async function runSplitPipeline({
     let captionChain: Promise<unknown> = Promise.resolve()
     const timings: SplitTimings = { sttMs }
     let delivered = 0
+    /** Next clip number: counts delivered clips only, so the listener never waits for a gap. */
+    let clipSeq = 0
     let missing = false
 
     const synth = async (text: string) => {
@@ -214,7 +216,8 @@ export async function runSplitPipeline({
         if (k === 0) timings.ttsFirstByteMs = clip.firstByteMs
         const last = ended && k === sentences.length - 1
         try {
-          await deps.deliverClip(lang, listeners, { seq: k, last, audio: clip.audio })
+          await deps.deliverClip(lang, listeners, { seq: clipSeq, last, audio: clip.audio })
+          clipSeq++
           delivered++
           timings.toFirstAudioMs ??= Math.round(now() - startedAt)
         } catch (error) {

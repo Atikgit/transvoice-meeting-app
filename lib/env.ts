@@ -67,7 +67,11 @@ const serverSchema = z.object({
 
   // A speech that lasts longer than this is cut at its latest pause of 250 ms or more and sent in
   // pieces, in order (ms; 2000-12000). Shorter pieces start translating sooner.
-  VAD_MAX_CHUNK_MS: z.coerce.number().int().min(2000).max(12000).default(5000),
+  VAD_MAX_CHUNK_MS: z.coerce.number().int().min(2000).max(12000).default(6000),
+
+  // A translated clip that has waited this long since it ARRIVED at the listener (not since the
+  // speaker stopped talking) is dropped, and the drop is logged. ms, 2000-60000.
+  STALE_CLIP_MS: z.coerce.number().int().min(2000).max(60000).default(15000),
 
   // `single` (default): one POST / call per listener language. `split`: speech-to-text once, then per
   // language streamed translation -> text-to-speech per sentence; any failure falls back to `single`.
