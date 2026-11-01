@@ -53,3 +53,38 @@ describe('POST /api/latency', () => {
     expect((await post({ sessionId: ID, utteranceId: ID, kind: 'speak' })).status).toBe(401)
   })
 })
+
+describe('client country (CF-IPCountry)', () => {
+  const withHeader = async (value: string | null) => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    await POST(
+      new NextRequest('https://meet.transvoice.ai/api/latency', {
+        method: 'POST',
+        headers: value === null ? {} : { 'cf-ipcountry': value, 'cf-connecting-ip': '203.0.113.9' },
+        body: JSON.stringify({
+          sessionId: ID,
+          utteranceId: ID,
+          kind: 'listen',
+          lang: 'en-US',
+          audioMs: 900,
+        }),
+      }),
+    )
+    const line = String(info.mock.calls[0]![0])
+    return { line, parsed: JSON.parse(line) as { country?: string } }
+  }
+
+  it('adds the two-letter country to the log line and never an IP address', async () => {
+    const { line, parsed } = await withHeader('bd')
+    expect(parsed.country).toBe('BD')
+    expect(line).not.toContain('203.0.113.9')
+  })
+
+  it.each(['XX', 'T1', '', 'BANGLADESH', "B'D"])('ignores %j (not a country)', async (value) => {
+    expect((await withHeader(value)).parsed.country).toBeUndefined()
+  })
+
+  it('no header (not behind Cloudflare): no country field', async () => {
+    expect((await withHeader(null)).parsed.country).toBeUndefined()
+  })
+})

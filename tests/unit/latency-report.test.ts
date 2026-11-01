@@ -228,3 +228,51 @@ describe('single vs split side by side', () => {
     expect(p50('speaker: speech end → answer, upload chunked, end silence 300 ms')).toBe(2230)
   })
 })
+
+describe('per client country', () => {
+  const beacon = (kind: 'speak' | 'listen', country: string | undefined, ms: number, id = 'u') =>
+    JSON.stringify({
+      event: 'latency',
+      sessionId: 's',
+      utteranceId: id,
+      kind,
+      lang: 'en-US',
+      ...(country ? { country } : {}),
+      ...(kind === 'listen'
+        ? { audioMs: ms, captionMs: ms - 300, fetchMs: 20 }
+        : { vadMs: 400, roundTripMs: ms }),
+    })
+
+  it('prints p50 / p95 per country for what browsers measured; lines without a country are "unknown"', () => {
+    const lines = [
+      ...[2000, 2400, 2800, 3200].map((ms, i) => beacon('listen', 'BD', ms, `a${i}`)),
+      ...[900, 1000, 1100, 1200].map((ms, i) => beacon('listen', 'DE', ms, `b${i}`)),
+      beacon('listen', undefined, 1500, 'c'),
+      beacon('listen', 'xx; drop table', 5000, 'd'), // not a country code
+      beacon('speak', 'BD', 1600, 'e'),
+    ]
+    const report = buildReport(lines)
+    expect(report.countries.map((c) => c.country)).toEqual(['BD', 'DE', 'unknown'])
+    const audio = (country: string) =>
+      report.countries
+        .find((c) => c.country === country)!
+        .stages.find((s) => s.name === 'listener: speech end → audio start')!
+    expect(audio('BD')).toMatchObject({ n: 4, p50: 2400, p95: 3200 })
+    expect(audio('DE')).toMatchObject({ n: 4, p50: 1000, p95: 1200 })
+    expect(audio('unknown')).toMatchObject({ n: 2, p50: 1500, p95: 5000 })
+    const bd = report.countries.find((c) => c.country === 'BD')!
+    expect(bd.stages.find((s) => s.name === 'speaker: speech end → answer')).toMatchObject({
+      n: 1,
+      p50: 2000, // 400 ms VAD wait + 1600 ms round trip
+    })
+    const text = formatReport(report)
+    expect(text).toContain('Client country BD')
+    expect(text).toMatch(
+      /Client country DE[\s\S]*listener: speech end → audio start +n= +4 +p50 +1000 ms +p95 +1200 ms/,
+    )
+  })
+
+  it('no country data → no country sections', () => {
+    expect(buildReport([translate('x', 500)]).countries).toEqual([])
+  })
+})

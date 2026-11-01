@@ -64,6 +64,8 @@ interface LatencyLine {
   via?: string
   delivery?: string
   endSilenceMs?: number
+  /** Client country from Cloudflare's CF-IPCountry (two letters; absent when unknown). */
+  country?: string
 }
 
 export function percentile(sorted: number[], p: number): number {
@@ -111,6 +113,8 @@ export interface Report {
   utterances: number
   stages: Stage[]
   pairs: { pair: string; stages: Stage[] }[]
+  /** What the browsers measured, per client country ("unknown" without the header). */
+  countries: { country: string; stages: Stage[] }[]
   /** Server-side stages per pipeline, for the single vs split comparison. */
   pipelines: { pipeline: string; stages: Stage[] }[]
   /** Split runs that fell back to the single call. */
@@ -140,6 +144,14 @@ export function buildReport(lines: Iterable<string>): Report {
     }
   }
 
+  const byCountry = new Map<string, Map<string, Samples>>()
+  const countrySample = (country: string | undefined, name: string, value: Num) => {
+    const key = country && /^[A-Z]{2}$/.test(country) ? country : 'unknown'
+    if (!byCountry.has(key)) byCountry.set(key, new Map())
+    const stages = byCountry.get(key)!
+    if (!stages.has(name)) stages.set(name, new Samples())
+    stages.get(name)!.add(value)
+  }
   const byPipeline = new Map<string, Map<string, Samples>>()
   let fallbacks = 0
   const pipelineSample = (pipeline: string, name: string, value: Num) => {
@@ -200,6 +212,12 @@ export function buildReport(lines: Iterable<string>): Report {
         sample(`speaker: upload size bytes [${l.format}]`, l.bytes)
       }
       sample('speaker: upload → answer (round trip)', l.roundTripMs)
+      countrySample(l.country, 'speaker: upload → answer (round trip)', l.roundTripMs)
+      countrySample(
+        l.country,
+        'speaker: speech end → answer',
+        l.roundTripMs === undefined ? undefined : (l.vadMs ?? 0) + l.roundTripMs,
+      )
       if (l.roundTripMs !== undefined && server?.totalMs !== undefined) {
         sample('network: round trip − server total', Math.max(0, l.roundTripMs - server.totalMs))
       }
@@ -210,6 +228,9 @@ export function buildReport(lines: Iterable<string>): Report {
       sample('listener: clip fetch + decode', l.fetchMs, pair)
       sample('listener: speech end → caption shown', l.captionMs, pair)
       sample('listener: speech end → audio start', l.audioMs, pair)
+      countrySample(l.country, 'listener: speech end → caption shown', l.captionMs)
+      countrySample(l.country, 'listener: speech end → audio start', l.audioMs)
+      countrySample(l.country, 'listener: clip fetch + decode', l.fetchMs)
       if (l.delivery) {
         sample(`listener: speech end → caption shown [${l.delivery}]`, l.captionMs)
         sample(`listener: speech end → audio start [${l.delivery}]`, l.audioMs)
@@ -229,6 +250,9 @@ export function buildReport(lines: Iterable<string>): Report {
     pairs: [...byPair]
       .map(([pair, stages]) => ({ pair, stages: toStages(stages) }))
       .sort((a, b) => a.pair.localeCompare(b.pair)),
+    countries: [...byCountry]
+      .map(([country, stages]) => ({ country, stages: toStages(stages) }))
+      .sort((a, b) => a.country.localeCompare(b.country)),
     pipelines: [...byPipeline].map(([pipeline, stages]) => ({
       pipeline,
       stages: toStages(stages),
@@ -255,6 +279,8 @@ export function formatReport(report: Report): string {
       .join('\n')
   const out = [`Utterances in the log: ${report.utterances}`, '', table(report.stages)]
   for (const { pair, stages } of report.pairs) out.push('', `Language pair ${pair}`, table(stages))
+  for (const { country, stages } of report.countries)
+    out.push('', `Client country ${country} (browser measurements)`, table(stages))
   const single = report.pipelines.find((p) => p.pipeline === 'single')
   const split = report.pipelines.find((p) => p.pipeline === 'split')
   if (single || split) {

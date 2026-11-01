@@ -94,6 +94,8 @@ export interface LatencyLog {
   via?: 'url' | 'inline'
   delivery?: 'livekit' | 'sse'
   endSilenceMs?: number
+  /** Client country from Cloudflare's CF-IPCountry header (ISO 3166 alpha-2). No IP is kept. */
+  country?: string
   /** listen: fetching + decoding the clip. */
   fetchMs?: number
 }
