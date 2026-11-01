@@ -683,6 +683,11 @@ export type Database = {
           session_id: string | null
           synced_to_ls_at: string | null
           trial_minutes: number
+          billable_seconds: number | null
+          billing_basis: string | null
+          shortfall_minutes: number
+          subscription_debited: number | null
+          trial_debited: number | null
         }
         Insert: {
           billed_minutes: number
@@ -699,6 +704,9 @@ export type Database = {
           session_id?: string | null
           synced_to_ls_at?: string | null
           trial_minutes?: number
+          billable_seconds?: number | null
+          billing_basis?: string | null
+          shortfall_minutes?: number
         }
         Update: {
           billed_minutes?: number
@@ -715,6 +723,9 @@ export type Database = {
           session_id?: string | null
           synced_to_ls_at?: string | null
           trial_minutes?: number
+          billable_seconds?: number | null
+          billing_basis?: string | null
+          shortfall_minutes?: number
         }
         Relationships: [
           {
@@ -797,6 +808,10 @@ export type Database = {
       create_meeting: {
         Args: { p_title?: string; p_user: string }
         Returns: string
+      }
+      configure_billing: {
+        Args: { p_basis: string; p_multiplier: boolean }
+        Returns: undefined
       }
       credit_minutes: {
         Args: {
