@@ -25,6 +25,7 @@ const body = z.object({
   audioMs: ms.optional(),
   fetchMs: ms.optional(),
   via: z.enum(['url', 'inline']).optional(),
+  delivery: z.enum(['livekit', 'sse']).optional(),
 })
 
 /**

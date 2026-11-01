@@ -1,6 +1,8 @@
 import 'server-only'
 import { DataPacket_Kind } from 'livekit-server-sdk'
+import { serverEnv } from '@/lib/env'
 import { roomNameFor, roomService } from '@/lib/livekit/server'
+import { hasSseSubscriber, pushSse, sseFrame } from '@/lib/translation/sse-hub'
 import {
   AUDIO_TTL_SEC,
   audioCache,
@@ -26,8 +28,24 @@ type Send = (
   options: { destinationIdentities: string[]; topic: string },
 ) => Promise<void>
 
-const sendReliable: Send = (sessionId, data, options) =>
+const sendLiveKit: Send = (sessionId, data, options) =>
   roomService().sendData(roomNameFor(sessionId), data, DataPacket_Kind.RELIABLE, options)
+
+/**
+ * DELIVERY=sse: a listener with an open GET /api/stream gets the message from the app server
+ * directly; everyone else (and anyone whose stream refuses it) gets it over LiveKit data.
+ */
+const sendSseFirst: Send = async (sessionId, data, options) => {
+  const frame = sseFrame(options.topic, data)
+  const rest = options.destinationIdentities.filter(
+    (id) => !(hasSseSubscriber(sessionId, id) && pushSse(sessionId, id, frame)),
+  )
+  if (rest.length > 0)
+    await sendLiveKit(sessionId, data, { ...options, destinationIdentities: rest })
+}
+
+const sendReliable: Send = (sessionId, data, options) =>
+  (serverEnv().DELIVERY === 'sse' ? sendSseFirst : sendLiveKit)(sessionId, data, options)
 
 /**
  * Delivers one language's result to its listeners only: the caption immediately, then the

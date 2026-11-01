@@ -90,6 +90,8 @@ export interface MeetingRoomProps {
   maxChunkMs?: number
   /** STALE_CLIP_MS from the server environment. */
   staleClipMs?: number
+  /** DELIVERY: `sse` makes the room open GET /api/stream. */
+  delivery?: 'livekit' | 'sse'
   /** ?debug=1: show the translation overlay (any signed-in participant). */
   debug?: boolean
   /** Camera / mic choice from the lobby. */
@@ -286,6 +288,7 @@ function RoomView({
   uploadMode,
   maxChunkMs,
   staleClipMs,
+  delivery,
 }: MeetingRoomProps & {
   mediaProblem: MediaProblem | null
   onMediaProblemHandled: () => void
@@ -316,7 +319,7 @@ function RoomView({
   const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
 
   const languages = useTranslationStatus(sessionId)
-  const audio = useTranslatedAudio({ sessionId, originalAudioMode, staleClipMs })
+  const audio = useTranslatedAudio({ sessionId, originalAudioMode, staleClipMs, delivery })
   const translation = useLiveTranslation({
     sessionId,
     status: session.state.status,

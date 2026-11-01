@@ -62,6 +62,7 @@ interface LatencyLine {
   audioMs?: number
   fetchMs?: number
   via?: string
+  delivery?: string
 }
 
 export function percentile(sorted: number[], p: number): number {
@@ -201,6 +202,11 @@ export function buildReport(lines: Iterable<string>): Report {
       sample('listener: clip fetch + decode', l.fetchMs, pair)
       sample('listener: speech end → caption shown', l.captionMs, pair)
       sample('listener: speech end → audio start', l.audioMs, pair)
+      if (l.delivery) {
+        sample(`listener: speech end → caption shown [${l.delivery}]`, l.captionMs)
+        sample(`listener: speech end → audio start [${l.delivery}]`, l.audioMs)
+      }
+      if (l.via) sample(`listener: clip fetch + decode [${l.via}]`, l.fetchMs)
     }
   }
 

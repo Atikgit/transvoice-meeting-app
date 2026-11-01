@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRoomContext } from '@livekit/components-react'
-import { RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client'
+import { ConnectionState, RoomEvent, Track, type RemoteAudioTrack } from 'livekit-client'
 import { decodeInlineAudio, parseDataMessage, TOPICS } from '@/lib/translation/messages'
 import { addCaption, type CaptionEntry } from './captions'
 import {
@@ -28,6 +28,7 @@ import {
 import { reportDiag } from './diag'
 import { serverNow, syncServerClock } from './clock'
 import { BUILD_ID, PROTOCOL_VERSION } from '@/lib/build-id'
+import { openMessageStream } from '@/features/translation/message-stream'
 
 /**
  * Receives the server's captions and translated clips (LiveKit data, topics tvx.*) and plays
@@ -37,11 +38,14 @@ export function useTranslatedAudio({
   sessionId,
   originalAudioMode,
   staleClipMs,
+  delivery = 'livekit',
 }: {
   sessionId: string
   originalAudioMode: OriginalAudioMode
   /** STALE_CLIP_MS: a clip that waited this long since it arrived is dropped (and logged). */
   staleClipMs?: number
+  /** DELIVERY: `sse` opens GET /api/stream; without it the server sends over LiveKit data. */
+  delivery?: 'livekit' | 'sse'
 }) {
   const room = useRoomContext()
   const [captions, setCaptions] = useState<CaptionEntry[]>([])
@@ -53,6 +57,8 @@ export function useTranslatedAudio({
   const [outdated, setOutdated] = useState(false)
   const [latency, setLatency] = useState<LatencySample | null>(null)
   const modeRef = useRef(originalAudioMode)
+  // Which channel the latest message came over (the listener's latency report is tagged with it).
+  const channel = useRef<'livekit' | 'sse'>('livekit')
   const tracker = useRef(new LatencyTracker())
   const speechEnds = useRef(new Map<string, number>())
   // Per utterance: the caption's language and how long fetching + decoding its clip took.
@@ -227,6 +233,7 @@ export function useTranslatedAudio({
             audioMs: sample?.audioMs,
             fetchMs: info?.fetchMs,
             via: info?.via ?? 'url',
+            delivery: channel.current,
           })
           clipInfo.current.delete(clip.utteranceId)
         }
@@ -354,7 +361,28 @@ export function useTranslatedAudio({
       }
     }
 
-    room.on(RoomEvent.DataReceived, onData)
+    const onLiveKitData: typeof onData = (...args) => {
+      channel.current = 'livekit'
+      onData(...args)
+    }
+    room.on(RoomEvent.DataReceived, onLiveKitData)
+    const stopStream =
+      delivery === 'sse'
+        ? openMessageStream(
+            sessionId,
+            {
+              isConnected: () => room.state === ConnectionState.Connected,
+              onConnected: (callback) => {
+                room.on(RoomEvent.Connected, callback)
+                return () => room.off(RoomEvent.Connected, callback)
+              },
+            },
+            (topic, bytes) => {
+              channel.current = 'sse'
+              onData(bytes, undefined, undefined, topic)
+            },
+          )
+        : () => {}
     const stopGestureUnlock = unlockAudioOnFirstGesture()
     // Backgrounded tab / stopped audio context: whatever was lowered goes back to full volume.
     const onVisibility = () => {
@@ -367,14 +395,15 @@ export function useTranslatedAudio({
       if (!audioIsRunning()) queues.restoreAll('interrupted')
     })
     return () => {
-      room.off(RoomEvent.DataReceived, onData)
+      room.off(RoomEvent.DataReceived, onLiveKitData)
+      stopStream()
       stopGestureUnlock()
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pagehide', onPageHide)
       offContext()
       queues.clear()
     }
-  }, [room, sessionId, staleClipMs])
+  }, [room, sessionId, staleClipMs, delivery])
 
   /** My own transcript, shown to me as the speaker. */
   const addOwnTranscript = (id: string, original: string) =>

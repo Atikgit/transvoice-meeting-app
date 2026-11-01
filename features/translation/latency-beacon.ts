@@ -24,6 +24,8 @@ export interface LatencyReport {
   audioMs?: number
   fetchMs?: number
   via?: 'url' | 'inline'
+  /** listen: the channel the messages arrived over (DELIVERY). */
+  delivery?: 'livekit' | 'sse'
 }
 
 export function reportLatency(report: LatencyReport): void {

@@ -181,4 +181,29 @@ describe('single vs split side by side', () => {
     expect(text).toContain('Single vs split')
     expect(text).toContain('split runs that fell back to the single call: 1')
   })
+
+  it('splits the listener numbers by delivery channel (livekit vs sse) and by clip route (inline vs url)', () => {
+    const l = (id: string, audioMs: number, delivery: string, via: string, fetchMs: number) =>
+      JSON.stringify({
+        event: 'latency',
+        sessionId: 's',
+        utteranceId: id,
+        kind: 'listen',
+        lang: 'en-US',
+        audioMs,
+        captionMs: audioMs - 300,
+        fetchMs,
+        via,
+        delivery,
+      })
+    const report = buildReport([
+      l('a', 3000, 'livekit', 'url', 550),
+      l('b', 2000, 'sse', 'inline', 6),
+    ])
+    const stage = (name: string) => report.stages.find((s) => s.name === name)
+    expect(stage('listener: speech end → audio start [livekit]')?.p50).toBe(3000)
+    expect(stage('listener: speech end → audio start [sse]')?.p50).toBe(2000)
+    expect(stage('listener: clip fetch + decode [url]')?.p50).toBe(550)
+    expect(stage('listener: clip fetch + decode [inline]')?.p50).toBe(6)
+  })
 })

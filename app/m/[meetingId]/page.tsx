@@ -99,6 +99,7 @@ export default async function MeetingPage({
         uploadMode={serverEnv().UPLOAD_MODE}
         maxChunkMs={serverEnv().VAD_MAX_CHUNK_MS}
         staleClipMs={serverEnv().STALE_CLIP_MS}
+        delivery={serverEnv().DELIVERY}
         // Any signed-in participant of the meeting may open the overlay: it shows only their own
         // browser's state and what the server stores about this session.
         debug={query.debug === '1'}
