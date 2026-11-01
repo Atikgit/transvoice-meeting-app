@@ -9,12 +9,15 @@ import { encodeWav } from '@/lib/translation/wav'
 import { encodeOpus } from './opus-upload'
 import { serverNow } from './clock'
 import { measureLeg, observeLongTasks } from './net-timing'
+import { ChunkUpload } from './chunk-upload'
+import type { StreamEvent } from './chunk-stream'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
 import { rememberUtterance, setTranslationDebug } from './debug-store'
 import { useLocalAudioWatch } from './useLocalAudioWatch'
 import { shouldListen } from './vad-gate'
 
 export type UploadFormat = 'wav' | 'opus'
+export type UploadMode = 'whole' | 'chunked'
 
 export type TranslationNotice = {
   tone: 'info' | 'error'
@@ -95,6 +98,7 @@ export function useLiveTranslation({
   enabled = true,
   endSilenceMs,
   uploadFormat = 'wav',
+  uploadMode = 'whole',
   maxChunkMs,
   onTranscript,
 }: {
@@ -107,6 +111,8 @@ export function useLiveTranslation({
   endSilenceMs?: number
   /** UPLOAD_FORMAT: what each utterance is uploaded as. */
   uploadFormat?: UploadFormat
+  /** UPLOAD_MODE: whole = one upload at speech end; chunked = ~500 ms chunks while speaking. */
+  uploadMode?: UploadMode
   /** VAD_MAX_CHUNK_MS. */
   maxChunkMs?: number
   /** The speaker's own transcript of an utterance. */
@@ -119,6 +125,7 @@ export function useLiveTranslation({
   const [blocked, setBlocked] = useState<TranslationNotice>(null)
   const [paused, setPaused] = useState(false)
   useEffect(() => observeLongTasks(), [])
+  const chunkUploads = useRef(new Map<string, ChunkUpload>())
   const chains = useRef(new Map<string, Promise<void>>())
   const transcriptRef = useRef(onTranscript)
   useEffect(() => {
@@ -221,8 +228,32 @@ export function useLiveTranslation({
     listening,
     endSilenceMs,
     maxChunkMs,
+    streaming: uploadMode === 'chunked',
+    onStream: (event: StreamEvent) => {
+      if (event.type === 'abort') {
+        chunkUploads.current.get(event.utteranceId)?.abort()
+        chunkUploads.current.delete(event.utteranceId)
+        return
+      }
+      if (event.type !== 'chunk') return
+      let upload = chunkUploads.current.get(event.utteranceId)
+      if (!upload) {
+        upload = new ChunkUpload(event.utteranceId, { sessionId })
+        chunkUploads.current.set(event.utteranceId, upload)
+      }
+      upload.push({
+        seq: event.seq,
+        pcm: event.pcm,
+        last: event.last,
+        group: event.group,
+        pieceSeq: event.pieceSeq,
+        // the speaker's clock (server time) at the moment the speech really ended
+        clientTs: Math.round(serverNow() - event.endedAgoMs),
+      })
+    },
     onUtterance: (utterance) => {
-      const utteranceId = crypto.randomUUID()
+      const chunked = uploadMode === 'chunked' && utterance.utteranceId !== undefined
+      const utteranceId = utterance.utteranceId ?? crypto.randomUUID()
       const sentAt = performance.now()
       setPending((n) => n + 1)
       rememberUtterance(utterance.samples)
@@ -235,6 +266,25 @@ export function useLiveTranslation({
       })
       let encodeMs = 0
       let sent: { format: UploadFormat; bytes: number } | undefined
+      // Chunked: the audio is already at the server; wait for the answer to the last chunk. If any
+      // chunk failed, send the whole utterance the old way (the server ignores it if it had already
+      // processed the chunks).
+      const uploadChunked = async (): Promise<Response> => {
+        const chunks = chunkUploads.current.get(utteranceId)
+        chunkUploads.current.delete(utteranceId)
+        const outcome = chunks
+          ? await chunks.finish()
+          : ({ ok: false, reason: 'no chunks' } as const)
+        sent = { format: 'wav', bytes: 44 + utterance.samples.length * 2 }
+        if (outcome.ok) return outcome.response ?? new Response('{}', { status: 200 })
+        return uploadUtterance(
+          { sessionId, utteranceId, utterance, format: 'wav', chunk: utterance.chunk },
+          (ms, info) => {
+            encodeMs = ms
+            sent = info
+          },
+        )
+      }
       const upload = () =>
         uploadUtterance(
           { sessionId, utteranceId, utterance, format: uploadFormat, chunk: utterance.chunk },
@@ -245,10 +295,12 @@ export function useLiveTranslation({
         )
       // Pieces of one long speech go out one after the other: the server has delivered piece n
       // before piece n+1 is sent, so the listener's per-speaker queue plays them in order.
-      const group = utterance.chunk?.group
-      const request = group
-        ? (chains.current.get(group) ?? Promise.resolve()).then(upload)
-        : upload()
+      const group = chunked ? undefined : utterance.chunk?.group
+      const request = chunked
+        ? uploadChunked()
+        : group
+          ? (chains.current.get(group) ?? Promise.resolve()).then(upload)
+          : upload()
       if (group) {
         const settled = request.then(
           () => {},
@@ -270,7 +322,8 @@ export function useLiveTranslation({
             roundTripMs: Math.round(performance.now() - sentAt),
             bytes: sent?.bytes ?? 44 + utterance.samples.length * 2,
             format: sent?.format,
-            ...measureLeg(utterance.endedAt),
+            mode: chunked ? 'chunked' : 'whole',
+            ...measureLeg(utterance.endedAt, chunked ? '/api/translate/chunk' : '/api/translate'),
           })
           setTranslationDebug({
             lastTranslate: {

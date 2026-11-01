@@ -12,6 +12,8 @@ export interface LatencyReport {
   roundTripMs?: number
   bytes?: number
   format?: 'wav' | 'opus'
+  /** speak: whole upload at speech end, or chunks while speaking. */
+  mode?: 'whole' | 'chunked'
   /** speak: the network leg (PerformanceResourceTiming) and main-thread long tasks. */
   stalledMs?: number
   waitMs?: number

@@ -77,6 +77,8 @@ export interface LatencyLog {
   bytes?: number
   /** speak: wav | opus. */
   format?: string
+  /** speak: whole (one upload at speech end) | chunked (while speaking). */
+  mode?: string
   /** speak: browser queue/connect, request → first byte, download; main-thread long tasks meanwhile. */
   stalledMs?: number
   waitMs?: number

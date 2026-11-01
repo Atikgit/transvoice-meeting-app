@@ -65,6 +65,11 @@ const serverSchema = z.object({
   // via WebCodecs, ~10x smaller; browsers without it fall back to wav by themselves).
   UPLOAD_FORMAT: z.enum(['wav', 'opus']).default('wav'),
 
+  // `whole` (default): the utterance is uploaded when the speech ends. `chunked`: ~500 ms PCM chunks
+  // are posted to /api/translate/chunk while the person is still talking, so at speech end only the
+  // last chunk is left to upload (any failure falls back to `whole` for that utterance).
+  UPLOAD_MODE: z.enum(['whole', 'chunked']).default('whole'),
+
   // A speech that lasts longer than this is cut at its latest pause of 250 ms or more and sent in
   // pieces, in order (ms; 2000-12000). Shorter pieces start translating sooner.
   VAD_MAX_CHUNK_MS: z.coerce.number().int().min(2000).max(12000).default(6000),

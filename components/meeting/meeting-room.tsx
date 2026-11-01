@@ -84,6 +84,8 @@ export interface MeetingRoomProps {
   vadEndSilenceMs?: number
   /** UPLOAD_FORMAT from the server environment. */
   uploadFormat?: 'wav' | 'opus'
+  /** UPLOAD_MODE from the server environment. */
+  uploadMode?: 'whole' | 'chunked'
   /** VAD_MAX_CHUNK_MS from the server environment. */
   maxChunkMs?: number
   /** STALE_CLIP_MS from the server environment. */
@@ -281,6 +283,7 @@ function RoomView({
   debug = false,
   vadEndSilenceMs,
   uploadFormat,
+  uploadMode,
   maxChunkMs,
   staleClipMs,
 }: MeetingRoomProps & {
@@ -320,6 +323,7 @@ function RoomView({
     enabled: translationEnabled,
     endSilenceMs: vadEndSilenceMs,
     uploadFormat,
+    uploadMode,
     maxChunkMs,
     playingTranslation: audio.playing, // echo safety: never listen while a clip plays
     onTranscript: audio.addOwnTranscript,

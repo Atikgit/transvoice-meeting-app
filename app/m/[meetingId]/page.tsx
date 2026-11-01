@@ -96,6 +96,7 @@ export default async function MeetingPage({
         minutesLabel={balance ? minutesLabel(balance) : undefined}
         vadEndSilenceMs={serverEnv().VAD_END_SILENCE_MS}
         uploadFormat={serverEnv().UPLOAD_FORMAT}
+        uploadMode={serverEnv().UPLOAD_MODE}
         maxChunkMs={serverEnv().VAD_MAX_CHUNK_MS}
         staleClipMs={serverEnv().STALE_CLIP_MS}
         // Any signed-in participant of the meeting may open the overlay: it shows only their own

@@ -6,6 +6,7 @@ import { clampEndSilence, VAD_ASSET_PATH, VAD_SETTINGS } from './vad-gate'
 import { setTranslationDebug } from './debug-store'
 import { sharedAudioContext } from './web-audio'
 import { UtteranceChunker } from './utterance-chunker'
+import { ChunkStreamer, type StreamEvent } from './chunk-stream'
 
 /** Destroys a VAD without throwing (its start-up may still be in flight). */
 async function retire(vad: MicVAD): Promise<void> {
@@ -23,6 +24,8 @@ export interface Utterance {
   endedAt: number
   /** Piece of a long speech: all pieces share `group`; `seq` counts from 0. Absent for a single utterance. */
   chunk?: { group: string; seq: number }
+  /** Chunked mode: the id the chunks were uploaded under. */
+  utteranceId?: string
 }
 
 /**
@@ -37,6 +40,8 @@ export function useSpeechDetector({
   onUtterance,
   endSilenceMs,
   maxChunkMs,
+  streaming = false,
+  onStream,
 }: {
   track: MediaStreamTrack | undefined
   listening: boolean
@@ -44,6 +49,12 @@ export function useSpeechDetector({
   endSilenceMs?: number
   /** VAD_MAX_CHUNK_MS: a longer speech is cut at its latest pause of >= 250 ms and sent in pieces. */
   maxChunkMs?: number
+  /**
+   * UPLOAD_MODE=chunked: speech is handed out as ~500 ms chunks while it is spoken (onStream), and
+   * each finished utterance is still reported through onUtterance (for the whole-upload fallback).
+   */
+  streaming?: boolean
+  onStream?: (event: StreamEvent) => void
   onUtterance: (utterance: Utterance) => void
 }) {
   const vadRef = useRef<MicVAD | null>(null)
@@ -51,6 +62,8 @@ export function useSpeechDetector({
   const [speaking, setSpeaking] = useState(false)
   const [ready, setReady] = useState(false)
   const emit = useEffectEvent(onUtterance)
+  const emitStream = useEffectEvent((event: StreamEvent) => onStream?.(event))
+  const streamerRef = useRef<ChunkStreamer | null>(null)
   const redemptionMs = clampEndSilence(endSilenceMs)
 
   // Create the VAD for this microphone track.
@@ -66,6 +79,20 @@ export function useSpeechDetector({
     capture.enabled = true
     const stream = new MediaStream([capture])
     const chunker = new UtteranceChunker(maxChunkMs ?? VAD_SETTINGS.maxChunkMs)
+    // Chunked mode: this takes over from the chunker (the VAD itself only says when speech starts and ends).
+    const streamer = streaming
+      ? new ChunkStreamer(maxChunkMs ?? VAD_SETTINGS.maxChunkMs, (event) => {
+          emitStream(event)
+          if (event.type === 'piece')
+            emit({
+              samples: event.samples,
+              endedAt: performance.now() - event.endedAgoMs,
+              utteranceId: event.utteranceId,
+              chunk: { group: event.group, seq: event.pieceSeq },
+            })
+        })
+      : null
+    streamerRef.current = streamer
     // One id per long speech: its pieces are sent in order and share it.
     let group: string | null = null
     const emitPiece = (samples: Float32Array, seq: number, endedAgoMs: number) => {
@@ -94,10 +121,12 @@ export function useSpeechDetector({
           pauseStream: async () => {},
           resumeStream: async () => stream,
           onFrameProcessed: (probabilities, frame) => {
+            if (streamer) return streamer.frame(probabilities.isSpeech, frame)
             const piece = chunker.frame(probabilities.isSpeech, frame)
             if (piece) emitPiece(piece.samples, piece.seq, piece.endedAgoMs)
           },
           onSpeechStart: () => {
+            streamer?.speechStart()
             chunker.speechStart()
             group = null
             setSpeaking(true)
@@ -118,12 +147,18 @@ export function useSpeechDetector({
             setSpeaking(false)
             setTranslationDebug({ vadSpeaking: false })
             // The VAD only fires after `redemptionMs` of silence: speech really ended that long ago.
+            if (streamer) {
+              streamer.speechEnd(redemptionMs)
+              group = null
+              return
+            }
             const rest = chunker.speechEnd()
             if (rest === 'whole') emit({ samples, endedAt: performance.now() - redemptionMs })
             else if (rest) emitPiece(rest.samples, rest.seq, redemptionMs)
             group = null
           },
           onVADMisfire: () => {
+            streamer?.abort()
             chunker.reset()
             clearTimeout(splitTimer)
             setSpeaking(false)
@@ -151,11 +186,13 @@ export function useSpeechDetector({
       clearTimeout(splitTimer)
       if (vadRef.current) void retire(vadRef.current)
       capture.stop() // the clone only
+      streamer?.abort()
+      streamerRef.current = null
       vadRef.current = null
       setReady(false)
       setTranslationDebug({ vad: 'off', vadListening: false, vadSpeaking: false })
     }
-  }, [track, redemptionMs, maxChunkMs])
+  }, [track, redemptionMs, maxChunkMs, streaming])
 
   // Start / pause with the gate (pausing drops any partial utterance). MicVAD throws on pause()
   // before its first start(), and start() must wait until the model has loaded.
@@ -171,6 +208,7 @@ export function useSpeechDetector({
           setError('Live translation is unavailable in this browser.')
         })
     } else if (vad.listening) {
+      streamerRef.current?.abort() // a half-spoken utterance is dropped with the pause
       void vad
         .pause()
         .then(() => setTranslationDebug({ vadListening: false }))

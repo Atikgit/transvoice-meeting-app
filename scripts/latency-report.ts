@@ -51,6 +51,7 @@ interface LatencyLine {
   vadMs?: number
   bytes?: number
   format?: string
+  mode?: string
   stalledMs?: number
   waitMs?: number
   downloadMs?: number
@@ -184,6 +185,7 @@ export function buildReport(lines: Iterable<string>): Report {
       sample('speaker: response download', l.downloadMs)
       sample('speaker: long tasks during the request (count)', l.longTasks)
       sample('speaker: long tasks during the request (ms)', l.longTaskMs)
+      if (l.mode) sample(`speaker: round trip, upload ${l.mode}`, l.roundTripMs)
       if (l.format) {
         sample(`speaker: round trip [${l.format}]`, l.roundTripMs)
         sample(`speaker: upload size bytes [${l.format}]`, l.bytes)
