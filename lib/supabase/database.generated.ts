@@ -828,6 +828,7 @@ export type Database = {
       }
       ensure_user_account: { Args: { p_user: string }; Returns: boolean }
       expire_ringing: { Args: never; Returns: number }
+      trial_status: { Args: { p_user: string }; Returns: string }
       has_available_minutes: { Args: { p_user: string }; Returns: boolean }
       incoming_calls: {
         Args: { p_user: string }

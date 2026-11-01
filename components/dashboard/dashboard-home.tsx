@@ -14,6 +14,7 @@ export function DashboardHome({
   balance,
   canSpend,
   connections = [],
+  trialNotice = null,
 }: {
   userId: string
   greeting: string
@@ -21,6 +22,8 @@ export function DashboardHome({
   /** The user has minutes to spend (ConnectionsCard: Call vs Subscribe). */
   canSpend: boolean
   connections?: ConnectionItem[]
+  /** Why there are no free minutes (unconfirmed email, trial already used), or null. */
+  trialNotice?: string | null
 }) {
   const [pricing, setPricing] = useState(false)
   const [joining, setJoining] = useState(false)
@@ -51,6 +54,15 @@ export function DashboardHome({
           onSubscribe={() => setPricing(true)}
         />
       </DashboardOverview>
+      {trialNotice && (
+        <p
+          role="status"
+          data-testid="trial-notice"
+          className="mx-auto max-w-6xl px-5 pt-4 text-sm text-amber-200 lg:px-10"
+        >
+          {trialNotice}
+        </p>
+      )}
       {error && (
         <p role="alert" className="mx-auto max-w-6xl px-5 text-sm text-rose-300 lg:px-10">
           {error}
