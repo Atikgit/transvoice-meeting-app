@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     )
   }
   const startedAt = performance.now()
-  const user = await getSessionUser()
+  const user = await getSessionUser({ local: true })
   if (!user) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 })
   if (!(await checkRateLimit('translate', user.id))) {
     return NextResponse.json({ error: 'Too many utterances. Slow down a little.' }, { status: 429 })

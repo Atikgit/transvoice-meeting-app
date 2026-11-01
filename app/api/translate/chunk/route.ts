@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       { status: 503, headers: { 'Retry-After': String(DRAIN_RETRY_MS / 1000) } },
     )
   }
-  const user = await getSessionUser()
+  const user = await getSessionUser({ local: true })
   if (!user) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 })
 
   const h = request.headers
