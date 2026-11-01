@@ -108,6 +108,12 @@ const serverSchema = z.object({
   // Billing config
   BILLING_MODE: z.enum(['wallclock']).default('wallclock'),
   LANG_MULTIPLIER_ENABLED: z.stringbool().default(true),
+  // per_payer: every distinct payer is charged once per bucket for all their people together
+  // (sponsor + sponsored guests = one charge). per_participant: each person is charged to their
+  // payer (the original rule). Copied into the database for pg_cron (configure_billing).
+  BILLING_BASIS: z.enum(['per_payer', 'per_participant']).default('per_payer'),
+  // The app's own minute tick (fallback to pg_cron), seconds; 0 disables it.
+  METER_TICK_SEC: z.coerce.number().int().min(0).default(60),
   RECONNECT_GRACE_SEC: z.coerce.number().int().positive().default(60),
   // Sweeper (lib/sweeper.ts): how often stale sessions, open segments and ringing calls are
   // cleaned up. 0 disables it.

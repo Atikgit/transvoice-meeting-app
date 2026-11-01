@@ -9,6 +9,8 @@ export async function register() {
   const { startSweeper, stopSweeper } = await import('@/lib/sweeper')
   const { DRAIN_MAX_MS, startDraining } = await import('@/lib/draining')
   if (env.SWEEP_INTERVAL_SEC > 0) startSweeper()
+  const { startMeterTimer, stopMeterTimer } = await import('@/lib/billing/meter')
+  if (env.METER_TICK_SEC > 0) startMeterTimer()
   // Is email set up? Names of missing variables only; never addresses or keys.
   const { appMailerStatus } = await import('@/lib/email/mailer')
   const mail = appMailerStatus()
@@ -44,6 +46,7 @@ export async function register() {
       await (await import('@/lib/transvoice/http')).closeTransvoicePool()
       clearGraceChecks() // lost timers are recovered by the sweeper of the next container
       await stopSweeper()
+      stopMeterTimer()
       await closeAudioCache()
     })().catch(() => {})
   })
