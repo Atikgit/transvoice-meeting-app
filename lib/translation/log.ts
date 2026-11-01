@@ -18,6 +18,8 @@ export interface TranslateLog {
   intakeMs: number
   /** translation_context + LiveKit participants. */
   contextMs: number
+  /** The speech-to-text ran while the context loaded (true) or was redone for another language. */
+  sttOverlap?: boolean
   languages: {
     lang: string
     /** "bn-BD>en-US": what was translated into what (language codes only). */

@@ -13,6 +13,13 @@ import { splitBreaker } from '@/lib/translation/breaker'
 import { runSplitPipeline, type SplitLanguageResult } from '@/lib/translation/split/pipeline'
 import { splitStats } from '@/lib/translation/split/stats'
 import { splitConfig, translatorKind } from '@/lib/transvoice/split-client'
+import {
+  admittedLangHint,
+  forgetAdmission,
+  rememberAdmission,
+  startSpeechToText,
+  type PreStarted,
+} from '@/lib/translation/stt-overlap'
 import { planFanout } from '@/lib/translation/plan'
 import { logDecision, logTranslate } from '@/lib/translation/log'
 import type { TranslateUpload } from '@/lib/translation/request'
@@ -42,6 +49,7 @@ export async function admitUtterance({
   const contextMs = Math.round(performance.now() - contextStartedAt)
   if (!loaded.ok) {
     logDecision({ sessionId, utteranceId, decision: `rejected:${loaded.code}` })
+    forgetAdmission(sessionId, user.id)
     return {
       ok: false,
       response: NextResponse.json(
@@ -59,6 +67,7 @@ export async function admitUtterance({
     enabled: serverEnv().TRANSLATION_ENABLED,
   })
   if (!gate.ok) {
+    forgetAdmission(sessionId, user.id)
     const plan = planFanout(context.speaker.spokenLang, context.participants)
     logDecision({
       sessionId,
@@ -81,8 +90,13 @@ export async function admitUtterance({
       ),
     }
   }
+  rememberAdmission(sessionId, user.id, sourceLang(context.speaker.spokenLang))
   return { ok: true, admitted: loaded, contextMs }
 }
+
+/** Container format of an upload, as the speech-to-text endpoint names it. */
+const audioExt = (upload: TranslateUpload): 'wav' | 'ogg' | 'webm' =>
+  upload.format === 'wav' ? 'wav' : upload.audio[0] === 0x4f ? 'ogg' : 'webm'
 
 /**
  * Translates one admitted utterance for every listener language and answers the speaker (the body
@@ -101,6 +115,19 @@ export async function translateUtterance({
   admitted?: Admission
 }): Promise<NextResponse> {
   const contextStartedAt = performance.now()
+  // A speaker admitted earlier in this session: start the speech-to-text now, while the context and
+  // payer gate load. It is used only if this admission passes with the same language.
+  const cfg = splitConfig()
+  const hint = admitted ? undefined : admittedLangHint(upload.sessionId, user.id)
+  const overlapAllowed =
+    serverEnv().PIPELINE_OVERLAP &&
+    serverEnv().TRANSLATION_PIPELINE === 'split' &&
+    translatorKind(cfg) !== null &&
+    splitBreaker.allow()
+  const prestart: PreStarted | undefined =
+    hint && overlapAllowed
+      ? startSpeechToText(cfg, Buffer.from(upload.audio).toString('base64'), audioExt(upload), hint)
+      : undefined
   const admission =
     admitted ??
     (await admitUtterance({ user, sessionId: upload.sessionId, utteranceId: upload.utteranceId }))
@@ -132,7 +159,6 @@ export async function translateUtterance({
 
   // Split pipeline (TRANSLATION_PIPELINE=split): speech-to-text once, then per language streamed
   // translation → per-sentence speech. Whatever it cannot do runs through the single call below.
-  const cfg = splitConfig()
   const useSplit =
     serverEnv().TRANSLATION_PIPELINE === 'split' &&
     translatorKind(cfg) !== null &&
@@ -144,13 +170,17 @@ export async function translateUtterance({
     const clipVia = new Map<string, number>()
     split = await runSplitPipeline({
       audioBase64: Buffer.from(upload.audio).toString('base64'),
-      ext: upload.format === 'wav' ? 'wav' : upload.audio[0] === 0x4f ? 'ogg' : 'webm',
+      ext: audioExt(upload),
       spokenSrcLang: sourceLang(context.speaker.spokenLang),
       voiceGender: context.speaker.voiceGender,
       groups,
       startedAt,
       deps: {
         config: cfg,
+        // The overlapped speech-to-text, when it was started for the language admission confirmed.
+        ...(prestart && prestart.lang === sourceLang(context.speaker.spokenLang)
+          ? { transcribe: () => prestart.result }
+          : {}),
         deliverCaption: (lang, listeners, caption) => {
           splitOriginal ??= caption.original
           return deliverSentenceCaption({
@@ -242,6 +272,7 @@ export async function translateUtterance({
     ...(upload.seq !== undefined ? { seq: upload.seq } : {}),
     intakeMs: Math.round(contextStartedAt - startedAt),
     contextMs,
+    ...(prestart ? { sttOverlap: prestart.lang === sourceLang(context.speaker.spokenLang) } : {}),
     languages: results.map((r) => {
       const d = delivered.get(r.lang)
       const sp = splitDone.find((l) => l.lang === r.lang)

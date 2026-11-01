@@ -87,6 +87,10 @@ const serverSchema = z.object({
   OPENAI_TRANSLATE_MODEL: z.string().min(1).default('gpt-4o-mini'),
   TRANSLATE_PROVIDER: z.enum(['openai', 'api-chat']).default('openai'),
 
+  // Run the speech-to-text while the context lookup (participants, payer gate) loads, for a speaker
+  // already admitted earlier in the session. The result is discarded if the new admission fails.
+  PIPELINE_OVERLAP: z.stringbool().default(true),
+
   // Audio format requested from the TransVoice API for translated speech. `wav` (default) is the
   // current behaviour. `mp3` / `opus` need the API to support output_format and to say which
   // format it returned; clips of at most 14 KiB (whole packet) then travel inside the LiveKit data packet.
