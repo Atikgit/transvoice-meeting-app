@@ -36,6 +36,7 @@ import { RoomNotice } from '@/components/meeting/room-notice'
 import { VideoTile } from '@/components/meeting/video-tile'
 import { routeToLoudspeaker } from '@/features/meeting/audio-output'
 import { useAudioPlayback } from '@/features/meeting/useAudioPlayback'
+import { useHeartbeat } from '@/features/meeting/useHeartbeat'
 import { useLiveKitToken } from '@/features/meeting/useLiveKitToken'
 import { useWakeLock } from '@/features/meeting/useWakeLock'
 import {
@@ -315,6 +316,7 @@ function RoomView({
     ...tracks.filter((t) => t.source === Track.Source.Camera && !t.participant.isLocal),
     ...tracks.filter((t) => t.source === Track.Source.Camera && t.participant.isLocal),
   ]
+  useHeartbeat(sessionId, connection === ConnectionState.Connected)
   const session = useRoomState(sessionId, initialState)
   const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
 

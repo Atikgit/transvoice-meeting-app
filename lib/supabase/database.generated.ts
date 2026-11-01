@@ -809,6 +809,10 @@ export type Database = {
         Args: { p_title?: string; p_user: string }
         Returns: string
       }
+      record_heartbeat: {
+        Args: { p_session: string; p_user: string }
+        Returns: string
+      }
       configure_billing: {
         Args: { p_basis: string; p_multiplier: boolean }
         Returns: undefined
