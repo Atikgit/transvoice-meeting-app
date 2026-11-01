@@ -206,4 +206,25 @@ describe('single vs split side by side', () => {
     expect(stage('listener: clip fetch + decode [url]')?.p50).toBe(550)
     expect(stage('listener: clip fetch + decode [inline]')?.p50).toBe(6)
   })
+
+  it('compares upload modes and VAD end-silence settings on speech end -> answer', () => {
+    const sp = (id: string, mode: string, silence: number, vadMs: number, roundTripMs: number) =>
+      JSON.stringify({
+        event: 'latency',
+        sessionId: 's',
+        utteranceId: id,
+        kind: 'speak',
+        mode,
+        endSilenceMs: silence,
+        vadMs,
+        roundTripMs,
+      })
+    const report = buildReport([
+      sp('a', 'whole', 400, 430, 2600),
+      sp('b', 'chunked', 300, 330, 1900),
+    ])
+    const p50 = (name: string) => report.stages.find((s) => s.name === name)?.p50
+    expect(p50('speaker: speech end → answer, upload whole, end silence 400 ms')).toBe(3030)
+    expect(p50('speaker: speech end → answer, upload chunked, end silence 300 ms')).toBe(2230)
+  })
 })

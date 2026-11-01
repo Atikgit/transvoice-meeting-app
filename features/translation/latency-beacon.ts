@@ -14,6 +14,8 @@ export interface LatencyReport {
   format?: 'wav' | 'opus'
   /** speak: whole upload at speech end, or chunks while speaking. */
   mode?: 'whole' | 'chunked'
+  /** speak: VAD_END_SILENCE_MS this tab ran with (to compare 400 against 300). */
+  endSilenceMs?: number
   /** speak: the network leg (PerformanceResourceTiming) and main-thread long tasks. */
   stalledMs?: number
   waitMs?: number

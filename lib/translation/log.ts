@@ -93,6 +93,7 @@ export interface LatencyLog {
   /** listen: how the clip arrived. */
   via?: 'url' | 'inline'
   delivery?: 'livekit' | 'sse'
+  endSilenceMs?: number
   /** listen: fetching + decoding the clip. */
   fetchMs?: number
 }

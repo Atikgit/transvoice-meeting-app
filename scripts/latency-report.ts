@@ -63,6 +63,7 @@ interface LatencyLine {
   fetchMs?: number
   via?: string
   delivery?: string
+  endSilenceMs?: number
 }
 
 export function percentile(sorted: number[], p: number): number {
@@ -187,6 +188,13 @@ export function buildReport(lines: Iterable<string>): Report {
       sample('speaker: long tasks during the request (count)', l.longTasks)
       sample('speaker: long tasks during the request (ms)', l.longTaskMs)
       if (l.mode) sample(`speaker: round trip, upload ${l.mode}`, l.roundTripMs)
+      if (l.mode && l.endSilenceMs !== undefined) {
+        // speech end -> answer as the speaker's browser sees it, per upload mode and end-silence setting
+        sample(
+          `speaker: speech end → answer, upload ${l.mode}, end silence ${l.endSilenceMs} ms`,
+          (l.vadMs ?? 0) + (l.roundTripMs ?? 0),
+        )
+      }
       if (l.format) {
         sample(`speaker: round trip [${l.format}]`, l.roundTripMs)
         sample(`speaker: upload size bytes [${l.format}]`, l.bytes)

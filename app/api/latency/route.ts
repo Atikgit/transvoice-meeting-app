@@ -16,6 +16,7 @@ const body = z.object({
   bytes: z.number().int().min(0).max(4_000_000).optional(),
   format: z.enum(['wav', 'opus']).optional(),
   mode: z.enum(['whole', 'chunked']).optional(),
+  endSilenceMs: z.number().int().min(0).max(5000).optional(),
   stalledMs: ms.optional(),
   waitMs: ms.optional(),
   downloadMs: ms.optional(),

@@ -323,6 +323,7 @@ export function useLiveTranslation({
             bytes: sent?.bytes ?? 44 + utterance.samples.length * 2,
             format: sent?.format,
             mode: chunked ? 'chunked' : 'whole',
+            endSilenceMs,
             ...measureLeg(utterance.endedAt, chunked ? '/api/translate/chunk' : '/api/translate'),
           })
           setTranslationDebug({
