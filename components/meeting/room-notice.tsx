@@ -16,8 +16,8 @@ export function RoomNotice({
   action?: NoticeAction
   /** A second way out, e.g. "Subscribe" next to "Message host". */
   secondaryAction?: NoticeAction
-  /** Overlay at the top of the video area instead of inline. */
-  floating?: boolean
+  /** Overlay at the top of the video area instead of inline; 'low' sits below the first overlay. */
+  floating?: boolean | 'low'
 }) {
   const color =
     tone === 'error'
@@ -27,7 +27,7 @@ export function RoomNotice({
   return (
     <p
       role={tone === 'error' ? 'alert' : 'status'}
-      className={`${floating ? 'absolute inset-x-4 top-4 z-20 mx-auto lg:inset-x-6' : ''} max-w-xl rounded-lg border p-3 text-center text-sm shadow-lg ${color}`}
+      className={`${floating ? `absolute inset-x-4 ${floating === 'low' ? 'top-20' : 'top-4'} z-20 mx-auto lg:inset-x-6` : ''} max-w-xl rounded-lg border p-3 text-center text-sm shadow-lg ${color}`}
     >
       {children}
       {[action, secondaryAction].map(

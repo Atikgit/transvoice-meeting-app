@@ -6,13 +6,15 @@ import { PricingModal } from '@/components/billing/pricing-modal'
 import { ConnectionsCard, type ConnectionItem } from '@/components/calls/connections-card'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
 import { JoinLinkModal } from '@/components/dashboard/join-link-modal'
+import { useBalance } from '@/features/billing/useBalance'
+import { minutesLeft } from '@/lib/billing/balance-view'
 
 /** Client part of /dashboard: meeting actions and their modals. */
 export function DashboardHome({
   userId,
   greeting,
-  balance,
-  canSpend,
+  balance: loadedBalance,
+  canSpend: loadedCanSpend,
   connections = [],
   trialNotice = null,
 }: {
@@ -25,6 +27,12 @@ export function DashboardHome({
   /** Why there are no free minutes (unconfirmed email, trial already used), or null. */
   trialNotice?: string | null
 }) {
+  // The page's numbers are from load time; the meter bills while the dashboard is open in another
+  // tab or after a call, so keep them fresh (every 30 s and when the tab is shown again).
+  const live = useBalance({ intervalMs: 30_000 }).view
+  const liveLeft = live ? minutesLeft(live) : undefined
+  const balance = liveLeft ?? loadedBalance
+  const canSpend = live ? live.billingType === 'postpaid' || (liveLeft ?? 0) > 0 : loadedCanSpend
   const [pricing, setPricing] = useState(false)
   const [joining, setJoining] = useState(false)
   const [creating, startCreating] = useTransition()

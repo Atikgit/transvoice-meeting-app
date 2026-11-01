@@ -18,6 +18,8 @@ const LIMITS = {
   latency: { tokens: 120, window: '1 m' },
   // Billing heartbeat: one every 20 s per tab, with headroom for several tabs and retries.
   heartbeat: { tokens: 20, window: '1 m' },
+  // Balance polls (room every 20 s, dashboard every 30 s), several tabs.
+  balance: { tokens: 30, window: '1 m' },
   // Invite emails: per user and per IP (10/20 an hour), per recipient (3 a day).
   inviteEmailUser: { tokens: 10, window: '1 h' },
   inviteEmailIp: { tokens: 20, window: '1 h' },
