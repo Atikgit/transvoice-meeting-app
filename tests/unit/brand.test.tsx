@@ -17,6 +17,21 @@ describe('brand', () => {
     expect(manifest()).toMatchObject({ name: 'TransVoice AI Meet', short_name: 'TransVoice AI' })
   })
 
+  it('serves the search and social metadata from lib/brand.ts', async () => {
+    const { metadata } = await import('@/app/layout')
+    const { seo } = BRAND
+    expect(metadata.title).toEqual({ default: seo.title, template: TITLE_TEMPLATE })
+    expect(metadata.description).toBe(seo.description)
+    expect(metadata.applicationName).toBe(seo.applicationName)
+    expect(metadata.openGraph).toMatchObject({
+      title: seo.title,
+      url: seo.url,
+      siteName: seo.siteName,
+      images: [seo.image],
+    })
+    expect(metadata.twitter).toMatchObject({ card: 'summary_large_image', images: [seo.image.url] })
+  })
+
   it('renders TRANSVOICE in cyan and AI in gold, readable as one name', () => {
     const { container } = render(<BrandWordmark />)
     expect(screen.getByText('TransVoice AI')).toHaveClass('sr-only')
