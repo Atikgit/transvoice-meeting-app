@@ -23,6 +23,7 @@ import {
 import { GATE_REASON, refusalFromFailures } from '@/lib/translation/refusal'
 import { planFanout } from '@/lib/translation/plan'
 import { logDecision, logTranslate } from '@/lib/translation/log'
+import { recordApiUsage } from '@/lib/translation/usage'
 import type { TranslateUpload } from '@/lib/translation/request'
 
 /** What admission loaded: the stored session state of the speaker's meeting. */
@@ -311,6 +312,15 @@ export async function translateUtterance({
     }),
     totalMs: Math.round(performance.now() - startedAt),
     ...(useSplit ? { splitFailures: splitStats.failures } : {}),
+  })
+  recordApiUsage({
+    sessionId: upload.sessionId,
+    speakerId: user.id,
+    utteranceId: upload.utteranceId,
+    seq: upload.seq,
+    audio: upload.audio,
+    format: upload.format,
+    languages: results.filter((r) => r.kind !== 'failed').map((r) => r.lang),
   })
   const speech = results.find((r) => r.kind === 'speech')
   const failed = results.filter((r) => r.kind === 'failed')

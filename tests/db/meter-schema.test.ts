@@ -144,3 +144,25 @@ describe('meter privileges', () => {
     ).rejects.toThrow(/INVALID_BILLING_BASIS/)
   })
 })
+
+describe('api_usage_events', () => {
+  it('request_id is unique (a replay cannot count twice) and clients cannot read or write it', async () => {
+    const insert = () =>
+      db.query(
+        `insert into public.api_usage_events (request_id, speech_seconds, target_lang)
+         values ('utt:0:en-US', 2.5, 'en-US')`,
+      )
+    await insert()
+    await expect(insert()).rejects.toThrow(/duplicate key|unique/i)
+    await expect(
+      asUser(db, payer, (tx) => tx.query('select * from public.api_usage_events')),
+    ).rejects.toThrow(/permission denied/)
+    await expect(
+      asUser(db, payer, (tx) =>
+        tx.query(
+          `insert into public.api_usage_events (request_id, speech_seconds) values ('x', 1)`,
+        ),
+      ),
+    ).rejects.toThrow(/permission denied/)
+  })
+})
