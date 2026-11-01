@@ -54,10 +54,10 @@ export interface InlineAudioHeader {
 
 /**
  * Largest WHOLE inline packet (2-byte length + JSON header + raw audio, no base64), so a clip is
- * inline only when the packet as it goes on the wire is at most 12 KiB. LiveKit's reliable data
- * limit is about 15 KiB; the margin covers the transport's own framing.
+ * inline only when the packet as it goes on the wire is at most 14 KiB. LiveKit's reliable data
+ * limit is 15 KiB per message; the 1 KiB margin covers the transport's own framing.
  */
-export const MAX_INLINE_PACKET_BYTES = 12 * 1024
+export const MAX_INLINE_PACKET_BYTES = 14 * 1024
 /** Kept for callers that only know the clip: the audio alone can never exceed the packet cap. */
 export const MAX_INLINE_AUDIO_BYTES = MAX_INLINE_PACKET_BYTES
 

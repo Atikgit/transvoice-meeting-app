@@ -89,7 +89,7 @@ const serverSchema = z.object({
 
   // Audio format requested from the TransVoice API for translated speech. `wav` (default) is the
   // current behaviour. `mp3` / `opus` need the API to support output_format and to say which
-  // format it returned; clips of at most 12 KiB then travel inside the LiveKit data packet.
+  // format it returned; clips of at most 14 KiB (whole packet) then travel inside the LiveKit data packet.
   TRANSVOICE_OUTPUT_FORMAT: z.enum(['wav', 'mp3', 'opus']).default('wav'),
 
   // Rate limiting (Phase 2+)
