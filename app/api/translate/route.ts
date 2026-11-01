@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { DRAIN_RETRY_MS, isDraining } from '@/lib/draining'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { chunkStore } from '@/lib/translation/chunk-service'
 import { translateUtterance } from '@/lib/translation/process'
 import { parseTranslateUpload } from '@/lib/translation/request'
 import { getSessionUser } from '@/lib/supabase/server'
@@ -31,5 +32,11 @@ export async function POST(request: NextRequest) {
   if ('error' in upload)
     return NextResponse.json({ error: upload.error }, { status: upload.status })
 
+  // The whole-utterance fallback of a chunked upload: if the chunks already got through and were
+  // processed, do not translate it twice; if they are still partial, they are no longer needed.
+  const store = chunkStore()
+  if (store.wasFinished(user.id, upload.utteranceId))
+    return NextResponse.json({ utteranceId: upload.utteranceId, duplicate: true, languages: [] })
+  store.discard(user.id, upload.utteranceId)
   return translateUtterance({ user, upload, startedAt })
 }
