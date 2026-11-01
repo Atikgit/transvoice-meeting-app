@@ -54,32 +54,76 @@ describe('stale_open_sessions', () => {
 })
 
 describe('sweep_orphans', () => {
-  it('closes open segments of ended sessions, never of open ones', async () => {
-    await db.query(
-      `insert into public.participant_segments (session_id, user_id, payer_id, connected_at)
-       values ($1, $2, $3, now() - interval '10 minutes')`,
-      [session, guest, host],
+  const open = async () =>
+    (
+      await db.query<{ n: number }>(
+        `select count(*)::int n from public.participant_segments where disconnected_at is null`,
+      )
+    ).rows[0]!.n
+  /** An open segment joined `joined` ago whose last heartbeat was `beat` ago. */
+  const segment = (user: string, joined: string, beat: string) =>
+    db.query(
+      `insert into public.participant_segments
+         (session_id, user_id, payer_id, connected_at, last_heartbeat_at)
+       values ($1, $2, $3, now() - $4::interval, now() - $5::interval)`,
+      [session, user, host, joined, beat],
     )
-    const open = async () =>
+  const closedAgo = async (user: string) =>
+    Math.round(
       (
-        await db.query<{ n: number }>(
-          `select count(*)::int n from public.participant_segments where disconnected_at is null`,
+        await db.query<{ s: number }>(
+          `select extract(epoch from now() - disconnected_at) s
+           from public.participant_segments where session_id = $1 and user_id = $2`,
+          [session, user],
         )
-      ).rows[0]!.n
-    expect((await db.query('select * from public.sweep_orphans()')).rows[0]).toMatchObject({
-      segments_closed: 0,
-    })
-    expect(await open()).toBe(1)
+      ).rows[0]!.s,
+    )
 
+  it('ending a session closes its open segments at the last heartbeat, not at now', async () => {
+    await segment(guest, '10 minutes', '8 minutes')
+    expect(await open()).toBe(1)
     await db.query(`update public.call_sessions set status = 'ended', ended_at = now()`)
+    expect(await open()).toBe(0)
+    expect(await closedAgo(guest)).toBe(8 * 60) // heartbeat was 8 minutes ago
+  })
+
+  it.each(['declined', 'missed'])(
+    'a session that becomes %s never keeps open segments',
+    async (status) => {
+      await segment(guest, '2 minutes', '1 minute')
+      await db.query(`update public.call_sessions set status = $1, ended_at = now()`, [status])
+      expect(await open()).toBe(0)
+    },
+  )
+
+  it('closes orphans of already-ended sessions (rows older than the trigger) at the heartbeat', async () => {
+    await db.exec('alter table public.call_sessions disable trigger call_sessions_close_segments')
+    await segment(guest, '10 minutes', '4 minutes')
+    await db.query(`update public.call_sessions set status = 'ended', ended_at = now()`)
+    expect(await open()).toBe(1)
     expect((await db.query('select * from public.sweep_orphans()')).rows[0]).toMatchObject({
       segments_closed: 1,
     })
     expect(await open()).toBe(0)
+    expect(await closedAgo(guest)).toBe(4 * 60)
     // Idempotent
     expect((await db.query('select * from public.sweep_orphans()')).rows[0]).toMatchObject({
       segments_closed: 0,
     })
+  })
+
+  it('in a live session: a segment silent for 5 minutes is closed at its last heartbeat, one silent for 1 minute is kept', async () => {
+    await db.query(
+      `update public.call_sessions set status = 'live', started_at = now() - interval '20 minutes'`,
+    )
+    await segment(guest, '20 minutes', '5 minutes')
+    await segment(host, '20 minutes', '1 minute')
+    expect((await db.query('select * from public.sweep_orphans()')).rows[0]).toMatchObject({
+      segments_stale: 1,
+      segments_closed: 0,
+    })
+    expect(await closedAgo(guest)).toBe(5 * 60)
+    expect(await open()).toBe(1) // the host's
   })
 
   it('marks unanswered ringing calls as missed', async () => {

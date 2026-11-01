@@ -947,6 +947,7 @@ export type Database = {
         Returns: {
           ringing_expired: number
           segments_closed: number
+          segments_stale: number
         }[]
       }
       translation_context: {

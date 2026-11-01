@@ -118,6 +118,8 @@ const serverSchema = z.object({
   // Sweeper (lib/sweeper.ts): how often stale sessions, open segments and ringing calls are
   // cleaned up. 0 disables it.
   SWEEP_INTERVAL_SEC: z.coerce.number().int().min(0).default(60),
+  // A session open longer than this is ended by the sweeper (a forgotten tab must not bill all night).
+  MAX_SESSION_HOURS: z.coerce.number().positive().default(4),
   // The free trial amount lives in the database (private.app_settings), not here.
 
   // Signup country (analytics). Without the salt no IP hash is stored; without the GeoLite2
