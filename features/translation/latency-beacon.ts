@@ -12,6 +12,12 @@ export interface LatencyReport {
   roundTripMs?: number
   bytes?: number
   format?: 'wav' | 'opus'
+  /** speak: the network leg (PerformanceResourceTiming) and main-thread long tasks. */
+  stalledMs?: number
+  waitMs?: number
+  downloadMs?: number
+  longTasks?: number
+  longTaskMs?: number
   captionMs?: number
   audioMs?: number
   fetchMs?: number

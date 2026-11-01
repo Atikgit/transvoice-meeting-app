@@ -51,6 +51,11 @@ interface LatencyLine {
   vadMs?: number
   bytes?: number
   format?: string
+  stalledMs?: number
+  waitMs?: number
+  downloadMs?: number
+  longTasks?: number
+  longTaskMs?: number
   roundTripMs?: number
   captionMs?: number
   audioMs?: number
@@ -172,6 +177,13 @@ export function buildReport(lines: Iterable<string>): Report {
     if (l.kind === 'speak') {
       sample('speaker: encode (wav/opus)', l.encodeMs)
       sample('speaker: VAD end-of-speech wait', l.vadMs)
+      // Network leg: queue/connect in the browser vs request → first byte vs download, and main-thread
+      // long tasks. A big "stalled" or many long tasks = the browser; a big "wait" = network/server.
+      sample('speaker: browser stalled before request (queue, DNS, TLS)', l.stalledMs)
+      sample('speaker: request sent → first byte (upload + server + network)', l.waitMs)
+      sample('speaker: response download', l.downloadMs)
+      sample('speaker: long tasks during the request (count)', l.longTasks)
+      sample('speaker: long tasks during the request (ms)', l.longTaskMs)
       if (l.format) {
         sample(`speaker: round trip [${l.format}]`, l.roundTripMs)
         sample(`speaker: upload size bytes [${l.format}]`, l.bytes)

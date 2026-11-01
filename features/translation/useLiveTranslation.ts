@@ -8,6 +8,7 @@ import { reportLatency } from './latency-beacon'
 import { encodeWav } from '@/lib/translation/wav'
 import { encodeOpus } from './opus-upload'
 import { serverNow } from './clock'
+import { measureLeg, observeLongTasks } from './net-timing'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
 import { rememberUtterance, setTranslationDebug } from './debug-store'
 import { useLocalAudioWatch } from './useLocalAudioWatch'
@@ -117,6 +118,7 @@ export function useLiveTranslation({
   const [pending, setPending] = useState(0)
   const [blocked, setBlocked] = useState<TranslationNotice>(null)
   const [paused, setPaused] = useState(false)
+  useEffect(() => observeLongTasks(), [])
   const chains = useRef(new Map<string, Promise<void>>())
   const transcriptRef = useRef(onTranscript)
   useEffect(() => {
@@ -268,6 +270,7 @@ export function useLiveTranslation({
             roundTripMs: Math.round(performance.now() - sentAt),
             bytes: sent?.bytes ?? 44 + utterance.samples.length * 2,
             format: sent?.format,
+            ...measureLeg(utterance.endedAt),
           })
           setTranslationDebug({
             lastTranslate: {

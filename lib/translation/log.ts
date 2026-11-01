@@ -77,6 +77,12 @@ export interface LatencyLog {
   bytes?: number
   /** speak: wav | opus. */
   format?: string
+  /** speak: browser queue/connect, request → first byte, download; main-thread long tasks meanwhile. */
+  stalledMs?: number
+  waitMs?: number
+  downloadMs?: number
+  longTasks?: number
+  longTaskMs?: number
   /** listen: speech end → caption shown / first sound of the translated clip. */
   captionMs?: number
   audioMs?: number
