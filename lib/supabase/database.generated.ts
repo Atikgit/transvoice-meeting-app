@@ -809,6 +809,10 @@ export type Database = {
         Args: { p_title?: string; p_user: string }
         Returns: string
       }
+      apply_minute_tick: {
+        Args: { p_until?: string }
+        Returns: Json
+      }
       record_heartbeat: {
         Args: { p_session: string; p_user: string }
         Returns: string
