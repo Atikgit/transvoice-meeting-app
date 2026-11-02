@@ -59,10 +59,18 @@ describe('fix-dubbing settings', () => {
     expect(() => parseServerEnv({ ...TEST_ENV, UPLOAD_FORMAT: 'mp3' })).toThrow()
   })
 
-  it('VAD_MAX_CHUNK_MS defaults to 5000 and must stay within 2000-12000', () => {
-    expect(parseServerEnv({ ...TEST_ENV }).VAD_MAX_CHUNK_MS).toBe(5000)
+  it('VAD_MAX_CHUNK_MS defaults to 6000 and must stay within 2000-12000', () => {
+    expect(parseServerEnv({ ...TEST_ENV }).VAD_MAX_CHUNK_MS).toBe(6000)
     expect(parseServerEnv({ ...TEST_ENV, VAD_MAX_CHUNK_MS: '8000' }).VAD_MAX_CHUNK_MS).toBe(8000)
     expect(() => parseServerEnv({ ...TEST_ENV, VAD_MAX_CHUNK_MS: '1000' })).toThrow()
     expect(() => parseServerEnv({ ...TEST_ENV, VAD_MAX_CHUNK_MS: '20000' })).toThrow()
+  })
+})
+
+describe('STALE_CLIP_MS', () => {
+  it('defaults to 15000 and must stay within 2000-60000', () => {
+    expect(parseServerEnv({ ...TEST_ENV }).STALE_CLIP_MS).toBe(15000)
+    expect(parseServerEnv({ ...TEST_ENV, STALE_CLIP_MS: '8000' }).STALE_CLIP_MS).toBe(8000)
+    expect(() => parseServerEnv({ ...TEST_ENV, STALE_CLIP_MS: '500' })).toThrow()
   })
 })

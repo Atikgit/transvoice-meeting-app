@@ -7,12 +7,18 @@ import { DRAIN_RETRY_MS } from '@/lib/draining'
 import { reportLatency } from './latency-beacon'
 import { encodeWav } from '@/lib/translation/wav'
 import { encodeOpus } from './opus-upload'
+import { serverNow } from './clock'
+import { describeRefusal, type RefusalReason } from '@/lib/translation/refusal'
+import { measureLeg, observeLongTasks } from './net-timing'
+import { ChunkUpload } from './chunk-upload'
+import type { StreamEvent } from './chunk-stream'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
 import { rememberUtterance, setTranslationDebug } from './debug-store'
 import { useLocalAudioWatch } from './useLocalAudioWatch'
 import { shouldListen } from './vad-gate'
 
 export type UploadFormat = 'wav' | 'opus'
+export type UploadMode = 'whole' | 'chunked'
 
 export type TranslationNotice = {
   tone: 'info' | 'error'
@@ -61,7 +67,7 @@ export async function uploadUtterance(
     form.set('seq', String(chunk.seq))
   }
   // Wall-clock time the speaker stopped talking (listeners derive latency from it).
-  form.set('clientTs', String(Math.round(Date.now() - (performance.now() - utterance.endedAt))))
+  form.set('clientTs', String(Math.round(serverNow() - (performance.now() - utterance.endedAt))))
   const send = () => fetch('/api/translate', { method: 'POST', body: form })
   const res = await send()
   // The server is restarting (SIGTERM drain): one retry, which lands on the new container.
@@ -93,6 +99,7 @@ export function useLiveTranslation({
   enabled = true,
   endSilenceMs,
   uploadFormat = 'wav',
+  uploadMode = 'whole',
   maxChunkMs,
   onTranscript,
 }: {
@@ -105,6 +112,8 @@ export function useLiveTranslation({
   endSilenceMs?: number
   /** UPLOAD_FORMAT: what each utterance is uploaded as. */
   uploadFormat?: UploadFormat
+  /** UPLOAD_MODE: whole = one upload at speech end; chunked = ~500 ms chunks while speaking. */
+  uploadMode?: UploadMode
   /** VAD_MAX_CHUNK_MS. */
   maxChunkMs?: number
   /** The speaker's own transcript of an utterance. */
@@ -116,6 +125,8 @@ export function useLiveTranslation({
   const [pending, setPending] = useState(0)
   const [blocked, setBlocked] = useState<TranslationNotice>(null)
   const [paused, setPaused] = useState(false)
+  useEffect(() => observeLongTasks(), [])
+  const chunkUploads = useRef(new Map<string, ChunkUpload>())
   const chains = useRef(new Map<string, Promise<void>>())
   const transcriptRef = useRef(onTranscript)
   useEffect(() => {
@@ -154,9 +165,14 @@ export function useLiveTranslation({
         original?: string | null
         unavailable?: boolean
         serviceKeyRejected?: boolean
+        serviceNoBalance?: boolean
         languages?: { lang: string }[]
         reason?: 'same_language' | 'no_listeners'
+        refusal?: RefusalReason
       }
+      setTranslationDebug({
+        lastRefusal: body.refusal ? { reason: body.refusal, at: Date.now() } : undefined,
+      })
       setTranslationDebug({ listenerLanguages: (body.languages ?? []).map((l) => l.lang) })
       if (body.original) transcriptRef.current?.(utteranceId, body.original)
       if (body.reason === 'same_language') {
@@ -166,18 +182,27 @@ export function useLiveTranslation({
         })
         return
       }
+      if (body.refusal) {
+        setNotice({ tone: 'error', text: describeRefusal(body.refusal) })
+        return
+      }
       setNotice(
-        body.serviceKeyRejected
+        body.serviceNoBalance
           ? {
               tone: 'error',
-              text: 'Translation is unavailable: the translation service rejected our access key. Please tell support.',
+              text: 'Translation is unavailable: the translation service has no credit left. Please tell support.',
             }
-          : body.unavailable
+          : body.serviceKeyRejected
             ? {
                 tone: 'error',
-                text: 'Translation is temporarily unavailable. It resumes by itself.',
+                text: 'Translation is unavailable: the translation service rejected our access key. Please tell support.',
               }
-            : null,
+            : body.unavailable
+              ? {
+                  tone: 'error',
+                  text: 'Translation is temporarily unavailable. It resumes by itself.',
+                }
+              : null,
       )
       return
     }
@@ -185,13 +210,17 @@ export function useLiveTranslation({
       code?: string
       error?: string
       payerIsSpeaker?: boolean
+      reason?: RefusalReason
     }
+    if (body.reason) setTranslationDebug({ lastRefusal: { reason: body.reason, at: Date.now() } })
     if (body.code === 'BETA') {
-      setBlocked({ tone: 'info', text: body.error ?? 'Live translation is in private beta.' })
+      setBlocked({ tone: 'info', text: describeRefusal('allowlist') })
+    } else if (body.code === 'DISABLED') {
+      setBlocked({ tone: 'info', text: describeRefusal('switched_off') })
     } else if (body.code === 'PAYER_NO_MINUTES') {
       setNotice({
         tone: 'error',
-        text: body.error ?? "The host's minutes have run out. Translation is paused.",
+        text: describeRefusal('payer_minutes', { payerIsSpeaker: body.payerIsSpeaker === true }),
         code: 'PAYER_NO_MINUTES',
         payerIsSpeaker: body.payerIsSpeaker === true,
       })
@@ -212,8 +241,32 @@ export function useLiveTranslation({
     listening,
     endSilenceMs,
     maxChunkMs,
+    streaming: uploadMode === 'chunked',
+    onStream: (event: StreamEvent) => {
+      if (event.type === 'abort') {
+        chunkUploads.current.get(event.utteranceId)?.abort()
+        chunkUploads.current.delete(event.utteranceId)
+        return
+      }
+      if (event.type !== 'chunk') return
+      let upload = chunkUploads.current.get(event.utteranceId)
+      if (!upload) {
+        upload = new ChunkUpload(event.utteranceId, { sessionId })
+        chunkUploads.current.set(event.utteranceId, upload)
+      }
+      upload.push({
+        seq: event.seq,
+        pcm: event.pcm,
+        last: event.last,
+        group: event.group,
+        pieceSeq: event.pieceSeq,
+        // the speaker's clock (server time) at the moment the speech really ended
+        clientTs: Math.round(serverNow() - event.endedAgoMs),
+      })
+    },
     onUtterance: (utterance) => {
-      const utteranceId = crypto.randomUUID()
+      const chunked = uploadMode === 'chunked' && utterance.utteranceId !== undefined
+      const utteranceId = utterance.utteranceId ?? crypto.randomUUID()
       const sentAt = performance.now()
       setPending((n) => n + 1)
       rememberUtterance(utterance.samples)
@@ -226,6 +279,25 @@ export function useLiveTranslation({
       })
       let encodeMs = 0
       let sent: { format: UploadFormat; bytes: number } | undefined
+      // Chunked: the audio is already at the server; wait for the answer to the last chunk. If any
+      // chunk failed, send the whole utterance the old way (the server ignores it if it had already
+      // processed the chunks).
+      const uploadChunked = async (): Promise<Response> => {
+        const chunks = chunkUploads.current.get(utteranceId)
+        chunkUploads.current.delete(utteranceId)
+        const outcome = chunks
+          ? await chunks.finish()
+          : ({ ok: false, reason: 'no chunks' } as const)
+        sent = { format: 'wav', bytes: 44 + utterance.samples.length * 2 }
+        if (outcome.ok) return outcome.response ?? new Response('{}', { status: 200 })
+        return uploadUtterance(
+          { sessionId, utteranceId, utterance, format: 'wav', chunk: utterance.chunk },
+          (ms, info) => {
+            encodeMs = ms
+            sent = info
+          },
+        )
+      }
       const upload = () =>
         uploadUtterance(
           { sessionId, utteranceId, utterance, format: uploadFormat, chunk: utterance.chunk },
@@ -236,10 +308,12 @@ export function useLiveTranslation({
         )
       // Pieces of one long speech go out one after the other: the server has delivered piece n
       // before piece n+1 is sent, so the listener's per-speaker queue plays them in order.
-      const group = utterance.chunk?.group
-      const request = group
-        ? (chains.current.get(group) ?? Promise.resolve()).then(upload)
-        : upload()
+      const group = chunked ? undefined : utterance.chunk?.group
+      const request = chunked
+        ? uploadChunked()
+        : group
+          ? (chains.current.get(group) ?? Promise.resolve()).then(upload)
+          : upload()
       if (group) {
         const settled = request.then(
           () => {},
@@ -261,6 +335,9 @@ export function useLiveTranslation({
             roundTripMs: Math.round(performance.now() - sentAt),
             bytes: sent?.bytes ?? 44 + utterance.samples.length * 2,
             format: sent?.format,
+            mode: chunked ? 'chunked' : 'whole',
+            endSilenceMs,
+            ...measureLeg(utterance.endedAt, chunked ? '/api/translate/chunk' : '/api/translate'),
           })
           setTranslationDebug({
             lastTranslate: {

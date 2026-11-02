@@ -18,6 +18,8 @@ export interface TranslateLog {
   intakeMs: number
   /** translation_context + LiveKit participants. */
   contextMs: number
+  /** The speech-to-text ran while the context loaded (true) or was redone for another language. */
+  sttOverlap?: boolean
   languages: {
     lang: string
     /** "bn-BD>en-US": what was translated into what (language codes only). */
@@ -29,6 +31,17 @@ export interface TranslateLog {
     detail?: string
     /** TransVoice API round trip (incl. retry). */
     apiMs: number
+    /** single (POST /) or split (stt once → translate → tts per sentence). */
+    pipeline?: 'single' | 'split'
+    /** split: why this language ran the single path instead (stt | translate | tts). */
+    fallback?: string
+    sttMs?: number
+    translateFirstTokenMs?: number
+    firstSentenceMs?: number
+    ttsFirstByteMs?: number
+    /** Request start → first translated audio handed to the listener (both pipelines). */
+    toFirstAudioMs?: number
+    sentences?: number
     /** The API's own stage timings, when it reports them. */
     asrMs?: number
     mtMs?: number
@@ -39,6 +52,8 @@ export interface TranslateLog {
     audioMs?: number
   }[]
   totalMs: number
+  /** Split pipeline runs that had to fall back to the single call, since the server started. */
+  splitFailures?: number
 }
 
 export function logTranslate(entry: TranslateLog): void {
@@ -64,11 +79,23 @@ export interface LatencyLog {
   bytes?: number
   /** speak: wav | opus. */
   format?: string
+  /** speak: whole (one upload at speech end) | chunked (while speaking). */
+  mode?: string
+  /** speak: browser queue/connect, request → first byte, download; main-thread long tasks meanwhile. */
+  stalledMs?: number
+  waitMs?: number
+  downloadMs?: number
+  longTasks?: number
+  longTaskMs?: number
   /** listen: speech end → caption shown / first sound of the translated clip. */
   captionMs?: number
   audioMs?: number
   /** listen: how the clip arrived. */
   via?: 'url' | 'inline'
+  delivery?: 'livekit' | 'sse'
+  endSilenceMs?: number
+  /** Client country from Cloudflare's CF-IPCountry header (ISO 3166 alpha-2). No IP is kept. */
+  country?: string
   /** listen: fetching + decoding the clip. */
   fetchMs?: number
 }
@@ -92,6 +119,8 @@ export interface DecisionLog {
   listenerLangs?: string[]
   /** The locales the utterance is translated into. */
   targets?: string[]
+  /** Why nothing was translated: allowlist | switched_off | payer_minutes | api_credit | ... */
+  reason?: string
 }
 
 export function logDecision(entry: DecisionLog): void {
@@ -127,5 +156,27 @@ export function logClip(entry: {
     rms: stats ? Math.round(stats.rms * 1000) / 1000 : undefined,
   })
   if (issue) console.warn(line)
+  else console.info(line)
+}
+
+/**
+ * One line per step of a translated clip's way to the listener (server side): `created` (bytes,
+ * inline|url) and `sent` (LiveKit result, ms). The browser logs the other steps (client_trace in
+ * the debug overlay, drops through /api/diag). Ids and sizes only: no text, no audio.
+ */
+export function logClipTrace(entry: {
+  stage: 'created' | 'sent'
+  utteranceId: string
+  seq: number
+  lang: string
+  via?: 'inline' | 'url'
+  bytes?: number
+  packetBytes?: number
+  ok?: boolean
+  ms?: number
+  error?: string
+}): void {
+  const line = JSON.stringify({ event: 'clip_trace', ...entry })
+  if (entry.ok === false) console.warn(line)
   else console.info(line)
 }

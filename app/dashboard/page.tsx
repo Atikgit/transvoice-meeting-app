@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import type { ConnectionItem } from '@/components/calls/connections-card'
 import { DashboardHome } from '@/components/dashboard/dashboard-home'
-import { currentBalance } from '@/lib/auth/account'
+import { currentBalance, trialNotice } from '@/lib/auth/account'
 import { availableMinutes, canSpendMinutes } from '@/lib/billing/balance'
 import { createClient } from '@/lib/supabase/server'
 
@@ -50,6 +50,9 @@ export default async function DashboardPage() {
     })
   }
 
+  // Only an account with nothing to spend needs the explanation.
+  const noTrial =
+    (account ? availableMinutes(account) : 0) === 0 ? await trialNotice(user.id) : null
   const name = profile?.full_name || user.email?.split('@')[0] || 'there'
 
   return (
@@ -59,6 +62,7 @@ export default async function DashboardPage() {
       balance={account ? availableMinutes(account) : 0}
       canSpend={canSpendMinutes(account)}
       connections={connections}
+      trialNotice={noTrial}
     />
   )
 }

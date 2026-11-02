@@ -2,7 +2,12 @@ import 'server-only'
 import { serverEnv } from '@/lib/env'
 import { languageOptions } from '@/lib/transvoice/languages'
 import { transvoiceFetch } from '@/lib/transvoice/http'
-import { findVoice, voiceMapping, type VoiceGender } from '@/lib/transvoice/voices'
+import {
+  findVoice,
+  UNAVAILABLE_VOICES,
+  voiceMapping,
+  type VoiceGender,
+} from '@/lib/transvoice/voices'
 
 const GENDERS: VoiceGender[] = ['male', 'female']
 
@@ -17,6 +22,8 @@ export function staticVoiceReport(): { languages: number; problems: string[] } {
     }
     for (const gender of GENDERS) {
       const voice = findVoice(code, gender)
+      // Known-bad voices are replaced (or absent) on purpose; the live check reports them.
+      if (!voice && UNAVAILABLE_VOICES.has(entry[gender])) continue
       if (!voice || !voice.startsWith(`${code}-`) || !voice.endsWith('Neural'))
         problems.push(`${code}/${gender}: ${voice ?? 'missing'} does not match the locale`)
     }

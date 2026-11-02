@@ -258,7 +258,7 @@ export function DebugOverlay({
     [
       'service',
       status
-        ? `enabled ${status.translationEnabled ? 'yes' : 'NO'}, API key ${status.api === 'ok' ? 'accepted' : status.api === 'rejected' ? 'REJECTED (401)' : 'unreachable'}`
+        ? `enabled ${status.translationEnabled ? 'yes' : 'NO'}, API key ${status.api === 'ok' ? 'accepted' : status.api === 'rejected' ? 'REJECTED (401)' : status.api === 'no_balance' ? 'accepted but NO CREDIT (402)' : 'unreachable'}`
         : '—',
     ],
     ['me (server)', `speak ${me.spokenLang}, hear ${me.listenLang}`],
@@ -293,6 +293,10 @@ export function DebugOverlay({
         ? `${d.lastTranslate.status} in ${d.lastTranslate.ms} ms${d.lastTranslate.note ? ` (${d.lastTranslate.note})` : ''}, ${ago(d.lastTranslate.at, now)}`
         : '—',
     ],
+    [
+      'last refusal',
+      d.lastRefusal ? `${d.lastRefusal.reason}, ${ago(d.lastRefusal.at, now)}` : '—',
+    ],
     ['last caption', d.lastCaption ? `${d.lastCaption.lang}, ${ago(d.lastCaption.at, now)}` : '—'],
     [
       'last audio',
@@ -307,6 +311,17 @@ export function DebugOverlay({
         : '—',
     ],
     ['playback queue', String(d.queue)],
+    [
+      'clip trace',
+      d.clipTrace.length
+        ? d.clipTrace
+            .map(
+              (e) =>
+                `${new Date(e.at).toISOString().slice(14, 23)} ${e.stage} ${e.utteranceId.slice(0, 4)}#${e.seq ?? '-'}${e.lang ? ` ${e.lang}` : ''}${e.detail ? ` — ${e.detail}` : ''}`,
+            )
+            .join('\n')
+        : 'no clips yet',
+    ],
     ['AudioContext', audio],
   ]
   return (
@@ -319,7 +334,7 @@ export function DebugOverlay({
         {rows.map(([name, value]) => (
           <div key={name} className="contents">
             <dt className="text-cyan-300">{name}</dt>
-            <dd className="break-words">{value}</dd>
+            <dd className="break-words whitespace-pre-line">{value}</dd>
           </div>
         ))}
       </dl>

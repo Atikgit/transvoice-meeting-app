@@ -172,6 +172,15 @@ const DEFAULT_VOICE: Record<VoiceGender, string> = {
   female: 'en-US-AvaNeural',
 }
 
+/**
+ * Voices in the table that the API's /v1/tts answered with HTTP 502 when every voice was checked
+ * (2026-10-27, 301 of 303 worked). They are not used; see docs/fast-pipeline.md.
+ */
+export const UNAVAILABLE_VOICES: ReadonlySet<string> = new Set([
+  'zh-CN-guangxi-YunqiNeural',
+  'zh-CN-liaoning-YunbiaoNeural',
+])
+
 export function otherGender(gender: VoiceGender): VoiceGender {
   return gender === 'male' ? 'female' : 'male'
 }
@@ -182,11 +191,16 @@ export function otherGender(gender: VoiceGender): VoiceGender {
  * voice: the API answers a wrong-language voice with an empty clip.
  */
 export function findVoice(langCode: string, gender: VoiceGender = 'female'): string | null {
-  const exact = voiceMapping[langCode]
-  if (exact) return exact[gender]
-  const primary = langCode.split('-')[0]
-  const sibling = Object.keys(voiceMapping).find((code) => code.split('-')[0] === primary)
-  return sibling ? voiceMapping[sibling]![gender] : null
+  const entry =
+    voiceMapping[langCode] ??
+    voiceMapping[
+      Object.keys(voiceMapping).find((code) => code.split('-')[0] === langCode.split('-')[0]) ?? ''
+    ]
+  if (!entry) return null
+  // A voice the API's TTS refuses is skipped: the other gender's voice stands in, else none.
+  if (!UNAVAILABLE_VOICES.has(entry[gender])) return entry[gender]
+  const other = entry[otherGender(gender)]
+  return UNAVAILABLE_VOICES.has(other) ? null : other
 }
 
 /** Azure neural voice for a locale; English voices only for English locales. */

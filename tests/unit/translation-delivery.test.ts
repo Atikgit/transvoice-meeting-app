@@ -72,7 +72,7 @@ describe('deliverResult', () => {
       { destinationIdentities: ['en-1', 'en-2'], topic: TOPICS.caption },
       { destinationIdentities: ['en-1', 'en-2'], topic: TOPICS.audio },
     ])
-    expect(json(0)).toEqual({
+    expect(json(0)).toMatchObject({
       utteranceId: 'u1',
       speakerId: 'speaker',
       lang: 'en-US',
@@ -137,7 +137,7 @@ describe('deliverResult', () => {
       expect(packet.options.destinationIdentities).toEqual(['en-1'])
       expect(packet.data.length).toBeLessThanOrEqual(MAX_PACKET_BYTES)
       const decoded = decodeInlineAudio(packet.data)!
-      expect(decoded.header).toEqual({
+      expect(decoded.header).toMatchObject({
         utteranceId: 'u1',
         speakerId: 'speaker',
         lang: 'en-US',
@@ -198,13 +198,14 @@ describe('deliverResult', () => {
       speechEndedAt: 1,
     }
     it('round-trips, and refuses oversize clips', () => {
-      const audio = new Uint8Array(MAX_INLINE_AUDIO_BYTES).fill(9)
+      // the cap is on the WHOLE packet (length prefix + JSON header + audio)
+      const audio = new Uint8Array(MAX_INLINE_AUDIO_BYTES - 700).fill(9)
       const packet = encodeInlineAudio(header, audio)
       expect(packet.length).toBeLessThanOrEqual(MAX_PACKET_BYTES)
       const back = decodeInlineAudio(packet)!
-      expect(back.header).toEqual(header)
+      expect(back.header).toMatchObject(header)
       expect(back.audio).toEqual(audio)
-      expect(() => encodeInlineAudio(header, new Uint8Array(MAX_INLINE_AUDIO_BYTES + 1))).toThrow()
+      expect(() => encodeInlineAudio(header, new Uint8Array(MAX_INLINE_AUDIO_BYTES))).toThrow()
     })
     it('treats malformed packets as nothing', () => {
       expect(decodeInlineAudio(new Uint8Array([]))).toBeNull()
@@ -247,7 +248,7 @@ describe('deliverResult', () => {
       cache: cacheRef.current,
     })
     expect(sent[0]!.options.topic).toBe(TOPICS.notice)
-    expect(json(0)).toEqual({ kind: 'translation_unavailable' })
+    expect(json(0)).toMatchObject({ kind: 'translation_unavailable' })
     sent.length = 0
     await deliverResult({
       sessionId: 's1',

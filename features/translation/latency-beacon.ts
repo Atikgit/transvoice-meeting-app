@@ -12,10 +12,22 @@ export interface LatencyReport {
   roundTripMs?: number
   bytes?: number
   format?: 'wav' | 'opus'
+  /** speak: whole upload at speech end, or chunks while speaking. */
+  mode?: 'whole' | 'chunked'
+  /** speak: VAD_END_SILENCE_MS this tab ran with (to compare 400 against 300). */
+  endSilenceMs?: number
+  /** speak: the network leg (PerformanceResourceTiming) and main-thread long tasks. */
+  stalledMs?: number
+  waitMs?: number
+  downloadMs?: number
+  longTasks?: number
+  longTaskMs?: number
   captionMs?: number
   audioMs?: number
   fetchMs?: number
   via?: 'url' | 'inline'
+  /** listen: the channel the messages arrived over (DELIVERY). */
+  delivery?: 'livekit' | 'sse'
 }
 
 export function reportLatency(report: LatencyReport): void {

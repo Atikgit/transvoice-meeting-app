@@ -362,3 +362,127 @@ describe('every path puts the original voice back (and never lowers it without a
     expect(ducks).toEqual(['0.15:start', '1:ended'])
   })
 })
+
+describe('split pipeline clips (seq / last)', () => {
+  const part = (h: ReturnType<typeof harness>, id: string, seq: number, last = false): Clip => ({
+    ...h.clip(id),
+    seq,
+    last,
+  })
+
+  it('plays clips of one utterance in seq order when they arrive out of order', async () => {
+    const h = harness()
+    // seq 2 and 1 arrive before seq 0: nothing starts until 0 is there (it is waited for)
+    h.queues.enqueue(part(h, 'u', 2, true))
+    h.queues.enqueue(part(h, 'u', 1))
+    h.queues.enqueue(part(h, 'u', 0))
+    await h.tick()
+    const order: string[] = []
+    for (let i = 0; i < 3; i++) {
+      await h.tick()
+      order.push(h.events.filter((e) => e.startsWith('play:')).length.toString())
+      await h.finish()
+    }
+    // each clip is played exactly once
+    expect(h.events.filter((e) => e.startsWith('play:'))).toHaveLength(3)
+  })
+
+  it('a late seq 0 is played before seq 1 (within the reorder wait)', async () => {
+    const h = harness()
+    const played: number[] = []
+    const queues = new PlaybackQueues<Clip>({
+      now: () => performance.now(),
+      prepare: async (c) => c,
+      play: (c) => {
+        played.push(c.seq!)
+        return Promise.resolve()
+      },
+      setOriginalVolume: () => {},
+      mode: () => 'off',
+      onPlayingChange: () => {},
+    })
+    queues.enqueue({ ...part(h, 'u', 1), receivedAt: performance.now() })
+    await new Promise((r) => setTimeout(r, 50)) // seq 1 is waiting for its predecessor
+    expect(played).toEqual([])
+    queues.enqueue({ ...part(h, 'u', 0), receivedAt: performance.now() })
+    queues.enqueue({ ...part(h, 'u', 2, true), receivedAt: performance.now() })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(played).toEqual([0, 1, 2])
+  })
+
+  it('does not wait forever for a clip that never comes', async () => {
+    const played: number[] = []
+    const queues = new PlaybackQueues<Clip>({
+      now: () => performance.now(),
+      prepare: async (c) => c,
+      play: (c) => (played.push(c.seq!), Promise.resolve()),
+      setOriginalVolume: () => {},
+      mode: () => 'off',
+      onPlayingChange: () => {},
+    })
+    queues.enqueue({
+      speakerId: 's',
+      utteranceId: 'u',
+      url: '',
+      seq: 1,
+      receivedAt: performance.now(),
+    })
+    await new Promise((r) => setTimeout(r, 600))
+    expect(played).toEqual([1])
+  })
+
+  it('keeps the original voice lowered from the first clip to the last clip, restoring only after the last', async () => {
+    const h = harness('duck')
+    h.queues.enqueue(part(h, 'u', 0))
+    await h.tick()
+    await h.finish() // clip 0 ends (not last): the voice stays lowered
+    expect(h.events.filter((e) => e.startsWith('vol:'))).toEqual(['vol:sp1=0.15'])
+    h.queues.enqueue(part(h, 'u', 1, true))
+    await h.tick()
+    await h.tick()
+    await h.finish() // last clip ends
+    expect(h.events.filter((e) => e.startsWith('vol:'))).toEqual([
+      'vol:sp1=0.15',
+      'vol:sp1=0.15',
+      'vol:sp1=1',
+    ])
+  })
+
+  it('lets go of the original voice a moment after a clip that was never followed', async () => {
+    const h = harness('duck')
+    h.queues.enqueue(part(h, 'u', 0)) // not marked last, and no successor comes
+    await h.tick()
+    await h.finish()
+    expect(h.events.filter((e) => e.startsWith('vol:'))).toEqual(['vol:sp1=0.15'])
+    await new Promise((r) => setTimeout(r, 900))
+    expect(h.events.filter((e) => e.startsWith('vol:')).at(-1)).toBe('vol:sp1=1')
+  })
+})
+
+describe('ducking across the clips of one utterance (first-clause TTS)', () => {
+  it('stays lowered from the first clip start to the last clip end, through gaps shorter than the hold', async () => {
+    const h = harness('duck')
+    const part = (seq: number, last: boolean): Clip => ({
+      ...h.clip(`u:${seq}`, 'sp1'),
+      utteranceId: 'u',
+      seq,
+      last,
+    })
+    h.queues.enqueue(part(0, false))
+    await h.tick()
+    await h.finish() // clip 0 ended; clip 1 (a clause later) has not arrived yet
+    expect(h.queues.duckedSpeakers()).toEqual(['sp1']) // held for the next clip
+    h.queues.enqueue(part(1, false))
+    await h.tick()
+    await h.finish()
+    h.queues.enqueue(part(2, true))
+    await h.tick()
+    await h.finish() // last clip ended: restored now, without waiting for the hold
+    expect(h.queues.duckedSpeakers()).toEqual([])
+    const vols = h.events.filter((e) => e.startsWith('vol:'))
+    // the lowered volume is re-applied at each clip start, but restored once, after the last clip
+    expect(vols.filter((v) => v === 'vol:sp1=1')).toHaveLength(1)
+    expect(vols.at(-1)).toBe('vol:sp1=1')
+    expect(vols.slice(0, -1).every((v) => v === 'vol:sp1=0.15')).toBe(true)
+  })
+})

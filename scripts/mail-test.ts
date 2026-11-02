@@ -1,20 +1,27 @@
 /**
- * Sends one test message through the same transport the app uses (Resend or SMTP), so email can be
+ * Sends one test message through the same transport the app uses (Brevo API, Resend or SMTP), so email can be
  * checked without the app:
  *
  *   pnpm mail:test you@example.com
  *
- * Reads RESEND_API_KEY / SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS / EMAIL_FROM from
+ * Reads BREVO_API_KEY / RESEND_API_KEY / SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS / EMAIL_FROM from
  * the environment, and from `.env.production` when that file exists. Prints which transport was
  * used and the provider's answer; never the address, the keys or the message.
  */
 import { pathToFileURL } from 'node:url'
-import { createMailTransport, mailerStatus, type MailConfig } from '../lib/email/transport.ts'
+import {
+  createMailTransport,
+  mailerStatus,
+  mailFailureMessage,
+  MailError,
+  type MailConfig,
+} from '../lib/email/transport.ts'
 
 export function configFromEnv(env: Record<string, string | undefined>): MailConfig {
   const present = (name: string) => (env[name] && env[name] !== '' ? env[name] : undefined)
   return {
     from: present('EMAIL_FROM') ?? 'TransVoice AI <no-reply@transvoice.ai>',
+    brevoApiKey: present('BREVO_API_KEY'),
     resendApiKey: present('RESEND_API_KEY'),
     smtp: {
       host: present('SMTP_HOST'),
@@ -56,6 +63,7 @@ export async function run(
     return 0
   } catch (error) {
     out(`FAILED: ${error instanceof Error ? error.message : String(error)}`)
+    if (error instanceof MailError) out(`Meaning: ${mailFailureMessage(error.failure)}`)
     return 1
   }
 }

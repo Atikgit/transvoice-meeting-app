@@ -3,6 +3,8 @@
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { appMailer, appMailerStatus } from '@/lib/email/mailer'
+import { maskEmail } from '@/lib/email/mask'
+import { mailFailureMessage, MailError } from '@/lib/email/transport'
 import { serverEnv } from '@/lib/env'
 import {
   buildInviteEmailHtml,
@@ -138,7 +140,7 @@ export async function acceptInvitation(formData: FormData): Promise<void> {
 }
 
 export type SendInviteEmailResult =
-  | { ok: true; to: string; via: 'resend' | 'smtp' | 'supabase' }
+  | { ok: true; to: string; via: 'brevo' | 'resend' | 'smtp' | 'supabase' }
   | {
       ok: false
       code:
@@ -154,7 +156,12 @@ export type SendInviteEmailResult =
 
 const emailSchema = z.object({
   inviteUrl: z.string().max(300),
-  email: z.email('Enter a valid email address.').max(254),
+  // No line breaks in an address: they could add headers (Bcc:) to the message.
+  email: z
+    .string()
+    .trim()
+    .regex(/^[^\s\r\n]+$/, 'Enter a valid email address.')
+    .pipe(z.email('Enter a valid email address.').max(254)),
 })
 
 /** PostgREST interval text → the label shown when the link was created. */
@@ -263,7 +270,7 @@ export async function sendInvitationEmail(input: {
         text: buildInviteEmailText(email),
       })
       console.info(JSON.stringify({ event: 'invite_email', ok: true, via: mailer.kind }))
-      return { ok: true, to, via: mailer.kind }
+      return { ok: true, to: maskEmail(to), via: mailer.kind }
     } catch (error) {
       // The provider's own sentence (e.g. "domain is not verified"); never the address or the body.
       console.error(
@@ -271,14 +278,14 @@ export async function sendInvitationEmail(input: {
           event: 'invite_email',
           ok: false,
           via: mailer.kind,
+          failure: error instanceof MailError ? error.failure : 'unknown',
           detail: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
         }),
       )
       return {
         ok: false,
         code: 'FAILED',
-        error:
-          'The email could not be sent (the mail provider refused it). Share the link instead.',
+        error: mailFailureMessage(error instanceof MailError ? error.failure : undefined),
       }
     }
   }
@@ -307,5 +314,5 @@ export async function sendInvitationEmail(input: {
     return { ok: false, code: 'FAILED', error: 'Could not send the email. Share the link instead.' }
   }
   console.info(JSON.stringify({ event: 'invite_email', ok: true, via: 'supabase' }))
-  return { ok: true, to, via: 'supabase' }
+  return { ok: true, to: maskEmail(to), via: 'supabase' }
 }

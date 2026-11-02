@@ -683,6 +683,11 @@ export type Database = {
           session_id: string | null
           synced_to_ls_at: string | null
           trial_minutes: number
+          billable_seconds: number | null
+          billing_basis: string | null
+          shortfall_minutes: number
+          subscription_debited: number | null
+          trial_debited: number | null
         }
         Insert: {
           billed_minutes: number
@@ -699,6 +704,9 @@ export type Database = {
           session_id?: string | null
           synced_to_ls_at?: string | null
           trial_minutes?: number
+          billable_seconds?: number | null
+          billing_basis?: string | null
+          shortfall_minutes?: number
         }
         Update: {
           billed_minutes?: number
@@ -715,6 +723,9 @@ export type Database = {
           session_id?: string | null
           synced_to_ls_at?: string | null
           trial_minutes?: number
+          billable_seconds?: number | null
+          billing_basis?: string | null
+          shortfall_minutes?: number
         }
         Relationships: [
           {
@@ -798,6 +809,18 @@ export type Database = {
         Args: { p_title?: string; p_user: string }
         Returns: string
       }
+      apply_minute_tick: {
+        Args: { p_until?: string }
+        Returns: Json
+      }
+      record_heartbeat: {
+        Args: { p_session: string; p_user: string }
+        Returns: string
+      }
+      configure_billing: {
+        Args: { p_basis: string; p_multiplier: boolean }
+        Returns: undefined
+      }
       credit_minutes: {
         Args: {
           p_event_id: string
@@ -828,6 +851,7 @@ export type Database = {
       }
       ensure_user_account: { Args: { p_user: string }; Returns: boolean }
       expire_ringing: { Args: never; Returns: number }
+      trial_status: { Args: { p_user: string }; Returns: string }
       has_available_minutes: { Args: { p_user: string }; Returns: boolean }
       incoming_calls: {
         Args: { p_user: string }
@@ -923,6 +947,7 @@ export type Database = {
         Returns: {
           ringing_expired: number
           segments_closed: number
+          segments_stale: number
         }[]
       }
       translation_context: {

@@ -646,3 +646,68 @@ describe('parseRoomState', () => {
     expect(parseRoomState(undefined, READY)).toBe(READY)
   })
 })
+
+describe('MeetingRoom: minute meter and heartbeat', () => {
+  const answerBalance = (body: unknown) =>
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/livekit/token')) {
+        return new Response(JSON.stringify({ token: 't', url: 'wss://lk.test' }), { status: 200 })
+      }
+      if (url.startsWith('/api/billing/balance')) return new Response(JSON.stringify(body))
+      if (url === '/api/heartbeat') return new Response('{}', { status: 200 })
+      return new Response('{}', { status: 404 })
+    })
+  const balanceView = (trial: number) => ({
+    payer: true,
+    trialMinutes: trial,
+    subscriptionMinutes: 0,
+    plan: 'trial',
+    billingType: 'free',
+    low: trial <= 5,
+  })
+
+  it('the payer sees a live meter in the header ("12 min left")', async () => {
+    answerBalance(balanceView(12))
+    room('host', LIVE)
+    expect(await screen.findByText('12 min left')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(`/api/billing/balance?sessionId=${SESSION}`, {
+      cache: 'no-store',
+    })
+  })
+
+  it('a sponsored guest never sees a number: the answer is { payer: false }', async () => {
+    answerBalance({ payer: false })
+    room('guest', LIVE)
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/billing/balance?sessionId=${SESSION}`,
+        expect.anything(),
+      ),
+    )
+    expect(document.body.textContent).not.toMatch(/min left|min used|minutes left/i)
+  })
+
+  it('the payer at 5 minutes gets the toast; at 0 the standing message with Get minutes', async () => {
+    answerBalance(balanceView(5))
+    room('host', LIVE)
+    expect(await screen.findByText('5 minutes left.')).toBeInTheDocument()
+    cleanup()
+    answerBalance(balanceView(0))
+    room('host', LIVE)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "You're out of minutes. Translation has stopped; the call and chat continue.",
+    )
+    expect(screen.getByRole('button', { name: 'Get minutes' })).toBeInTheDocument()
+  })
+
+  it('sends the billing heartbeat once connected', async () => {
+    answerBalance(balanceView(12))
+    room('host', LIVE)
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/heartbeat',
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ sessionId: SESSION }) }),
+      ),
+    )
+  })
+})

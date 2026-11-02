@@ -12,6 +12,9 @@ export type DiagType =
   | 'duck_restored'
   | 'realtime_status'
   | 'clip_quiet'
+  | 'clip_drop'
+  | 'clip_fetch_failed'
+  | 'version_mismatch'
 
 export function reportDiag(event: { type: DiagType; detail?: string; sessionId?: string }): void {
   void fetch('/api/diag', {

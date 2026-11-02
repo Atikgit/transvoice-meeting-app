@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
+import { countryFrom } from '@/lib/http/country'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getSessionUser } from '@/lib/supabase/server'
 import { logLatency } from '@/lib/translation/log'
@@ -15,16 +16,24 @@ const body = z.object({
   roundTripMs: ms.optional(),
   bytes: z.number().int().min(0).max(4_000_000).optional(),
   format: z.enum(['wav', 'opus']).optional(),
+  mode: z.enum(['whole', 'chunked']).optional(),
+  endSilenceMs: z.number().int().min(0).max(5000).optional(),
+  stalledMs: ms.optional(),
+  waitMs: ms.optional(),
+  downloadMs: ms.optional(),
+  longTasks: z.number().int().min(0).max(10_000).optional(),
+  longTaskMs: ms.optional(),
   captionMs: ms.optional(),
   audioMs: ms.optional(),
   fetchMs: ms.optional(),
   via: z.enum(['url', 'inline']).optional(),
+  delivery: z.enum(['livekit', 'sse']).optional(),
 })
 
 /**
  * POST /api/latency — what a browser measured for one utterance (speaker: encode + round trip;
  * listener: speech end → caption / audio). Written to the server log for `pnpm latency:report`;
- * nothing is stored. Signed-in users only, rate-limited, fields bounded.
+ * nothing is stored; the client's country (CF-IPCountry) is added to the line. Signed-in users only, rate-limited, fields bounded.
  */
 export async function POST(request: NextRequest) {
   const user = await getSessionUser()
@@ -32,6 +41,6 @@ export async function POST(request: NextRequest) {
   if (!(await checkRateLimit('latency', user.id))) return new NextResponse(null, { status: 429 })
   const parsed = body.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid report.' }, { status: 400 })
-  logLatency(parsed.data)
+  logLatency({ ...parsed.data, country: countryFrom(request) })
   return new NextResponse(null, { status: 204 })
 }

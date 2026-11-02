@@ -1,6 +1,7 @@
 import 'server-only'
 import { serverEnv } from '@/lib/env'
 import { checkAfterGrace, defaultGraceDeps, type GraceDeps } from '@/lib/livekit/grace'
+import { roomNameFor, roomService } from '@/lib/livekit/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -13,8 +14,16 @@ import { createAdminClient } from '@/lib/supabase/admin'
  */
 export interface SweepDeps {
   graceMs: number
-  sweepOrphans: () => Promise<{ segmentsClosed: number; ringingExpired: number }>
+  sweepOrphans: () => Promise<{
+    segmentsClosed: number
+    segmentsStale?: number
+    ringingExpired: number
+  }>
   staleSessions: (olderThanMs: number) => Promise<StaleSession[]>
+  /** A session open longer than this is ended (MAX_SESSION_HOURS). */
+  maxSessionMs: number
+  /** Kicks everyone out of the session's LiveKit room (best effort). */
+  closeRoom: (sessionId: string) => Promise<void>
   /** Clock, for tests. */
   now?: () => number
   grace: GraceDeps
@@ -36,6 +45,10 @@ export const READY_IDLE_MS = 5 * 60_000
 
 export interface SweepResult {
   segmentsClosed: number
+  /** Open segments whose heartbeat stopped (crashed tab), closed at the last heartbeat. */
+  segmentsStale: number
+  /** Sessions ended for exceeding MAX_SESSION_HOURS. */
+  sessionsTimedOut: number
   ringingExpired: number
   sessionsChecked: number
   sessionsEnded: number
@@ -48,11 +61,16 @@ export function defaultSweepDeps(): SweepDeps {
   return {
     graceMs: grace.graceMs,
     grace,
+    maxSessionMs: serverEnv().MAX_SESSION_HOURS * 3_600_000,
+    closeRoom: async (id) => {
+      await roomService().deleteRoom(roomNameFor(id))
+    },
     sweepOrphans: async () => {
       const { data, error } = await admin.rpc('sweep_orphans')
       if (error) throw new Error(error.message)
       return {
         segmentsClosed: data?.[0]?.segments_closed ?? 0,
+        segmentsStale: data?.[0]?.segments_stale ?? 0,
         ringingExpired: data?.[0]?.ringing_expired ?? 0,
       }
     },
@@ -73,6 +91,8 @@ export function defaultSweepDeps(): SweepDeps {
 export async function sweepOnce(deps: SweepDeps = defaultSweepDeps()): Promise<SweepResult> {
   const result: SweepResult = {
     segmentsClosed: 0,
+    segmentsStale: 0,
+    sessionsTimedOut: 0,
     ringingExpired: 0,
     sessionsChecked: 0,
     sessionsEnded: 0,
@@ -94,6 +114,14 @@ export async function sweepOnce(deps: SweepDeps = defaultSweepDeps()): Promise<S
   const now = (deps.now ?? Date.now)()
   for (const { id, status, idleSince } of sessions) {
     if (status === 'ready' && now - idleSince < READY_IDLE_MS) continue
+    if (now - idleSince >= deps.maxSessionMs) {
+      try {
+        if (await endOverlong(id, deps)) result.sessionsTimedOut++
+      } catch {
+        result.failed++
+      }
+      continue
+    }
     result.sessionsChecked++
     try {
       if ((await checkAfterGrace(id, deps.grace)) === 'ended') result.sessionsEnded++
@@ -103,11 +131,26 @@ export async function sweepOnce(deps: SweepDeps = defaultSweepDeps()): Promise<S
   }
   if (
     result.failed > 0 ||
-    result.sessionsEnded + result.segmentsClosed + result.ringingExpired > 0
+    result.sessionsEnded +
+      result.sessionsTimedOut +
+      result.segmentsClosed +
+      result.segmentsStale +
+      result.ringingExpired >
+      0
   ) {
     console.log(JSON.stringify({ event: 'sweep', ...result }))
   }
   return result
+}
+
+/** Ends a session that ran past MAX_SESSION_HOURS: database first (closes segments), then the room. */
+async function endOverlong(sessionId: string, deps: SweepDeps): Promise<boolean> {
+  const session = await deps.grace.loadSession(sessionId)
+  if (!session || (session.status !== 'live' && session.status !== 'ready')) return false
+  if (!(await deps.grace.endSession(sessionId, 'max_duration'))) return false
+  await deps.grace.publishEnded(sessionId, session.hostId, 'max_duration').catch(() => {})
+  await deps.closeRoom(sessionId).catch(() => {})
+  return true
 }
 
 let timer: ReturnType<typeof setInterval> | undefined

@@ -38,6 +38,8 @@ function deps(overrides: Partial<SweepDeps> = {}): SweepDeps {
     grace: grace(),
     sweepOrphans: vi.fn(async () => ({ segmentsClosed: 2, ringingExpired: 1 })),
     staleSessions: vi.fn(async () => [live(A), live(B)]),
+    maxSessionMs: 4 * 3_600_000,
+    closeRoom: vi.fn(async () => {}),
     now: () => NOW,
     ...overrides,
   }
@@ -50,6 +52,37 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
+describe('MAX_SESSION_HOURS', () => {
+  const longLive = (id: string, hours: number): StaleSession => ({
+    id,
+    status: 'live',
+    idleSince: NOW - hours * 3_600_000,
+  })
+
+  it('ends a session open for 5 hours (limit 4), kicks the room, and leaves a 3-hour one alone', async () => {
+    const d = deps({
+      staleSessions: vi.fn(async () => [longLive(A, 5), longLive(B, 3)]),
+      grace: grace({ connectedIdentities: vi.fn(async () => ['host-1']) }),
+    })
+    const result = await sweepOnce(d)
+    expect(d.grace.endSession).toHaveBeenCalledTimes(1)
+    expect(d.grace.endSession).toHaveBeenCalledWith(A, 'max_duration')
+    expect(d.grace.publishEnded).toHaveBeenCalledWith(A, 'host-1', 'max_duration')
+    expect(d.closeRoom).toHaveBeenCalledWith(A)
+    expect(result).toMatchObject({ sessionsTimedOut: 1, sessionsChecked: 1, sessionsEnded: 0 })
+  })
+
+  it('counts a failure to end an overlong session and carries on', async () => {
+    const endSession = vi.fn(async () => Promise.reject(new Error('db')))
+    const d = deps({
+      staleSessions: vi.fn(async () => [longLive(A, 5)]),
+      grace: grace({ endSession }),
+    })
+    expect(await sweepOnce(d)).toMatchObject({ sessionsTimedOut: 0, failed: 1 })
+    expect(d.closeRoom).not.toHaveBeenCalled()
+  })
+})
+
 describe('sweeper', () => {
   it('ends abandoned open sessions and reports the orphan counts', async () => {
     const d = deps()
@@ -59,6 +92,8 @@ describe('sweeper', () => {
     expect(d.grace.endSession).toHaveBeenCalledWith(B, 'reconnect_timeout')
     expect(result).toEqual({
       segmentsClosed: 2,
+      segmentsStale: 0,
+      sessionsTimedOut: 0,
       ringingExpired: 1,
       sessionsChecked: 2,
       sessionsEnded: 2,

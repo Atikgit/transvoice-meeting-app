@@ -16,6 +16,7 @@ function mailConfig(): MailConfig {
   const env = serverEnv()
   return {
     from: env.EMAIL_FROM,
+    brevoApiKey: env.BREVO_API_KEY,
     resendApiKey: env.RESEND_API_KEY,
     smtp: {
       host: env.SMTP_HOST,
@@ -28,7 +29,7 @@ function mailConfig(): MailConfig {
 }
 
 /**
- * The app's own mailer for branded emails: Resend (RESEND_API_KEY) or SMTP (SMTP_HOST, SMTP_USER,
+ * The app's own mailer for branded emails: Brevo API (BREVO_API_KEY), Resend (RESEND_API_KEY) or SMTP (SMTP_HOST, SMTP_USER,
  * SMTP_PASS [+ SMTP_PORT, SMTP_SECURE]); EMAIL_FROM must be an address the provider accepts.
  * Null when neither is configured.
  */

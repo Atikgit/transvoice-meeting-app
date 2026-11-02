@@ -36,6 +36,11 @@ import { RoomNotice } from '@/components/meeting/room-notice'
 import { VideoTile } from '@/components/meeting/video-tile'
 import { routeToLoudspeaker } from '@/features/meeting/audio-output'
 import { useAudioPlayback } from '@/features/meeting/useAudioPlayback'
+import { useHeartbeat } from '@/features/meeting/useHeartbeat'
+import { alertText } from '@/features/billing/minute-alerts'
+import { useBalance } from '@/features/billing/useBalance'
+import { useMinuteAlerts } from '@/features/billing/useMinuteAlerts'
+import { meterLabel, minutesLeft } from '@/lib/billing/balance-view'
 import { useLiveKitToken } from '@/features/meeting/useLiveKitToken'
 import { useWakeLock } from '@/features/meeting/useWakeLock'
 import {
@@ -84,8 +89,14 @@ export interface MeetingRoomProps {
   vadEndSilenceMs?: number
   /** UPLOAD_FORMAT from the server environment. */
   uploadFormat?: 'wav' | 'opus'
+  /** UPLOAD_MODE from the server environment. */
+  uploadMode?: 'whole' | 'chunked'
   /** VAD_MAX_CHUNK_MS from the server environment. */
   maxChunkMs?: number
+  /** STALE_CLIP_MS from the server environment. */
+  staleClipMs?: number
+  /** DELIVERY: `sse` makes the room open GET /api/stream. */
+  delivery?: 'livekit' | 'sse'
   /** ?debug=1: show the translation overlay (any signed-in participant). */
   debug?: boolean
   /** Camera / mic choice from the lobby. */
@@ -279,7 +290,10 @@ function RoomView({
   debug = false,
   vadEndSilenceMs,
   uploadFormat,
+  uploadMode,
   maxChunkMs,
+  staleClipMs,
+  delivery,
 }: MeetingRoomProps & {
   mediaProblem: MediaProblem | null
   onMediaProblemHandled: () => void
@@ -306,17 +320,28 @@ function RoomView({
     ...tracks.filter((t) => t.source === Track.Source.Camera && !t.participant.isLocal),
     ...tracks.filter((t) => t.source === Track.Source.Camera && t.participant.isLocal),
   ]
+  useHeartbeat(sessionId, connection === ConnectionState.Connected)
+  // The payer's live meter. A guest who pays for nobody gets { payer: false } and holds no numbers.
+  const meter = useBalance({ sessionId, enabled: connection === ConnectionState.Connected })
+  const minutesRemaining = meter.payer === true && meter.view ? minutesLeft(meter.view) : undefined
+  const minuteAlerts = useMinuteAlerts(minutesRemaining)
+  const liveMinutesLabel = meter.view
+    ? meterLabel(meter.view)
+    : meter.payer === false
+      ? undefined
+      : minutesLabel
   const session = useRoomState(sessionId, initialState)
   const chat = useMeetingChat({ roomName, myName: displayName || 'You' })
 
   const languages = useTranslationStatus(sessionId)
-  const audio = useTranslatedAudio({ sessionId, originalAudioMode })
+  const audio = useTranslatedAudio({ sessionId, originalAudioMode, staleClipMs, delivery })
   const translation = useLiveTranslation({
     sessionId,
     status: session.state.status,
     enabled: translationEnabled,
     endSilenceMs: vadEndSilenceMs,
     uploadFormat,
+    uploadMode,
     maxChunkMs,
     playingTranslation: audio.playing, // echo safety: never listen while a clip plays
     onTranscript: audio.addOwnTranscript,
@@ -356,10 +381,19 @@ function RoomView({
         title,
         status: live ? 'live' : partnerConnected ? 'ready' : 'waiting',
         statusLabel,
-        minutesLabel: minutesLabel && minutesLabel !== '—' ? minutesLabel : undefined,
+        minutesLabel: liveMinutesLabel && liveMinutesLabel !== '—' ? liveMinutesLabel : undefined,
       }}
       notices={
         <>
+          {audio.outdated && (
+            <RoomNotice
+              tone="info"
+              floating
+              action={{ label: 'Reload', onClick: () => window.location.reload() }}
+            >
+              New version available - reload. Until then you see captions only.
+            </RoomNotice>
+          )}
           {audio.audioMissing && (
             <RoomNotice tone="info" floating>
               Audio unavailable for this utterance — showing captions.
@@ -408,6 +442,20 @@ function RoomView({
               action={{ label: 'Tap to enable audio', onClick: () => void playback.enable() }}
             >
               Your browser is blocking sound.
+            </RoomNotice>
+          )}
+          {minuteAlerts.toast && (
+            <RoomNotice tone="info" floating="low">
+              {alertText(minuteAlerts.toast, minutesRemaining ?? null)}
+            </RoomNotice>
+          )}
+          {minuteAlerts.empty && translation.notice?.code !== 'PAYER_NO_MINUTES' && (
+            <RoomNotice
+              tone="error"
+              floating="low"
+              action={{ label: 'Get minutes', onClick: () => setModal('pricing') }}
+            >
+              {alertText('zero', 0)}
             </RoomNotice>
           )}
           {translation.notice?.code === 'PAYER_NO_MINUTES' && (

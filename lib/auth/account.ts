@@ -58,3 +58,40 @@ export const currentBalance = cache(async (userId: string): Promise<Balance | nu
   await ensureUserAccount(userId)
   return fetchBalance(supabase, userId)
 })
+
+export type TrialStatus = 'granted' | 'unconfirmed' | 'already_used' | 'pending'
+
+/** What the dashboard says when an account has no free minutes. */
+export const TRIAL_NOTICES: Record<Exclude<TrialStatus, 'granted'>, string> = {
+  unconfirmed: 'Confirm your email to get 15 free minutes.',
+  already_used: 'A free trial was already used for this address.',
+  pending: 'Your free minutes are being set up. Reload in a moment.',
+}
+
+/**
+ * Why the account has no free trial, or null when it has one (or the answer is unknown, e.g. the
+ * database function is not deployed yet). A verified account that was never granted is run through
+ * ensure_user_account once (the same call sign-in makes) and looked at again. Never grants minutes
+ * itself and never throws.
+ */
+export async function trialNotice(userId: string): Promise<string | null> {
+  const ask = async (): Promise<TrialStatus | null> => {
+    const { data, error } = await createAdminClient().rpc('trial_status', { p_user: userId })
+    if (error) {
+      console.error('trial_status failed:', error.message)
+      return null
+    }
+    return data as TrialStatus
+  }
+  try {
+    let status = await ask()
+    if (status === 'pending') {
+      await ensureUserAccount(userId)
+      status = await ask()
+    }
+    return status && status !== 'granted' ? TRIAL_NOTICES[status] : null
+  } catch (error) {
+    console.error('trial_status failed:', error)
+    return null
+  }
+}

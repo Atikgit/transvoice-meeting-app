@@ -7,7 +7,7 @@ import { getSessionUser } from '@/lib/supabase/server'
  * Unknown, expired and foreign clips all answer 404.
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getSessionUser()
+  const user = await getSessionUser({ local: true })
   if (!user) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 })
   const { id } = await params
   if (!isAudioId(id)) return NextResponse.json({ error: 'Not found.' }, { status: 404 })

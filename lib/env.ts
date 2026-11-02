@@ -65,13 +65,40 @@ const serverSchema = z.object({
   // via WebCodecs, ~10x smaller; browsers without it fall back to wav by themselves).
   UPLOAD_FORMAT: z.enum(['wav', 'opus']).default('wav'),
 
+  // `whole` (default): the utterance is uploaded when the speech ends. `chunked`: ~500 ms PCM chunks
+  // are posted to /api/translate/chunk while the person is still talking, so at speech end only the
+  // last chunk is left to upload (any failure falls back to `whole` for that utterance).
+  UPLOAD_MODE: z.enum(['whole', 'chunked']).default('whole'),
+
   // A speech that lasts longer than this is cut at its latest pause of 250 ms or more and sent in
   // pieces, in order (ms; 2000-12000). Shorter pieces start translating sooner.
-  VAD_MAX_CHUNK_MS: z.coerce.number().int().min(2000).max(12000).default(5000),
+  VAD_MAX_CHUNK_MS: z.coerce.number().int().min(2000).max(12000).default(6000),
+
+  // A translated clip that has waited this long since it ARRIVED at the listener (not since the
+  // speaker stopped talking) is dropped, and the drop is logged. ms, 2000-60000.
+  STALE_CLIP_MS: z.coerce.number().int().min(2000).max(60000).default(15000),
+
+  // `single` (default): one POST / call per listener language. `split`: speech-to-text once, then per
+  // language streamed translation -> text-to-speech per sentence; any failure falls back to `single`.
+  TRANSLATION_PIPELINE: z.enum(['single', 'split']).default('single'),
+  // Translation in the split pipeline: OpenAI directly when OPENAI_API_KEY is set, else the API's
+  // /v1/chat when TRANSLATE_PROVIDER=api-chat (only for keys listed in its CHAT_ALLOWED_USER_IDS).
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_TRANSLATE_MODEL: z.string().min(1).default('gpt-4o-mini'),
+  TRANSLATE_PROVIDER: z.enum(['openai', 'api-chat']).default('openai'),
+
+  // How captions and clips reach the listener: `livekit` (default, LiveKit data messages) or `sse`
+  // (the app server pushes them over GET /api/stream to listeners with the stream open; everyone
+  // else still gets LiveKit data). One container only: the fan-out is in memory.
+  DELIVERY: z.enum(['livekit', 'sse']).default('livekit'),
+
+  // Run the speech-to-text while the context lookup (participants, payer gate) loads, for a speaker
+  // already admitted earlier in the session. The result is discarded if the new admission fails.
+  PIPELINE_OVERLAP: z.stringbool().default(true),
 
   // Audio format requested from the TransVoice API for translated speech. `wav` (default) is the
   // current behaviour. `mp3` / `opus` need the API to support output_format and to say which
-  // format it returned; clips of at most 12 KiB then travel inside the LiveKit data packet.
+  // format it returned; clips of at most 14 KiB (whole packet) then travel inside the LiveKit data packet.
   TRANSVOICE_OUTPUT_FORMAT: z.enum(['wav', 'mp3', 'opus']).default('wav'),
 
   // Rate limiting (Phase 2+)
@@ -81,10 +108,18 @@ const serverSchema = z.object({
   // Billing config
   BILLING_MODE: z.enum(['wallclock']).default('wallclock'),
   LANG_MULTIPLIER_ENABLED: z.stringbool().default(true),
+  // per_payer: every distinct payer is charged once per bucket for all their people together
+  // (sponsor + sponsored guests = one charge). per_participant: each person is charged to their
+  // payer (the original rule). Copied into the database for pg_cron (configure_billing).
+  BILLING_BASIS: z.enum(['per_payer', 'per_participant']).default('per_payer'),
+  // The app's own minute tick (fallback to pg_cron), seconds; 0 disables it.
+  METER_TICK_SEC: z.coerce.number().int().min(0).default(60),
   RECONNECT_GRACE_SEC: z.coerce.number().int().positive().default(60),
   // Sweeper (lib/sweeper.ts): how often stale sessions, open segments and ringing calls are
   // cleaned up. 0 disables it.
   SWEEP_INTERVAL_SEC: z.coerce.number().int().min(0).default(60),
+  // A session open longer than this is ended by the sweeper (a forgotten tab must not bill all night).
+  MAX_SESSION_HOURS: z.coerce.number().positive().default(4),
   // The free trial amount lives in the database (private.app_settings), not here.
 
   // Signup country (analytics). Without the salt no IP hash is stored; without the GeoLite2
@@ -96,6 +131,7 @@ const serverSchema = z.object({
   // Branded emails sent by the app (invites). Resend or SMTP; without either, invites to new
   // users fall back to Supabase's "Invite user" email.
   EMAIL_FROM: z.string().min(3).default('TransVoice AI <no-reply@transvoice.ai>'),
+  BREVO_API_KEY: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
   SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
