@@ -25,6 +25,17 @@ import { planFanout } from '@/lib/translation/plan'
 import { logDecision, logTranslate } from '@/lib/translation/log'
 import { recordApiUsage } from '@/lib/translation/usage'
 import type { TranslateUpload } from '@/lib/translation/request'
+import { analyseWav } from '@/lib/translation/wav'
+
+/** Peak and rms (0..1, 3 decimals) of an uploaded WAV for the translate log; nothing for other formats. */
+export function inputLevels(audio: Uint8Array): { inputPeak?: number; inputRms?: number } {
+  const stats = analyseWav(audio)
+  if (!stats) return {}
+  return {
+    inputPeak: Math.round(stats.peak * 1000) / 1000,
+    inputRms: Math.round(stats.rms * 1000) / 1000,
+  }
+}
 
 /** What admission loaded: the stored session state of the speaker's meeting. */
 export type Admitted = Extract<Awaited<ReturnType<typeof loadTranslationContext>>, { ok: true }>
@@ -272,6 +283,7 @@ export async function translateUtterance({
     sessionId: upload.sessionId,
     utteranceId: upload.utteranceId,
     audioBytes: upload.audio.length,
+    ...inputLevels(upload.audio),
     audioFormat: upload.format,
     ...(upload.seq !== undefined ? { seq: upload.seq } : {}),
     intakeMs: Math.round(contextStartedAt - startedAt),

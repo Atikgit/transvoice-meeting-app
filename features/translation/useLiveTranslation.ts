@@ -16,6 +16,8 @@ import { useSpeechDetector, type Utterance } from './useSpeechDetector'
 import { rememberUtterance, setTranslationDebug } from './debug-store'
 import { useLocalAudioWatch } from './useLocalAudioWatch'
 import { shouldListen } from './vad-gate'
+import { formatLevels } from './audio-level'
+import { reportDiag } from './diag'
 
 export type UploadFormat = 'wav' | 'opus'
 export type UploadMode = 'whole' | 'chunked'
@@ -242,6 +244,9 @@ export function useLiveTranslation({
     endSilenceMs,
     maxChunkMs,
     streaming: uploadMode === 'chunked',
+    // Levels before > after peak normalization, in dBFS, one line per speech (no audio, no text).
+    onLevels: (report) =>
+      reportDiag({ type: 'audio_level', detail: formatLevels(report), sessionId }),
     onStream: (event: StreamEvent) => {
       if (event.type === 'abort') {
         chunkUploads.current.get(event.utteranceId)?.abort()

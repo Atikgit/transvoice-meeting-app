@@ -10,6 +10,9 @@ export interface TranslateLog {
   /** Random per utterance: joins this line with the clients' latency lines. */
   utteranceId: string
   audioBytes: number
+  /** Loudness of the uploaded audio, 0..1 (WAV uploads only): what the speech-to-text received. */
+  inputPeak?: number
+  inputRms?: number
   /** wav | opus: what the browser uploaded. */
   audioFormat?: string
   /** Piece of a long speech: seq within its group (absent for a single utterance). */

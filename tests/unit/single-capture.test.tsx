@@ -201,6 +201,17 @@ describe('POST /api/diag', () => {
     expect(JSON.parse(line)).toMatchObject({ event: 'client', type: 'local_audio_muted' })
     expect(line).not.toContain('u-secret')
     expect(line).not.toContain('secret@example.com')
+    // the level report of a normalized speech (pre > post, dBFS) is accepted
+    const level = await post({
+      type: 'audio_level',
+      detail: 'pk -48.0>-28.0 rms -51.1>-31.1 g 20.0',
+    })
+    expect(level.status).toBe(204)
+    expect(JSON.parse(String(info.mock.calls[1]![0]))).toMatchObject({
+      event: 'client',
+      type: 'audio_level',
+      detail: 'pk -48.0>-28.0 rms -51.1>-31.1 g 20.0',
+    })
     expect((await post({ type: 'nope' })).status).toBe(400)
     getSessionUser.mockResolvedValue(null)
     expect((await post({ type: 'audio_blocked' })).status).toBe(401)

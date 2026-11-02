@@ -7,6 +7,7 @@ import { setTranslationDebug } from './debug-store'
 import { sharedAudioContext } from './web-audio'
 import { UtteranceChunker } from './utterance-chunker'
 import { ChunkStreamer, type StreamEvent } from './chunk-stream'
+import { normalizeSamples, SpeechGain, type LevelReport } from './audio-level'
 
 /** Destroys a VAD without throwing (its start-up may still be in flight). */
 async function retire(vad: MicVAD): Promise<void> {
@@ -42,6 +43,7 @@ export function useSpeechDetector({
   maxChunkMs,
   streaming = false,
   onStream,
+  onLevels,
 }: {
   track: MediaStreamTrack | undefined
   listening: boolean
@@ -55,6 +57,8 @@ export function useSpeechDetector({
    */
   streaming?: boolean
   onStream?: (event: StreamEvent) => void
+  /** Levels of each speech before and after peak normalization (for the server log). */
+  onLevels?: (report: LevelReport) => void
   onUtterance: (utterance: Utterance) => void
 }) {
   const vadRef = useRef<MicVAD | null>(null)
@@ -63,6 +67,7 @@ export function useSpeechDetector({
   const [ready, setReady] = useState(false)
   const emit = useEffectEvent(onUtterance)
   const emitStream = useEffectEvent((event: StreamEvent) => onStream?.(event))
+  const emitLevels = useEffectEvent((report: LevelReport) => onLevels?.(report))
   const streamerRef = useRef<ChunkStreamer | null>(null)
   const redemptionMs = clampEndSilence(endSilenceMs)
 
@@ -79,6 +84,8 @@ export function useSpeechDetector({
     capture.enabled = true
     const stream = new MediaStream([capture])
     const chunker = new UtteranceChunker(maxChunkMs ?? VAD_SETTINGS.maxChunkMs)
+    // Quiet microphones are raised before upload; the VAD itself keeps listening to the raw frames.
+    const gain = new SpeechGain()
     // Chunked mode: this takes over from the chunker (the VAD itself only says when speech starts and ends).
     const streamer = streaming
       ? new ChunkStreamer(maxChunkMs ?? VAD_SETTINGS.maxChunkMs, (event) => {
@@ -121,8 +128,9 @@ export function useSpeechDetector({
           pauseStream: async () => {},
           resumeStream: async () => stream,
           onFrameProcessed: (probabilities, frame) => {
-            if (streamer) return streamer.frame(probabilities.isSpeech, frame)
-            const piece = chunker.frame(probabilities.isSpeech, frame)
+            const loud = gain.frame(probabilities.isSpeech, frame)
+            if (streamer) return streamer.frame(probabilities.isSpeech, loud)
+            const piece = chunker.frame(probabilities.isSpeech, loud)
             if (piece) emitPiece(piece.samples, piece.seq, piece.endedAgoMs)
           },
           onSpeechStart: () => {
@@ -146,6 +154,8 @@ export function useSpeechDetector({
             clearTimeout(splitTimer)
             setSpeaking(false)
             setTranslationDebug({ vadSpeaking: false })
+            const levels = gain.reset()
+            if (levels) emitLevels(levels)
             // The VAD only fires after `redemptionMs` of silence: speech really ended that long ago.
             if (streamer) {
               streamer.speechEnd(redemptionMs)
@@ -153,13 +163,18 @@ export function useSpeechDetector({
               return
             }
             const rest = chunker.speechEnd()
-            if (rest === 'whole') emit({ samples, endedAt: performance.now() - redemptionMs })
+            if (rest === 'whole')
+              emit({
+                samples: normalizeSamples(samples).samples,
+                endedAt: performance.now() - redemptionMs,
+              })
             else if (rest) emitPiece(rest.samples, rest.seq, redemptionMs)
             group = null
           },
           onVADMisfire: () => {
             streamer?.abort()
             chunker.reset()
+            gain.reset()
             clearTimeout(splitTimer)
             setSpeaking(false)
             setTranslationDebug({ vadSpeaking: false })

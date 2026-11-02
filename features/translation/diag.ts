@@ -15,6 +15,7 @@ export type DiagType =
   | 'clip_drop'
   | 'clip_fetch_failed'
   | 'version_mismatch'
+  | 'audio_level'
 
 export function reportDiag(event: { type: DiagType; detail?: string; sessionId?: string }): void {
   void fetch('/api/diag', {

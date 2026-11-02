@@ -15,6 +15,7 @@ const body = z.object({
     'clip_drop',
     'clip_fetch_failed',
     'version_mismatch',
+    'audio_level',
   ]),
   detail: z.string().max(60).optional(),
   sessionId: z.uuid().optional(),
