@@ -29,3 +29,64 @@ So in this session none of the 12 silences happened while the other device could
 the microphone (the two people took turns), and the 18 successful utterances look the same.
 Speaker bleed is not supported as a cause by this data. The real per-utterance numbers will come from
 the next test.
+
+## VAD segmentation (item 4)
+
+### Current settings (`features/translation/vad-gate.ts`, Silero v5 via @ricky0123/vad-web)
+
+| Setting                           | Value                                           | Env                                           |
+| --------------------------------- | ----------------------------------------------- | --------------------------------------------- |
+| positive speech threshold         | 0.5                                             | none (code)                                   |
+| negative speech threshold         | 0.35                                            | none (code)                                   |
+| redemption (end-of-speech wait)   | 400 ms (about 12.5 frames of 32 ms)             | `VAD_END_SILENCE_MS`, 300 to 700, default 400 |
+| pre-speech padding                | 300 ms (about 9 to 10 frames)                   | none (code)                                   |
+| min speech                        | 300 ms                                          | none (code)                                   |
+| max utterance / max chunk         | 12 s / 6 s                                      | `VAD_MAX_CHUNK_MS` (max chunk)                |
+| own minimum in the chunk streamer | 10 speech frames (320 ms) at probability >= 0.5 | none (code)                                   |
+| upload chunk                      | 16 frames = 512 ms                              | none (code)                                   |
+
+Pre-speech padding is 300 ms, not under 300 ms.
+
+### Durations of dropped and successful utterances
+
+Only the current container's log is left (older container logs were wiped by the rebuilds), so the
+"last 3 sessions" are: `b62587c2` in full, and `3fa05f80` for the English speaker only (from the
+upload sizes I printed earlier). The two other recent sessions had no translated utterances.
+Duration = (WAV bytes - 44) / 32000 s; it includes the 300 ms pad and the speech tail.
+
+| Session / speaker          | Outcome    | n   | min  | median | max  | under 1.0 s | exactly 0.512 s |
+| -------------------------- | ---------- | --- | ---- | ------ | ---- | ----------- | --------------- |
+| `b62587c2` host (English)  | translated | 4   | 1.18 | 1.66   | 1.95 | 0           | 0               |
+|                            | dropped    | 4   | 0.51 | 1.15   | 1.98 | 1           | 1               |
+| `b62587c2` guest (Bangla)  | translated | 14  | 1.50 | 1.82   | 3.62 | 0           | 0               |
+|                            | dropped    | 8   | 0.51 | 0.51   | 1.54 | 5           | 5               |
+| `3fa05f80` English speaker | translated | 11  | 0.99 | 1.44   | 2.37 | 1           | 0               |
+|                            | dropped    | 18  | 0.51 | 1.28   | 3.52 | 5           | 5               |
+
+- 11 of the 30 dropped utterances (37%) are under 1.0 s, and all 11 are EXACTLY 16,428 bytes
+  (0.512 s = 8192 samples = one 16-frame chunk). No translated utterance is shorter than 0.99 s.
+- A finished utterance has at least 10 speech frames plus the pad, so it can never be that short.
+  The only way a bare first chunk gets processed is the server's idle flush (3 s after the last
+  chunk). These are therefore NOT speech that the STT missed: they are false starts the browser
+  gave up on (fewer than 10 speech frames) whose first chunk was still processed.
+- Likely mechanism (read from the code, not observed): the first chunk is admitted by the server
+  first (rate limit and context load, about 200 to 300 ms) while the browser's `x-abort` request
+  can arrive sooner; `discard` then finds nothing, and the chunk that arrives afterwards is kept and
+  flushed. Each such false start costs one STT call and shows up as a "silence".
+- Without those, English speech is still dropped much more than Bangla: English 16 real-length
+  drops vs 15 translated (52%); Bangla 3 vs 14 (18%).
+
+### Proposals (NOT applied)
+
+The VAD values themselves do not need to change: padding is 300 ms and every drop under 1.0 s is a
+sub-320 ms false start that the browser already discards. Two small changes remove the false
+starts' cost instead:
+
+1. Server `lib/translation/chunks.ts`: remember an aborted utterance id for 60 s (a tombstone), so a
+   chunk that arrives after its `x-abort` is refused. No env.
+2. Browser `features/translation/chunk-stream.ts`: hold back chunk 0 until the speech has 10 speech
+   frames, so nothing is uploaded for a false start. No env.
+
+If you still want segmentation knobs, the values I would use are `VAD_MIN_SPEECH_MS=400` (now 300)
+and `VAD_PRE_SPEECH_PAD_MS=400` (now 300); neither env exists yet, and the synthetic test (a
+clipped 150 ms onset is still transcribed) gives no evidence that they help.
