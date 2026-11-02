@@ -26,6 +26,7 @@ import {
   unlockAudioOnFirstGesture,
 } from './web-audio'
 import { reportDiag } from './diag'
+import { outputMonitor } from './capture-context'
 import { serverNow, syncServerClock } from './clock'
 import { BUILD_ID, PROTOCOL_VERSION } from '@/lib/build-id'
 import { openMessageStream } from '@/features/translation/message-stream'
@@ -204,14 +205,17 @@ export function useTranslatedAudio({
         }
         void clip
       },
-      onEnd: (clip, outcome) =>
+      onEnd: (clip, outcome) => {
+        outputMonitor.clipEnd(performance.now())
         traceClip({
           stage: 'play-end',
           utteranceId: clip.utteranceId,
           seq: clip.seq,
           detail: outcome,
-        }),
+        })
+      },
       onStart: (clip, at) => {
+        outputMonitor.clipStart()
         traceClip({
           stage: 'play-start',
           utteranceId: clip.utteranceId,

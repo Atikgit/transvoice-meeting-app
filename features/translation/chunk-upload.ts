@@ -48,6 +48,8 @@ export class ChunkUpload {
     group: string
     pieceSeq: number
     clientTs?: number
+    /** Cross-capture context (JSON, see lib/translation/capture-context.ts); on the last chunk. */
+    captureCtx?: string
   }): void {
     if (this.closed || this.failed) return
     const headers: Record<string, string> = {
@@ -59,6 +61,7 @@ export class ChunkUpload {
       'x-piece-seq': String(chunk.pieceSeq),
     }
     if (chunk.last && chunk.clientTs !== undefined) headers['x-client-ts'] = String(chunk.clientTs)
+    if (chunk.last && chunk.captureCtx) headers['x-capture-ctx'] = chunk.captureCtx
     this.pending.push(
       this.post(headers, chunk.pcm, AbortSignal.timeout(this.timeoutMs)).then(
         (response) => ({ response }),

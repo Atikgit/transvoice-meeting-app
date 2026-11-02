@@ -1,5 +1,6 @@
 import 'server-only'
 import type { WavStats } from '@/lib/translation/wav'
+import type { CaptureContext } from '@/lib/translation/capture-context'
 
 /**
  * One structured line per utterance with stage timings (ms). Deliberately free of anything
@@ -10,6 +11,10 @@ export interface TranslateLog {
   /** Random per utterance: joins this line with the clients' latency lines. */
   utteranceId: string
   audioBytes: number
+  /** The speaker's spoken language. */
+  speakerLang?: string
+  /** What the speaker's device knew at speech start (cross-capture check); numbers only. */
+  capture?: CaptureContext
   /** Loudness of the uploaded audio, 0..1 (WAV uploads only): what the speech-to-text received. */
   inputPeak?: number
   inputRms?: number

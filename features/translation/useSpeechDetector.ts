@@ -8,6 +8,8 @@ import { sharedAudioContext } from './web-audio'
 import { UtteranceChunker } from './utterance-chunker'
 import { ChunkStreamer, type StreamEvent } from './chunk-stream'
 import { normalizeSamples, SpeechGain, type LevelReport } from './audio-level'
+import { buildCaptureContext, framePower, MicHistory, outputMonitor } from './capture-context'
+import type { CaptureContext } from '@/lib/translation/capture-context'
 
 /** Destroys a VAD without throwing (its start-up may still be in flight). */
 async function retire(vad: MicVAD): Promise<void> {
@@ -27,6 +29,8 @@ export interface Utterance {
   chunk?: { group: string; seq: number }
   /** Chunked mode: the id the chunks were uploaded under. */
   utteranceId?: string
+  /** What the device knew when the speech started (see lib/translation/capture-context.ts). */
+  context?: CaptureContext
 }
 
 /**
@@ -44,6 +48,7 @@ export function useSpeechDetector({
   streaming = false,
   onStream,
   onLevels,
+  onContext,
 }: {
   track: MediaStreamTrack | undefined
   listening: boolean
@@ -59,6 +64,8 @@ export function useSpeechDetector({
   onStream?: (event: StreamEvent) => void
   /** Levels of each speech before and after peak normalization (for the server log). */
   onLevels?: (report: LevelReport) => void
+  /** Cross-capture context of each speech, called just BEFORE its last chunk / utterance goes out. */
+  onContext?: (context: CaptureContext | null) => void
   onUtterance: (utterance: Utterance) => void
 }) {
   const vadRef = useRef<MicVAD | null>(null)
@@ -68,6 +75,7 @@ export function useSpeechDetector({
   const emit = useEffectEvent(onUtterance)
   const emitStream = useEffectEvent((event: StreamEvent) => onStream?.(event))
   const emitLevels = useEffectEvent((report: LevelReport) => onLevels?.(report))
+  const emitContext = useEffectEvent((context: CaptureContext | null) => onContext?.(context))
   const streamerRef = useRef<ChunkStreamer | null>(null)
   const redemptionMs = clampEndSilence(endSilenceMs)
 
@@ -86,6 +94,14 @@ export function useSpeechDetector({
     const chunker = new UtteranceChunker(maxChunkMs ?? VAD_SETTINGS.maxChunkMs)
     // Quiet microphones are raised before upload; the VAD itself keeps listening to the raw frames.
     const gain = new SpeechGain()
+    // Cross-capture check: microphone loudness before the speech and what the speakers were doing.
+    const mic = new MicHistory()
+    let started: {
+      at: number
+      micDb: number
+      output: ReturnType<typeof outputMonitor.snapshot>
+    } | null = null
+    let context: CaptureContext | undefined
     // Chunked mode: this takes over from the chunker (the VAD itself only says when speech starts and ends).
     const streamer = streaming
       ? new ChunkStreamer(maxChunkMs ?? VAD_SETTINGS.maxChunkMs, (event) => {
@@ -96,6 +112,7 @@ export function useSpeechDetector({
               endedAt: performance.now() - event.endedAgoMs,
               utteranceId: event.utteranceId,
               chunk: { group: event.group, seq: event.pieceSeq },
+              context,
             })
         })
       : null
@@ -128,12 +145,16 @@ export function useSpeechDetector({
           pauseStream: async () => {},
           resumeStream: async () => stream,
           onFrameProcessed: (probabilities, frame) => {
+            mic.push(performance.now(), framePower(frame)) // the raw microphone, before any gain
             const loud = gain.frame(probabilities.isSpeech, frame)
             if (streamer) return streamer.frame(probabilities.isSpeech, loud)
             const piece = chunker.frame(probabilities.isSpeech, loud)
             if (piece) emitPiece(piece.samples, piece.seq, piece.endedAgoMs)
           },
           onSpeechStart: () => {
+            const at = performance.now()
+            started = { at, micDb: mic.micDb(at), output: outputMonitor.snapshot(at) }
+            context = undefined
             streamer?.speechStart()
             chunker.speechStart()
             group = null
@@ -156,6 +177,17 @@ export function useSpeechDetector({
             setTranslationDebug({ vadSpeaking: false })
             const levels = gain.reset()
             if (levels) emitLevels(levels)
+            if (started) {
+              context = buildCaptureContext({
+                startedAt: started.at,
+                endedAt: performance.now(),
+                redemptionMs,
+                micDb: started.micDb,
+                output: started.output,
+              })
+              started = null
+              emitContext(context)
+            } else emitContext(null)
             // The VAD only fires after `redemptionMs` of silence: speech really ended that long ago.
             if (streamer) {
               streamer.speechEnd(redemptionMs)
@@ -167,6 +199,7 @@ export function useSpeechDetector({
               emit({
                 samples: normalizeSamples(samples).samples,
                 endedAt: performance.now() - redemptionMs,
+                context,
               })
             else if (rest) emitPiece(rest.samples, rest.seq, redemptionMs)
             group = null
@@ -175,6 +208,7 @@ export function useSpeechDetector({
             streamer?.abort()
             chunker.reset()
             gain.reset()
+            started = null
             clearTimeout(splitTimer)
             setSpeaking(false)
             setTranslationDebug({ vadSpeaking: false })

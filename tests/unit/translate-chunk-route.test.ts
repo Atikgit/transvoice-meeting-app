@@ -240,3 +240,91 @@ describe('POST /api/translate/chunk', () => {
     expect(Buffer.from(apiBodies[0]!.audio, 'base64').length).toBe(44 + 16_000)
   })
 })
+
+describe('cross-capture context in the translate log', () => {
+  const CTX = '{"vadMs":2000,"clipMs":null,"voiceMs":200,"micDb":-42,"outDb":-29}'
+
+  /** The `translate` log line written while `run` executes. */
+  async function translateLine(run: () => Promise<unknown>) {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      await run()
+      const lines = info.mock.calls
+        .map((c) => String(c[0]))
+        .filter((l) => l.startsWith('{"event":"translate"'))
+      expect(lines).toHaveLength(1)
+      return JSON.parse(lines[0]!) as Record<string, unknown>
+    } finally {
+      info.mockRestore()
+    }
+  }
+
+  it('a chunked utterance logs the speaker language and the context sent with its last chunk', async () => {
+    const u = id('c0c0c0c0')
+    const line = await translateLine(async () => {
+      await chunk(u, 0, 16_000)
+      await chunk(u, 1, 16_000, { last: true, clientTs: 9, extra: { 'x-capture-ctx': CTX } })
+    })
+    expect(line).toMatchObject({
+      speakerLang: 'bn-BD',
+      capture: { vadMs: 2000, clipMs: null, voiceMs: 200, micDb: -42, outDb: -29 },
+    })
+  })
+
+  it('the last chunk may arrive first: the context is kept', async () => {
+    const u = id('c0c0c0c1')
+    const line = await translateLine(async () => {
+      await chunk(u, 1, 16_000, { last: true, clientTs: 9, extra: { 'x-capture-ctx': CTX } })
+      await chunk(u, 0, 16_000)
+    })
+    expect(line.capture).toMatchObject({ vadMs: 2000, voiceMs: 200 })
+  })
+
+  it('a context on a chunk that is not the last one is ignored', async () => {
+    const u = id('c0c0c0c2')
+    const line = await translateLine(async () => {
+      await chunk(u, 0, 16_000, { extra: { 'x-capture-ctx': CTX } })
+      await chunk(u, 1, 16_000, { last: true, clientTs: 9 })
+    })
+    expect(line).not.toHaveProperty('capture')
+    expect(line.speakerLang).toBe('bn-BD')
+  })
+
+  it('a malformed context never fails the upload; it is just not logged', async () => {
+    const u = id('c0c0c0c3')
+    let status = 0
+    const line = await translateLine(async () => {
+      status = (
+        await chunk(u, 0, 16_000, { last: true, clientTs: 9, extra: { 'x-capture-ctx': '{nope' } })
+      ).status
+    })
+    expect(status).toBe(200)
+    expect(line).not.toHaveProperty('capture')
+  })
+
+  it('a whole upload carries it in the captureCtx form field', async () => {
+    const u = id('c0c0c0c4')
+    const line = await translateLine(async () => {
+      const form = new FormData()
+      form.set(
+        'audio',
+        new Blob([encodeWav(new Float32Array(16_000).fill(0.25))], { type: 'audio/wav' }),
+      )
+      form.set('sessionId', SESSION)
+      form.set('utteranceId', u)
+      form.set('clientTs', '5')
+      form.set('captureCtx', CTX)
+      const res = await wholePost(
+        new NextRequest('https://meet.transvoice.ai/api/translate', { method: 'POST', body: form }),
+      )
+      expect(res.status).toBe(200)
+    })
+    expect(line.capture).toEqual({
+      vadMs: 2000,
+      clipMs: null,
+      voiceMs: 200,
+      micDb: -42,
+      outDb: -29,
+    })
+  })
+})

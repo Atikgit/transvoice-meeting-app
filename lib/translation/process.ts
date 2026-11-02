@@ -284,6 +284,8 @@ export async function translateUtterance({
     sessionId: upload.sessionId,
     utteranceId: upload.utteranceId,
     audioBytes: upload.audio.length,
+    speakerLang: context.speaker.spokenLang,
+    ...(upload.capture ? { capture: upload.capture } : {}),
     ...inputLevels(upload.audio),
     ...(split ? { stt: split.stt ?? { class: 'failed' as const } } : {}),
     audioFormat: upload.format,

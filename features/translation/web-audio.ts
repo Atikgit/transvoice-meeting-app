@@ -87,6 +87,25 @@ export function clipStats(buffer: AudioBuffer): ClipStats {
   }
 }
 
+let analyser: AnalyserNode | null = null
+function outputAnalyser(ctx: AudioContext): AnalyserNode {
+  if (!analyser || analyser.context !== ctx) {
+    analyser = ctx.createAnalyser()
+    analyser.fftSize = 1024
+  }
+  return analyser
+}
+
+/** Level (rms, 0..1) of what the translated clips are playing right now; 0 when idle. */
+export function clipOutputLevel(): number {
+  if (!analyser) return 0
+  const samples = new Float32Array(analyser.fftSize)
+  analyser.getFloatTimeDomainData(samples)
+  let sum = 0
+  for (const value of samples) sum += value * value
+  return Math.sqrt(sum / samples.length)
+}
+
 /** Plays a decoded clip; resolves when it ends. */
 export function playBuffer(buffer: AudioBuffer): Promise<void> {
   const ctx = audioContext()
@@ -99,6 +118,7 @@ export function playBuffer(buffer: AudioBuffer): Promise<void> {
     const gain = ctx.createGain()
     gain.gain.value = CLIP_GAIN
     source.connect(gain).connect(ctx.destination)
+    gain.connect(outputAnalyser(ctx)) // a second, silent tap: only measures
     source.onended = () => resolve()
     source.start()
   })

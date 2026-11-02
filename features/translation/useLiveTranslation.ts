@@ -13,11 +13,14 @@ import { measureLeg, observeLongTasks } from './net-timing'
 import { ChunkUpload } from './chunk-upload'
 import type { StreamEvent } from './chunk-stream'
 import { useSpeechDetector, type Utterance } from './useSpeechDetector'
-import { rememberUtterance, setTranslationDebug } from './debug-store'
+import { rememberUtterance, setTranslationDebug, traceUtterance } from './debug-store'
 import { useLocalAudioWatch } from './useLocalAudioWatch'
 import { shouldListen } from './vad-gate'
 import { formatLevels } from './audio-level'
 import { reportDiag } from './diag'
+import { outputMonitor } from './capture-context'
+import { clipOutputLevel } from './web-audio'
+import { encodeCaptureContext, type CaptureContext } from '@/lib/translation/capture-context'
 
 export type UploadFormat = 'wav' | 'opus'
 export type UploadMode = 'whole' | 'chunked'
@@ -64,6 +67,7 @@ export async function uploadUtterance(
   })
   form.set('sessionId', sessionId)
   form.set('utteranceId', utteranceId)
+  if (utterance.context) form.set('captureCtx', encodeCaptureContext(utterance.context))
   if (chunk) {
     form.set('group', chunk.group)
     form.set('seq', String(chunk.seq))
@@ -129,6 +133,25 @@ export function useLiveTranslation({
   const [paused, setPaused] = useState(false)
   useEffect(() => observeLongTasks(), [])
   const chunkUploads = useRef(new Map<string, ChunkUpload>())
+  // Cross-capture: the context of the speech that just ended, until its last chunk has gone out.
+  const pendingContext = useRef<CaptureContext | null>(null)
+  // What this device's speakers are doing: the partner's original voice level (LiveKit) and the
+  // translated clips (analyser), sampled every 100 ms for the "could the microphone hear them" check.
+  const remotesRef = useRef(remotes)
+  useEffect(() => {
+    remotesRef.current = remotes
+  }, [remotes])
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = performance.now()
+      outputMonitor.pushVoice(now, Math.max(0, ...remotesRef.current.map((p) => p.audioLevel ?? 0)))
+      if (outputMonitor.playingClip) outputMonitor.pushClip(now, clipOutputLevel())
+    }, 100)
+    return () => {
+      clearInterval(timer)
+      outputMonitor.reset()
+    }
+  }, [])
   const chains = useRef(new Map<string, Promise<void>>())
   const transcriptRef = useRef(onTranscript)
   useEffect(() => {
@@ -245,6 +268,9 @@ export function useLiveTranslation({
     maxChunkMs,
     streaming: uploadMode === 'chunked',
     // Levels before > after peak normalization, in dBFS, one line per speech (no audio, no text).
+    onContext: (context) => {
+      pendingContext.current = context // null: nothing was measured, so nothing stale is sent
+    },
     onLevels: (report) =>
       reportDiag({ type: 'audio_level', detail: formatLevels(report), sessionId }),
     onStream: (event: StreamEvent) => {
@@ -267,7 +293,12 @@ export function useLiveTranslation({
         pieceSeq: event.pieceSeq,
         // the speaker's clock (server time) at the moment the speech really ended
         clientTs: Math.round(serverNow() - event.endedAgoMs),
+        captureCtx:
+          event.last && pendingContext.current
+            ? encodeCaptureContext(pendingContext.current)
+            : undefined,
       })
+      if (event.last) pendingContext.current = null
     },
     onUtterance: (utterance) => {
       const chunked = uploadMode === 'chunked' && utterance.utteranceId !== undefined
@@ -275,6 +306,7 @@ export function useLiveTranslation({
       const sentAt = performance.now()
       setPending((n) => n + 1)
       rememberUtterance(utterance.samples)
+      if (utterance.context) traceUtterance({ utteranceId, context: utterance.context })
       setTranslationDebug({
         lastUtterance: {
           ms: (utterance.samples.length / 16_000) * 1000,

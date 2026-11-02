@@ -152,6 +152,21 @@ describe('ChunkUpload', () => {
     expect(out.ok && out.response?.status).toBe(200)
   })
 
+  it('only the last chunk carries the cross-capture context (x-capture-ctx)', async () => {
+    const posts: Record<string, string>[] = []
+    const post: Poster = async (headers) => {
+      posts.push(headers)
+      return json(202)
+    }
+    const up = new ChunkUpload('u', { sessionId: 'sess' }, post)
+    const captureCtx = '{"vadMs":2000,"clipMs":null,"voiceMs":200,"micDb":-42,"outDb":-29}'
+    up.push({ ...chunk(0), captureCtx })
+    up.push({ ...chunk(1, true), captureCtx })
+    await up.finish()
+    expect(posts[0]).not.toHaveProperty('x-capture-ctx')
+    expect(posts[1]!['x-capture-ctx']).toBe(captureCtx)
+  })
+
   it.each([
     [
       'a network error',

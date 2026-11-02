@@ -5,6 +5,7 @@ import { ChunkStore, MAX_OPEN_PER_USER, type ChunkRejection } from '@/lib/transl
 import { admitUtterance, translateUtterance, type Admission } from '@/lib/translation/process'
 import type { TranslateUpload } from '@/lib/translation/request'
 import { pcm16ToWav } from '@/lib/translation/wav'
+import { parseCaptureContext, type CaptureContext } from '@/lib/translation/capture-context'
 
 /** What is remembered about an utterance from its first chunk: who/where, and the admission. */
 export interface ChunkMeta {
@@ -14,6 +15,8 @@ export interface ChunkMeta {
   group?: string
   seq?: number
   startedAt: number
+  /** Cross-capture context, from the last chunk. */
+  capture?: CaptureContext
 }
 
 const holder = globalThis as unknown as { __tvChunks?: ChunkStore<ChunkMeta> }
@@ -27,6 +30,7 @@ function runAssembled(userId: string, utteranceId: string, pcm: Uint8Array, meta
     seq: meta.seq,
     audio: pcm16ToWav(pcm),
     format: 'wav',
+    ...(meta.capture ? { capture: meta.capture } : {}),
   }
   return translateUtterance({
     user: { id: userId },
@@ -76,6 +80,7 @@ export async function acceptChunk({
   clientTs,
   group,
   pieceSeq,
+  captureCtx,
   data,
   store = chunkStore(),
 }: {
@@ -87,6 +92,7 @@ export async function acceptChunk({
   clientTs: number
   group?: string
   pieceSeq?: number
+  captureCtx?: string
   data: Uint8Array
   store?: ChunkStore<ChunkMeta>
 }): Promise<NextResponse> {
@@ -112,7 +118,10 @@ export async function acceptChunk({
   // The speaker's clock reading rides on the last chunk, which may arrive before the others.
   if (last) {
     const stored = store.meta(user.id, utteranceId)
-    if (stored) stored.clientTs = clientTs
+    if (stored) {
+      stored.clientTs = clientTs
+      stored.capture = parseCaptureContext(captureCtx)
+    }
   }
   let result: ReturnType<typeof store.add>
   try {
@@ -125,6 +134,7 @@ export async function acceptChunk({
         group,
         seq: pieceSeq,
         startedAt,
+        capture: last ? parseCaptureContext(captureCtx) : undefined,
       }
     })
   } catch {

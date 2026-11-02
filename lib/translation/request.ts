@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isWav } from '@/lib/translation/wav'
+import { parseCaptureContext, type CaptureContext } from '@/lib/translation/capture-context'
 
 /** Upload limits for POST /api/translate. */
 export const MAX_AUDIO_BYTES = 2 * 1024 * 1024
@@ -19,6 +20,8 @@ const fields = z.object({
 export type TranslateUpload = z.infer<typeof fields> & {
   audio: Uint8Array
   format: 'wav' | 'opus'
+  /** What the speaker's device knew when the speech started (logged only; optional). */
+  capture?: CaptureContext
 }
 
 /** Ogg ("OggS") or Matroska/WebM (EBML header) magic bytes. */
@@ -62,5 +65,11 @@ export async function parseTranslateUpload(form: FormData): Promise<TranslateUpl
   const bytes = new Uint8Array(await audio.arrayBuffer())
   if (isOpus ? !isOpusContainer(bytes) : !isWav(bytes))
     return { status: 415, error: `The audio is not a ${isOpus ? 'Opus' : 'WAV'} file.` }
-  return { ...parsed.data, audio: bytes, format: isOpus ? 'opus' : 'wav' }
+  const capture = parseCaptureContext(form.get('captureCtx'))
+  return {
+    ...parsed.data,
+    audio: bytes,
+    format: isOpus ? 'opus' : 'wav',
+    ...(capture ? { capture } : {}),
+  }
 }

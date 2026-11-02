@@ -15,6 +15,7 @@ import {
 } from '@/features/translation/debug-store'
 import { useMicLevel } from '@/features/translation/useMicLevel'
 import { DroppedList } from './dropped-list'
+import { couldHearPartner, describeContext } from '@/features/translation/capture-context'
 import { uploadUtterance } from '@/features/translation/useLiveTranslation'
 import type { TranslationStatus } from '@/features/translation/useTranslationStatus'
 import { encodeWav } from '@/lib/translation/wav'
@@ -286,6 +287,17 @@ export function DebugOverlay({
       'last utterance',
       d.lastUtterance
         ? `${(d.lastUtterance.ms / 1000).toFixed(1)} s, ${(d.lastUtterance.bytes / 1024).toFixed(0)} KiB, ${ago(d.lastUtterance.at, now)}`
+        : '—',
+    ],
+    [
+      'recent utterances',
+      d.utterances.length
+        ? d.utterances
+            .map(
+              (u) =>
+                `${new Date(u.at).toISOString().slice(11, 19)} ${spokenLang} ${describeContext(u.context)}${couldHearPartner(u.context) ? ' ⚠ mic could hear the other side' : ''}`,
+            )
+            .join('\n')
         : '—',
     ],
     [

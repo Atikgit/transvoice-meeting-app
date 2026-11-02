@@ -15,12 +15,14 @@ const headers = z.object({
   clientTs: z.coerce.number().int().nonnegative().default(0),
   group: z.uuid().optional(),
   pieceSeq: z.coerce.number().int().min(0).max(200).optional(),
+  // Cross-capture context of the speech (JSON, last chunk only); a bad value is ignored, never refused.
+  captureCtx: z.string().max(200).optional(),
 })
 
 /**
  * POST /api/translate/chunk — one ~500 ms chunk (raw 16 kHz mono PCM16, application/octet-stream)
  * of an utterance that is still being spoken. Headers: x-utterance-id, x-session-id, x-seq, x-last
- * (and x-client-ts on the last chunk, x-group / x-piece-seq for pieces of a long speech).
+ * (and x-client-ts and x-capture-ctx on the last chunk, x-group / x-piece-seq for pieces of a long speech).
  * `x-abort: 1` throws a half-spoken utterance away. When the last chunk is in, the same pipeline as
  * POST /api/translate runs and its answer is returned; the other chunks answer 202.
  */
@@ -43,6 +45,7 @@ export async function POST(request: NextRequest) {
     clientTs: h.get('x-client-ts') ?? undefined,
     group: h.get('x-group') ?? undefined,
     pieceSeq: h.get('x-piece-seq') ?? undefined,
+    captureCtx: h.get('x-capture-ctx') ?? undefined,
   })
   if (!parsed.success)
     return NextResponse.json({ error: 'Invalid chunk headers.' }, { status: 400 })
@@ -66,6 +69,7 @@ export async function POST(request: NextRequest) {
     clientTs: meta.clientTs,
     group: meta.group,
     pieceSeq: meta.pieceSeq,
+    captureCtx: meta.captureCtx,
     data,
   })
 }

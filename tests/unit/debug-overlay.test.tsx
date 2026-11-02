@@ -15,8 +15,8 @@ const uploadUtterance = vi.fn()
 vi.mock('@/features/translation/useLiveTranslation', () => ({ uploadUtterance }))
 
 const { DebugOverlay } = await import('@/components/meeting/debug-overlay')
-const { setTranslationDebug, enableTranslationDebug, rememberUtterance } =
-  await import('@/features/translation/debug-store')
+const debugStore = await import('@/features/translation/debug-store')
+const { setTranslationDebug, enableTranslationDebug, rememberUtterance } = debugStore
 
 const SESSION = '22222222-2222-4222-8222-222222222222'
 const status = (over: Partial<TranslationStatus> = {}): TranslationStatus => ({
@@ -77,6 +77,30 @@ describe('translation debug overlay', () => {
     expect(panel).toHaveTextContent('200 in 1830 ms')
     expect(panel).toHaveTextContent('url ok in 120 ms')
     await waitFor(() => expect(panel).toHaveTextContent('4/4 ok'))
+  })
+
+  it('lists recent utterances with their cross-capture context and flags a microphone that could hear the other side', () => {
+    overlay(status())
+    const { traceUtterance } = debugStore
+    act(() => {
+      traceUtterance({
+        utteranceId: 'u1',
+        context: { vadMs: 2000, clipMs: null, voiceMs: 200, micDb: -42, outDb: -29 },
+      })
+      traceUtterance({
+        utteranceId: 'u2',
+        context: { vadMs: 900, clipMs: null, voiceMs: null, micDb: -55, outDb: -120 },
+      })
+    })
+    const panel = screen.getByTestId('debug-overlay')
+    expect(panel).toHaveTextContent(
+      'bn-BD 2.0 s | no clip, partner audible 200 ms before | mic -42 dB vs output -29 dB ⚠ mic could hear the other side',
+    )
+    expect(panel).toHaveTextContent(
+      'bn-BD 0.9 s | no clip, partner silent | mic -55 dB vs output -120 dB',
+    )
+    // only the first one is flagged
+    expect(panel.textContent!.match(/could hear the other side/g)).toHaveLength(1)
   })
 
   it('prints what the server stores for both people, where my sentences go and the allowlist decision', () => {

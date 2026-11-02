@@ -1,6 +1,7 @@
 'use client'
 
 import { useSyncExternalStore } from 'react'
+import type { CaptureContext } from '@/lib/translation/capture-context'
 
 /**
  * Live translation diagnostics for the room's `?debug=1` overlay. The hooks write what they
@@ -46,6 +47,14 @@ export interface TranslationDebug {
   lastDuck?: { speakerId: string; volume: number; reason: string; at: number }
   /** Languages the server translated into for the last utterance (listener languages). */
   listenerLanguages?: string[]
+  /** The last 8 utterances with what this device knew when they started (cross-capture check). */
+  utterances: UtteranceDebug[]
+}
+
+export interface UtteranceDebug {
+  utteranceId: string
+  at: number
+  context: CaptureContext
 }
 
 export interface ClipTraceEvent {
@@ -78,6 +87,7 @@ const INITIAL: TranslationDebug = {
   },
   queue: 0,
   clipTrace: [],
+  utterances: [],
 }
 
 let state = INITIAL
@@ -107,6 +117,14 @@ export function getTranslationDebug(): TranslationDebug {
 export function traceClip(event: Omit<ClipTraceEvent, 'at'>) {
   if (!enabled) return
   setTranslationDebug({ clipTrace: [...state.clipTrace, { ...event, at: Date.now() }].slice(-20) })
+}
+
+/** Adds an utterance and its capture context (kept only while the overlay is mounted; last 8). */
+export function traceUtterance(entry: Omit<UtteranceDebug, 'at'>) {
+  if (!enabled) return
+  setTranslationDebug({
+    utterances: [...state.utterances, { ...entry, at: Date.now() }].slice(-8),
+  })
 }
 
 export function useTranslationDebug(): TranslationDebug {
