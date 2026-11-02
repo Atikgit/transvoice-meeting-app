@@ -25,7 +25,33 @@ export async function newCall(db: PGlite, host: string): Promise<Call> {
   )
   const sessionId = opened.rows[0]!.session_id
   await db.query('select * from public.admit_participant($1, $2)', [sessionId, host])
+  // Live since long before every test's connect times, so that only the connected seconds decide.
+  // Tests of the live window itself move it with setWindow().
+  await setWindow(db, { meetingId, sessionId, host }, -86_400, null)
   return { meetingId, sessionId, host }
+}
+
+/**
+ * The live window of the session, offsets in seconds from T0: `start` = when the host pressed
+ * Start (started_at; null = never started, still 'ready'), `end` = ended_at (null = still open).
+ */
+export async function setWindow(
+  db: PGlite,
+  call: Call,
+  start: number | null,
+  end: number | null,
+): Promise<void> {
+  await db.query(
+    `update public.call_sessions
+     set status = $2, started_at = $3, ended_at = $4
+     where id = $1`,
+    [
+      call.sessionId,
+      start === null ? 'ready' : 'live',
+      start === null ? null : at(start),
+      end === null ? null : at(end),
+    ],
+  )
 }
 
 /** The host invited this guest (sponsored connection); the guest is admitted, payer = host. */
