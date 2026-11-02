@@ -2,16 +2,16 @@
 
 ## Status: deployed, with one open problem (app-side meter tick fails)
 
-| Step | Result |
-|------|--------|
-| 1. Git | On `main`, already up to date, tree clean. Pending migrations: 20261101000100 to 20261101000700 (7). |
-| 2. DB access | Linked supabase project (`supabase/.temp`) plus the access token already in `.env.production`. `/root/.transvoice-db-url` was not needed. `select 1` succeeded. |
-| 3. Backup | `~/backup-before-3b-2026-11-02.sql` (schema, 79 KB) and `~/backup-before-3b-data-2026-11-02.sql` (data, 131 KB). Both non-empty. `db dump` is schema-only by default, so the data dump was added. |
-| 4. Migrations | All 7 applied with `supabase db push`, no errors. |
-| 5. pg_cron | `transvoice-meter-tick` (`* * * * *`) exists and is active. `cron.job_run_details` shows `succeeded` (2 runs at 16:28 and 16:29 UTC when checked). `private.billing_cursor.last_bucket_end` = 16:27:00 UTC (set by the migration; no calls since, so nothing to bill). |
+| Step               | Result                                                                                                                                                                                                                                                                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Git             | On `main`, already up to date, tree clean. Pending migrations: 20261101000100 to 20261101000700 (7).                                                                                                                                                                                                                                     |
+| 2. DB access       | Linked supabase project (`supabase/.temp`) plus the access token already in `.env.production`. `/root/.transvoice-db-url` was not needed. `select 1` succeeded.                                                                                                                                                                          |
+| 3. Backup          | `~/backup-before-3b-2026-11-02.sql` (schema, 79 KB) and `~/backup-before-3b-data-2026-11-02.sql` (data, 131 KB). Both non-empty. `db dump` is schema-only by default, so the data dump was added.                                                                                                                                        |
+| 4. Migrations      | All 7 applied with `supabase db push`, no errors.                                                                                                                                                                                                                                                                                        |
+| 5. pg_cron         | `transvoice-meter-tick` (`* * * * *`) exists and is active. `cron.job_run_details` shows `succeeded` (2 runs at 16:28 and 16:29 UTC when checked). `private.billing_cursor.last_bucket_end` = 16:27:00 UTC (set by the migration; no calls since, so nothing to bill).                                                                   |
 | 6. .env.production | CRON_SECRET reduced from 4 lines to 1 (last value kept). Added `BILLING_BASIS=per_payer`, `METER_TICK_SEC=60`, `MAX_SESSION_HOURS=4`. `TRANSLATION_BETA_ALLOWLIST` is `atik1125@gmail.com,coderb1b1@gmail.com` (not `*`, left unchanged). No other duplicated keys. Backup of the old file: `~/env.production.bak-before-3b` (mode 600). |
-| 7. Container | Rebuilt and recreated. `/api/health` returned `{"status":"ok"}`. |
-| 8. Before balances | See below. |
+| 7. Container       | Rebuilt and recreated. `/api/health` returned `{"status":"ok"}`.                                                                                                                                                                                                                                                                         |
+| 8. Before balances | See below.                                                                                                                                                                                                                                                                                                                               |
 
 ## Boot log (secrets removed)
 
@@ -32,12 +32,12 @@ production (suggested: `... where id`), which was outside this task. No test cal
 
 ## "Before" balances (trial / subscription / postpaid accrued)
 
-| Account | Type | Trial | Subscription | Accrued |
-|---------|------|-------|--------------|---------|
-| atik1125@gmail.com | free | 15.0000 | 0.0000 | 0.0000 |
-| codera1a1@gmail.com | free | 15.0000 | 0.0000 | 0.0000 |
-| coderatik@outlook.com | free | 15.0000 | 0.0000 | 0.0000 |
-| coderb1b1@gmail.com | free | 10.0000 | 0.0000 | 0.0000 |
+| Account               | Type | Trial   | Subscription | Accrued |
+| --------------------- | ---- | ------- | ------------ | ------- |
+| atik1125@gmail.com    | free | 15.0000 | 0.0000       | 0.0000  |
+| codera1a1@gmail.com   | free | 15.0000 | 0.0000       | 0.0000  |
+| coderatik@outlook.com | free | 15.0000 | 0.0000       | 0.0000  |
+| coderb1b1@gmail.com   | free | 10.0000 | 0.0000       | 0.0000  |
 
 ## Notes
 
@@ -64,13 +64,13 @@ production (suggested: `... where id`), which was outside this task. No test cal
 
 Evidence (docker logs of the last 60 minutes, session 3fa05f80, 45 utterances):
 
-| Direction | translated (speech) | silence | failed / refused / timeout |
-|-----------|--------------------|---------|----------------------------|
-| host -> guest (bn-BD>en-US) | 14 | 2 | 0 |
-| guest -> host (en-US>bn-BD) | 11 | 18 (62%) | 0 |
+| Direction                   | translated (speech) | silence  | failed / refused / timeout |
+| --------------------------- | ------------------- | -------- | -------------------------- |
+| host -> guest (bn-BD>en-US) | 14                  | 2        | 0                          |
+| guest -> host (en-US>bn-BD) | 11                  | 18 (62%) | 0                          |
 
 - Every `silence` has `apiMs: 0` and `sttMs` 650 to 1370 ms: the speech-to-text answered, and what it returned was empty, one character, or a phantom word (`you`, `thank you`, `i`, `am i`), which the pipeline drops as silence. It was not a gate, a refusal or a timeout. Silent chunks were 0.5 to 3.5 s long, so length does not explain it.
-- The 11 translated guest utterances were created, sent (`clip_trace created/sent`, no failures) and played by the host: each has a host `listen` beacon (`lang bn-BD`, `delivery livekit`, 2.9 to 8.1 s of audio). No `clip_drop`, `clip_quiet` or `clip_fetch_failed` report from any browser. So nothing is wrong on the host side or in the bn-BD voice (`bn-BD-PradeepNeural` / `bn-BD-NabanitaNeural`; clips played). The one `stt: timeout` (16:50:17) was recovered by the fallback.
+- The 11 translated guest utterances were created, sent (`clip_trace created/sent`, no failures) and played by the host: each has a host `listen` beacon (`lang bn-BD`, `delivery livekit`; its `audioMs` of 2.9 to 8.1 s is the delay from speech end to the first sound, not the clip length). No `clip_drop`, `clip_quiet` or `clip_fetch_failed` report from any browser. So nothing is wrong on the host side or in the bn-BD voice (`bn-BD-PradeepNeural` / `bn-BD-NabanitaNeural`; clips played). The one `stt: timeout` (16:50:17) was recovered by the fallback.
 - Not proven: the level of the guest's uploads. The server did not log input levels before today, so peak and rms of the uploaded WAVs cannot be reported for that call. The asymmetry (host 88% translated, guest 38%) and the overlay's -50 dB reading make a quiet microphone the likely cause.
 - Fix deployed: peak normalization before upload (`features/translation/audio-level.ts`): target peak 0.7, at most +20 dB, gain 1 below a -60 dBFS noise floor, never attenuating, applied frame by frame so chunked uploads are covered; `autoGainControl` stays on. Logging: the browser sends `audio_level` (`pk pre>post rms pre>post g`, dBFS) to `/api/diag`, and the `translate` line now has `inputPeak` / `inputRms` of the uploaded WAV.
 - Tests: `tests/unit/audio-level.test.ts` (24 tests, e.g. quiet fixture peak 0.004 = -48 dBFS -> 0.04 = -28 dBFS; 0.07 -> 0.7; 0.9 stays 0.9; 0.0008 untouched) and an `audio_level` case in `single-capture.test.tsx`. Unit suite 835 passed.

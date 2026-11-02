@@ -90,3 +90,35 @@ starts' cost instead:
 If you still want segmentation knobs, the values I would use are `VAD_MIN_SPEECH_MS=400` (now 300)
 and `VAD_PRE_SPEECH_PAD_MS=400` (now 300); neither env exists yet, and the synthetic test (a
 clipped 150 ms onset is still transcribed) gives no evidence that they help.
+
+## The two upstream 520 errors at 18:01 (item 5)
+
+Both are `stt: responded 520` from `POST /v1/stt` (the split pipeline's speech-to-text step; HTTP 520
+is Cloudflare's "unknown error from the origin"), the only upstream errors in the current container's
+log. Both hit the GUEST (Bangla, `bn-BD>en-US`) of session `b62587c2`:
+
+|                                                  | 18:01:01                                              | 18:01:19                                   |
+| ------------------------------------------------ | ----------------------------------------------------- | ------------------------------------------ |
+| upload                                           | 115,756 B (3.6 s)                                     | 58,412 B (1.8 s)                           |
+| error logged after the `translate_decision` line | 0.17 s                                                | 0.12 s                                     |
+| what happened next                               | single-call fallback (`POST /`) succeeded in 3,900 ms | single-call fallback succeeded in 2,401 ms |
+| utterance total                                  | 4,436 ms                                              | 2,843 ms                                   |
+
+- They are fast failures (well under the 4 s step limit), not timeouts.
+- They do not correlate with long uploads: one was 3.6 s, the other 1.8 s, which is the median
+  utterance length (1.82 s). Two events cannot show more than that.
+- Rate: 2 of 30 utterances processed by the split pipeline in this container (7%); 28 others had
+  no STT error. Cost to the user: the fallback added about 2.4 to 3.9 s; nothing was dropped.
+- What the app can tell: only the step ("stt"), the status (520) and the timestamp. `transcribe()`
+  does not read the error body or headers, and the log line carries no endpoint URL, call duration,
+  upload size, or Cloudflare `cf-ray` id. That is not enough to ask the API owner for a trace.
+- Proposal (NOT applied): on a failed split step log `status`, the call's duration in ms, the
+  audio bytes and the response's `cf-ray` header (no body, no key). With that, a 520 can be matched
+  to the API server's own log.
+
+## Correction to an earlier report
+
+In `docs/deploy-report.md` I described the host's `listen` beacons as "2.9 to 8.1 s of audio".
+`audioMs` in that beacon is the delay from the end of the speech to the first sound of the clip, not
+the clip length. The conclusion (every translated clip was played on the host) still holds, since the
+beacon is only sent when playback starts.
