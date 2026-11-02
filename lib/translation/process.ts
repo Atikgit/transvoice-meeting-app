@@ -26,6 +26,7 @@ import { logDecision, logTranslate } from '@/lib/translation/log'
 import { recordApiUsage } from '@/lib/translation/usage'
 import type { TranslateUpload } from '@/lib/translation/request'
 import { analyseWav } from '@/lib/translation/wav'
+import { captureDropped, captureEnabled } from '@/lib/translation/dropped-capture'
 
 /** Peak and rms (0..1, 3 decimals) of an uploaded WAV for the translate log; nothing for other formats. */
 export function inputLevels(audio: Uint8Array): { inputPeak?: number; inputRms?: number } {
@@ -326,6 +327,18 @@ export async function translateUtterance({
     totalMs: Math.round(performance.now() - startedAt),
     ...(useSplit ? { splitFailures: splitStats.failures } : {}),
   })
+  // Debug only (DEBUG_CAPTURE_DROPPED, allow-listed users): keep what the microphone delivered when
+  // nothing came of it, for 1 hour, so it can be listened to from the ?debug=1 overlay.
+  if (captureEnabled() && results.length > 0 && results.every((r) => r.kind === 'silence')) {
+    void captureDropped({
+      userId: user.id,
+      sessionId: upload.sessionId,
+      utteranceId: upload.utteranceId,
+      audio: upload.audio,
+      sttClass: split?.stt?.class ?? (split ? 'failed' : 'single_call'),
+      lang: context.speaker.spokenLang,
+    }).catch(() => {})
+  }
   recordApiUsage({
     sessionId: upload.sessionId,
     speakerId: user.id,

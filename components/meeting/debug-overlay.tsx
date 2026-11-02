@@ -14,6 +14,7 @@ import {
   useTranslationDebug,
 } from '@/features/translation/debug-store'
 import { useMicLevel } from '@/features/translation/useMicLevel'
+import { DroppedList } from './dropped-list'
 import { uploadUtterance } from '@/features/translation/useLiveTranslation'
 import type { TranslationStatus } from '@/features/translation/useTranslationStatus'
 import { encodeWav } from '@/lib/translation/wav'
@@ -338,6 +339,7 @@ export function DebugOverlay({
           </div>
         ))}
       </dl>
+      <DroppedList sessionId={sessionId} />
       <button
         type="button"
         onClick={() => void sendTestClip()}

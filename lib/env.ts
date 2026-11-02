@@ -122,6 +122,12 @@ const serverSchema = z.object({
   MAX_SESSION_HOURS: z.coerce.number().positive().default(4),
   // The free trial amount lives in the database (private.app_settings), not here.
 
+  // Debug only (default off): keep the audio of utterances the speech-to-text dropped as silence
+  // for 1 hour in a private folder, for users named in TRANSLATION_BETA_ALLOWLIST. See
+  // lib/translation/dropped-capture.ts. Everything is removed while the flag is false.
+  DEBUG_CAPTURE_DROPPED: z.stringbool().default(false),
+  DEBUG_CAPTURE_DIR: z.string().min(1).optional(),
+
   // Signup country (analytics). Without the salt no IP hash is stored; without the GeoLite2
   // database (downloaded at image build with MAXMIND_LICENSE_KEY) the country is null.
   IP_HASH_SALT: z.string().min(16).optional(),
