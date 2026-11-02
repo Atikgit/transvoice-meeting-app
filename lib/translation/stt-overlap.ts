@@ -37,7 +37,7 @@ export function forgetAdmission(sessionId: string, userId: string) {
 export interface PreStarted {
   lang: string
   /** Never rejects: a failure is reported by the pipeline when it awaits the result. */
-  result: Promise<{ text: string; durationS: number }>
+  result: Promise<{ text: string; durationS: number; responseBytes?: number }>
 }
 
 export function startSpeechToText(

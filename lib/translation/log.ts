@@ -23,6 +23,13 @@ export interface TranslateLog {
   contextMs: number
   /** The speech-to-text ran while the context loaded (true) or was redone for another language. */
   sttOverlap?: boolean
+  /** What the speech-to-text returned (split pipeline): class and size, never the text. */
+  stt?: {
+    class: 'empty' | 'single_char' | 'filtered_phantom' | 'text' | 'failed'
+    chars?: number
+    responseBytes?: number
+    durationS?: number
+  }
   languages: {
     lang: string
     /** "bn-BD>en-US": what was translated into what (language codes only). */

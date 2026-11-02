@@ -45,7 +45,12 @@ describe('split steps against the API contract', () => {
         return HttpResponse.json({ text: 'ওহে', duration_s: 1.5 })
       }),
     )
-    expect(await transcribe(config, 'QUJD', 'wav', 'bn')).toEqual({ text: 'ওহে', durationS: 1.5 })
+    // responseBytes = the size of the API's JSON answer, {"text":"ওহে","duration_s":1.5} = 37 bytes
+    expect(await transcribe(config, 'QUJD', 'wav', 'bn')).toEqual({
+      text: 'ওহে',
+      durationS: 1.5,
+      responseBytes: 37,
+    })
     expect(seen).toEqual({
       auth: `Bearer ${TEST_ENV.TRANSVOICE_MASTER_API_KEY}`,
       body: { audio: 'QUJD', ext: 'wav', lang: 'bn' },
@@ -252,6 +257,41 @@ describe('runSplitPipeline', () => {
       expect(h.captions).toEqual([])
     },
   )
+
+  it.each([
+    // [what the STT returned, class, chars]
+    ['', 'empty', 0],
+    ['   ', 'empty', 0],
+    ['a', 'single_char', 1],
+    ['You', 'filtered_phantom', 3],
+    ['  thank you. ', 'filtered_phantom', 10],
+    ['Am I?', 'filtered_phantom', 5],
+    ['Hello there', 'text', 11],
+    ['ওহে বন্ধু', 'text', 9],
+  ] as const)(
+    'reports the STT result class without the text: %j -> %s (%i chars)',
+    async (text, cls, chars) => {
+      const h = harness({
+        transcribe: async () => ({ text, durationS: 1.25, responseBytes: 42 }),
+      })
+      const out = await run(h.deps)
+      expect(out.stt).toEqual({ class: cls, chars, responseBytes: 42, durationS: 1.25 })
+      expect(out.languages[0]!.kind).toBe(cls === 'text' ? 'speech' : 'silence')
+      // the summary never carries the transcript itself: these four keys only
+      expect(Object.keys(out.stt!).sort()).toEqual(['chars', 'class', 'durationS', 'responseBytes'])
+    },
+  )
+
+  it('a failed speech-to-text has no summary', async () => {
+    const h = harness({
+      transcribe: async () => {
+        throw new SplitStepError('stt', 'timeout')
+      },
+    })
+    const out = await run(h.deps)
+    expect(out).toMatchObject({ sttFailed: true })
+    expect(out.stt).toBeUndefined()
+  })
 
   it('drops a "Silence" answer before anything is shown, but not text that merely starts with it', async () => {
     const silent = harness({

@@ -6,7 +6,7 @@ import {
   transcribe as realTranscribe,
   type SplitConfig,
 } from '@/lib/transvoice/split-client'
-import { isHallucination } from '@/lib/translation/split/hallucination'
+import { classifyStt, type SttClass } from '@/lib/translation/split/hallucination'
 import { SentenceSplitter } from '@/lib/translation/split/sentences'
 
 /** A clip shorter than this is an error body or an empty answer, not speech. */
@@ -15,6 +15,17 @@ const MIN_MP3_BYTES = 1000
 export const SILENCE_HOLD_CHARS = 8
 /** How long a ready clip waits to learn whether it is the last one. */
 export const LAST_GRACE_MS = 150
+
+/** The speech-to-text answer, described without its text. */
+export interface SttSummary {
+  class: SttClass
+  /** Characters of the transcript after trimming. */
+  chars: number
+  /** Size of the API's JSON answer. */
+  responseBytes?: number
+  /** Audio seconds the API says it heard. */
+  durationS?: number
+}
 
 export interface SplitTimings {
   sttMs: number
@@ -98,7 +109,13 @@ export async function runSplitPipeline({
   /** performance.now() when the request started (for toFirstAudioMs). */
   startedAt: number
   deps: SplitDeps
-}): Promise<{ sttMs: number; sttFailed: boolean; languages: SplitLanguageResult[] }> {
+}): Promise<{
+  sttMs: number
+  sttFailed: boolean
+  /** What the speech-to-text returned (never the text); absent when it failed. */
+  stt?: SttSummary
+  languages: SplitLanguageResult[]
+}> {
   const now = deps.now ?? (() => performance.now())
   const log = deps.log ?? (() => {})
   const entries = [...groups.entries()]
@@ -107,14 +124,21 @@ export async function runSplitPipeline({
 
   const sttStarted = now()
   let original: string
+  let stt: SttSummary
   try {
-    const stt = await (deps.transcribe ?? realTranscribe)(
+    const result = await (deps.transcribe ?? realTranscribe)(
       deps.config,
       audioBase64,
       ext,
       spokenSrcLang,
     )
-    original = stt.text.trim()
+    original = result.text.trim()
+    stt = {
+      class: classifyStt(result.text),
+      chars: original.length,
+      ...(result.responseBytes !== undefined ? { responseBytes: result.responseBytes } : {}),
+      ...(result.durationS ? { durationS: result.durationS } : {}),
+    }
   } catch (error) {
     log({ step: 'stt', failed: true, detail: error instanceof Error ? error.message : 'error' })
     return {
@@ -124,10 +148,11 @@ export async function runSplitPipeline({
     }
   }
   const sttMs = Math.round(now() - sttStarted)
-  if (isHallucination(original)) {
+  if (stt.class !== 'text') {
     return {
       sttMs,
       sttFailed: false,
+      stt,
       languages: all((lang, listeners) => ({ lang, listeners, kind: 'silence' })),
     }
   }
@@ -304,5 +329,5 @@ export async function runSplitPipeline({
   const languages = await Promise.all(
     entries.map(([lang, listeners]) => translateOne(lang, listeners)),
   )
-  return { sttMs, sttFailed: false, languages }
+  return { sttMs, sttFailed: false, stt, languages }
 }

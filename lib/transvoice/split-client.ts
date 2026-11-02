@@ -64,7 +64,7 @@ export async function transcribe(
   audioBase64: string,
   ext: 'wav' | 'ogg' | 'webm',
   lang: string,
-): Promise<{ text: string; durationS: number }> {
+): Promise<{ text: string; durationS: number; responseBytes?: number }> {
   try {
     const res = await post(
       config,
@@ -73,13 +73,21 @@ export async function transcribe(
       AbortSignal.timeout(config.timeoutMs ?? STEP_TIMEOUT_MS),
     )
     if (!res.ok) throw new SplitStepError('stt', `responded ${res.status}`, res.status)
-    const body = (await res.json().catch(() => null)) as {
-      text?: unknown
-      duration_s?: unknown
-    } | null
+    const raw = await res.text().catch(() => '')
+    const body = (() => {
+      try {
+        return JSON.parse(raw) as { text?: unknown; duration_s?: unknown } | null
+      } catch {
+        return null
+      }
+    })()
     if (!body || typeof body.text !== 'string')
       throw new SplitStepError('stt', 'unexpected payload', res.status)
-    return { text: body.text, durationS: Number(body.duration_s) || 0 }
+    return {
+      text: body.text,
+      durationS: Number(body.duration_s) || 0,
+      responseBytes: new TextEncoder().encode(raw).length,
+    }
   } catch (error) {
     throw asStepError('stt', error)
   }
